@@ -14,8 +14,8 @@ Two users (Udit + Drishti). Everything private by default.
 
 ## Build Sessions
 - Session 1: Foundation, auth, tasks module ✅ COMPLETE
-- Session 2: Notes (markdown editor) + Plans ← NEXT
-- Session 3: Reminders + To-do lists
+- Session 2: Notes (markdown editor) + Plans ✅ COMPLETE
+- Session 3: Reminders + To-do lists ← NEXT
 - Session 4: SRS engine (SM-2) + flashcard review UI
 - Session 5: Gemini integration — auto-generate flashcards from notes
 - Session 6: Learning curve dashboard + polish
@@ -51,3 +51,15 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - OneDrive can corrupt the .next cache (EINVAL readlink) — `rm -rf .next` and rebuild if so.
 - lib/srs/sm2.ts (SM-2, ready for Session 4) and lib/gemini/client.ts (gemini-1.5-flash,
   ready for Session 5) are scaffolded but not yet wired in.
+
+## Conventions & Gotchas (Session 2)
+- Markdown: NO library (respects pinned stack). lib/markdown.ts has renderMarkdown
+  (escapes HTML first, then transforms — safe to dangerouslySetInnerHTML for own notes)
+  and markdownExcerpt (plain-text card previews). Unit-tested via node.
+- Notes editor uses a Write/Preview Tabs pair inside the modal; textarea is font-mono.
+- Single source for plans list: hooks/usePlans.ts usePlansQuery (key ["plans"], full rows).
+  TaskForm now consumes it too — do NOT re-add a separate ["plans"] query with a narrower
+  select, or the shared cache shape will conflict.
+- Plan progress = done/total of tasks with matching plan_id (computed in plans/page.tsx
+  from useTasksQuery). Deleting a plan unlinks tasks (FK on delete set null) → useDeletePlan
+  also invalidates ["tasks"].

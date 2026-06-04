@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { CalendarIcon, X } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui.store";
 import { useCreateTask, useUpdateTask } from "@/hooks/useTasks";
+import { usePlansQuery } from "@/hooks/usePlans";
 import type { TaskPriority, TaskStatus } from "@/types/database";
 import {
   Dialog,
@@ -38,25 +37,11 @@ function pickedDateToIso(d: Date): string {
   ).toISOString();
 }
 
-function usePlans() {
-  return useQuery({
-    queryKey: ["plans"],
-    queryFn: async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("plans")
-        .select("id, title")
-        .order("created_at", { ascending: false });
-      return data ?? [];
-    },
-  });
-}
-
 export function TaskForm() {
   const { taskDialogOpen, editingTask, closeTaskDialog } = useUIStore();
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
-  const { data: plans = [] } = usePlans();
+  const { data: plans = [] } = usePlansQuery();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");

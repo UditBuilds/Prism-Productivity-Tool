@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { Task } from "@/types/database";
+import type { Note, Plan, Task } from "@/types/database";
 
 interface UIState {
   /** Task create/edit dialog. `editingTask === null` means "create". */
@@ -9,6 +9,20 @@ interface UIState {
   openCreateTask: () => void;
   openEditTask: (task: Task) => void;
   closeTaskDialog: () => void;
+
+  /** Note create/edit dialog. `editingNote === null` means "create". */
+  noteDialogOpen: boolean;
+  editingNote: Note | null;
+  openCreateNote: () => void;
+  openEditNote: (note: Note) => void;
+  closeNoteDialog: () => void;
+
+  /** Plan create/edit dialog. `editingPlan === null` means "create". */
+  planDialogOpen: boolean;
+  editingPlan: Plan | null;
+  openCreatePlan: () => void;
+  openEditPlan: (plan: Plan) => void;
+  closePlanDialog: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -17,4 +31,16 @@ export const useUIStore = create<UIState>((set) => ({
   openCreateTask: () => set({ taskDialogOpen: true, editingTask: null }),
   openEditTask: (task) => set({ taskDialogOpen: true, editingTask: task }),
   closeTaskDialog: () => set({ taskDialogOpen: false, editingTask: null }),
+
+  noteDialogOpen: false,
+  editingNote: null,
+  openCreateNote: () => set({ noteDialogOpen: true, editingNote: null }),
+  openEditNote: (note) => set({ noteDialogOpen: true, editingNote: note }),
+  closeNoteDialog: () => set({ noteDialogOpen: false, editingNote: null }),
+
+  planDialogOpen: false,
+  editingPlan: null,
+  openCreatePlan: () => set({ planDialogOpen: true, editingPlan: null }),
+  openEditPlan: (plan) => set({ planDialogOpen: true, editingPlan: plan }),
+  closePlanDialog: () => set({ planDialogOpen: false, editingPlan: null }),
 }));
