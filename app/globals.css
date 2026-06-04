@@ -2,26 +2,69 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+  PRISM design system — dark mode default.
+  All tokens defined in HSL so shadcn's `hsl(var(--x))` mappings resolve cleanly.
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  Hex reference:
+    background     #0A0A0A   surface        #111111   surface-raised #1A1A1A
+    border-col     #2A2A2A   text-primary   #F5F5F5   text-muted     #888888
+    accent         #7C3AED   accent-hover   #6D28D9
+    success        #10B981   warning        #F59E0B   danger         #EF4444
+*/
+
+@layer base {
+  :root,
+  .dark {
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 96%;
+
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 96%;
+
+    --primary: 262 83% 58%;
+    --primary-foreground: 0 0% 96%;
+
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 0 0% 96%;
+
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 53%;
+
+    --accent: 262 83% 58%;
+    --accent-foreground: 0 0% 96%;
+    --accent-hover: 263 70% 50%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 96%;
+
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 262 83% 58%;
+
+    /* PRISM extras */
+    --surface: 0 0% 7%;
+    --surface-raised: 0 0% 10%;
+    --border-col: 0 0% 16%;
+    --success: 160 84% 39%;
+    --warning: 38 92% 50%;
+    --danger: 0 84% 60%;
+
+    --radius: 0.75rem;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
   }
 }

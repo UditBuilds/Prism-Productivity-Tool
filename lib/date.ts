@@ -1,0 +1,80 @@
+// All app times are anchored to Asia/Kolkata (IST, UTC+5:30) per the PRISM spec.
+// We compute IST civil fields by shifting the instant, so it works regardless
+// of the server's own timezone (e.g. UTC on Vercel).
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+export interface IstDayContext {
+  /** Current hour (0–23) in IST — for the time-aware greeting. */
+  hour: number;
+  /** ISO instant for 00:00 IST today. */
+  startOfToday: string;
+  /** ISO instant for 00:00 IST tomorrow (exclusive upper bound). */
+  endOfToday: string;
+  /** ISO instant for 00:00 IST on Monday of the current week. */
+  startOfWeek: string;
+}
+
+export function istDayContext(now: Date = new Date()): IstDayContext {
+  const ist = new Date(now.getTime() + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear();
+  const m = ist.getUTCMonth();
+  const d = ist.getUTCDate();
+  const dow = ist.getUTCDay(); // 0=Sun … 6=Sat (in IST)
+  const daysSinceMonday = (dow + 6) % 7;
+
+  const istMidnightToUtc = (yy: number, mm: number, dd: number): string =>
+    new Date(Date.UTC(yy, mm, dd, 0, 0, 0) - IST_OFFSET_MS).toISOString();
+
+  return {
+    hour: ist.getUTCHours(),
+    startOfToday: istMidnightToUtc(y, m, d),
+    endOfToday: istMidnightToUtc(y, m, d + 1),
+    startOfWeek: istMidnightToUtc(y, m, d - daysSinceMonday),
+  };
+}
+
+export function greetingForHour(hour: number): string {
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+export type DueTone = "muted" | "warning" | "danger";
+
+export interface DueDateDisplay {
+  label: string;
+  tone: DueTone;
+  bold: boolean;
+}
+
+/** IST calendar-day index for an instant (days since Unix epoch in IST). */
+function istDayIndex(ms: number): number {
+  return Math.floor((ms + IST_OFFSET_MS) / 86_400_000);
+}
+
+/**
+ * Relative due-date label, by IST calendar day:
+ *   overdue → "N days overdue" (danger, bold)
+ *   today   → "Today" (warning)
+ *   future  → "in N days" (muted)
+ *   none    → null (caller hides it)
+ */
+export function formatDueDate(dueIso: string | null): DueDateDisplay | null {
+  if (!dueIso) return null;
+  const diff = istDayIndex(new Date(dueIso).getTime()) - istDayIndex(Date.now());
+
+  if (diff === 0) return { label: "Today", tone: "warning", bold: false };
+  if (diff < 0) {
+    const n = -diff;
+    return { label: `${n} day${n > 1 ? "s" : ""} overdue`, tone: "danger", bold: true };
+  }
+  if (diff === 1) return { label: "Tomorrow", tone: "muted", bold: false };
+  return { label: `in ${diff} days`, tone: "muted", bold: false };
+}
+
+/** True when a task's due date is before today (IST) and it isn't done. */
+export function isOverdue(dueIso: string | null, done: boolean): boolean {
+  if (!dueIso || done) return false;
+  return istDayIndex(new Date(dueIso).getTime()) < istDayIndex(Date.now());
+}
