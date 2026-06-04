@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { TopBar } from "@/components/layout/TopBar";
+import { NotificationChecker } from "@/components/reminders/NotificationChecker";
 
 export default async function DashboardLayout({
   children,
@@ -38,6 +39,7 @@ export default async function DashboardLayout({
         </main>
       </div>
       <MobileNav />
+      <NotificationChecker />
     </div>
   );
 }

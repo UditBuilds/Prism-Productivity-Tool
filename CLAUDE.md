@@ -15,8 +15,8 @@ Two users (Udit + Drishti). Everything private by default.
 ## Build Sessions
 - Session 1: Foundation, auth, tasks module ✅ COMPLETE
 - Session 2: Notes (markdown editor) + Plans ✅ COMPLETE
-- Session 3: Reminders + To-do lists ← NEXT
-- Session 4: SRS engine (SM-2) + flashcard review UI
+- Session 3: Reminders module ✅ COMPLETE
+- Session 4: SRS engine (SM-2) + flashcard review UI ← NEXT
 - Session 5: Gemini integration — auto-generate flashcards from notes
 - Session 6: Learning curve dashboard + polish
 
@@ -63,3 +63,12 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - Plan progress = done/total of tasks with matching plan_id (computed in plans/page.tsx
   from useTasksQuery). Deleting a plan unlinks tasks (FK on delete set null) → useDeletePlan
   also invalidates ["tasks"].
+
+## Conventions & Gotchas (Session 3 — Reminders)
+- lib/date.ts: istDateTimeToIso(date, "HH:MM") builds an IST-anchored instant from the
+  form's Calendar date + time input; formatReminderTime(iso) → {label,tone} (overdue/today/
+  future).
+- reminders has NO updated_at column — PATCH must not set it.
+- NotificationChecker (mounted once in dashboard/layout) polls ["reminders"] every 60s,
+  fires browser Notification + toast for due cards, marks is_sent. firedRef guards double-fire.
+- TopBar bell dot + dashboard "Reminders Today" stat read pending reminders.

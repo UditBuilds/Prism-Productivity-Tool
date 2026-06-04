@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { LogOut, User } from "lucide-react";
+import { Bell, LogOut, User } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
+import { useUpcomingReminders } from "@/hooks/useReminders";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +30,13 @@ export function TopBar({
   const title = titleForPath(pathname);
   const today = format(new Date(), "EEEE, d MMMM");
 
+  // Dot when a pending reminder is due within the next 24 hours.
+  const { data: upcoming } = useUpcomingReminders();
+  const hasSoonReminder = (upcoming ?? []).some((r) => {
+    const at = new Date(r.remind_at).getTime();
+    return at <= Date.now() + 24 * 60 * 60 * 1000;
+  });
+
   async function handleLogout() {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -44,6 +52,21 @@ export function TopBar({
         <span className="hidden text-sm text-muted-foreground sm:block">
           {today}
         </span>
+
+        <button
+          type="button"
+          aria-label="Reminders"
+          onClick={() => router.push("/dashboard/reminders")}
+          className="relative flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground outline-none ring-offset-background transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Bell className="h-[18px] w-[18px]" />
+          {hasSoonReminder && (
+            <span
+              aria-hidden
+              className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent ring-2 ring-background"
+            />
+          )}
+        </button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

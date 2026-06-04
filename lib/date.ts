@@ -78,3 +78,90 @@ export function isOverdue(dueIso: string | null, done: boolean): boolean {
   if (!dueIso || done) return false;
   return istDayIndex(new Date(dueIso).getTime()) < istDayIndex(Date.now());
 }
+
+/**
+ * Combine a picked calendar date + a "HH:MM" time string into a single ISO
+ * instant, interpreting the wall-clock as Asia/Kolkata (IST). Used by the
+ * reminder form so "4 Jun, 09:30" always means 09:30 IST regardless of the
+ * browser's own timezone.
+ */
+export function istDateTimeToIso(date: Date, time: string): string {
+  const [hh, mm] = time.split(":").map((n) => Number.parseInt(n, 10));
+  const utcMs =
+    Date.UTC(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      Number.isFinite(hh) ? hh : 0,
+      Number.isFinite(mm) ? mm : 0,
+      0
+    ) - IST_OFFSET_MS;
+  return new Date(utcMs).toISOString();
+}
+
+/** "HH:MM" (24h) for an instant, rendered in IST. For the form's time input. */
+export function istTimeValue(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
+function istClock(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
+function istWeekdayDate(iso: string): string {
+  // e.g. "Wed, 4 Jun"
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(iso));
+}
+
+/**
+ * Relative reminder-time label, by IST calendar day:
+ *   overdue (in the past) → "X minutes/hours/days ago" (danger)
+ *   today (still ahead)   → "Today at HH:MM"          (warning)
+ *   future                → "Wed, 4 Jun at HH:MM"      (muted)
+ */
+export function formatReminderTime(remindIso: string): DueDateDisplay {
+  const remindMs = new Date(remindIso).getTime();
+  const nowMs = Date.now();
+  const diff = remindMs - nowMs;
+
+  if (diff < 0) {
+    const mins = Math.floor(-diff / 60_000);
+    let label: string;
+    if (mins < 1) label = "just now";
+    else if (mins < 60) label = `${mins} minute${mins > 1 ? "s" : ""} ago`;
+    else {
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) label = `${hrs} hour${hrs > 1 ? "s" : ""} ago`;
+      else {
+        const days = Math.floor(hrs / 24);
+        label = `${days} day${days > 1 ? "s" : ""} ago`;
+      }
+    }
+    return { label, tone: "danger", bold: true };
+  }
+
+  if (istDayIndex(remindMs) === istDayIndex(nowMs)) {
+    return { label: `Today at ${istClock(remindIso)}`, tone: "warning", bold: false };
+  }
+
+  return {
+    label: `${istWeekdayDate(remindIso)} at ${istClock(remindIso)}`,
+    tone: "muted",
+    bold: false,
+  };
+}

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarClock, CheckCircle2, Brain, Coffee, AlertCircle } from "lucide-react";
+import { CalendarClock, CheckCircle2, Brain, Bell, Coffee, AlertCircle } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import { istDayContext, greetingForHour } from "@/lib/date";
@@ -21,25 +21,36 @@ export default async function DashboardHome() {
   const { startOfToday, endOfToday, startOfWeek, hour } = istDayContext();
   const nowIso = new Date().toISOString();
 
-  const [profileRes, dueRes, completedRes, cardsRes] = await Promise.all([
-    supabase.from("profiles").select("display_name").eq("id", user.id).single(),
-    supabase
-      .from("tasks")
-      .select("*", { count: "exact" })
-      .gte("due_date", startOfToday)
-      .lt("due_date", endOfToday)
-      .order("due_date", { ascending: true })
-      .limit(5),
-    supabase
-      .from("tasks")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "done")
-      .gte("updated_at", startOfWeek),
-    supabase
-      .from("srs_cards")
-      .select("*", { count: "exact", head: true })
-      .lte("next_review", nowIso),
-  ]);
+  const [profileRes, dueRes, completedRes, cardsRes, remindersRes] =
+    await Promise.all([
+      supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", user.id)
+        .single(),
+      supabase
+        .from("tasks")
+        .select("*", { count: "exact" })
+        .gte("due_date", startOfToday)
+        .lt("due_date", endOfToday)
+        .order("due_date", { ascending: true })
+        .limit(5),
+      supabase
+        .from("tasks")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "done")
+        .gte("updated_at", startOfWeek),
+      supabase
+        .from("srs_cards")
+        .select("*", { count: "exact", head: true })
+        .lte("next_review", nowIso),
+      supabase
+        .from("reminders")
+        .select("*", { count: "exact", head: true })
+        .gte("remind_at", startOfToday)
+        .lt("remind_at", endOfToday)
+        .eq("is_sent", false),
+    ]);
 
   const displayName = profileRes.data?.display_name ?? "there";
   const dueTasks: Task[] = dueRes.data ?? [];
@@ -47,11 +58,13 @@ export default async function DashboardHome() {
   const dueError = dueRes.error?.message ?? null;
   const completedCount = completedRes.count ?? 0;
   const cardsCount = cardsRes.count ?? 0;
+  const remindersTodayCount = remindersRes.count ?? 0;
 
   const stats = [
     { label: "Due Today", value: dueCount, icon: CalendarClock },
     { label: "Completed", value: completedCount, icon: CheckCircle2 },
     { label: "Cards to Review", value: cardsCount, icon: Brain },
+    { label: "Reminders Today", value: remindersTodayCount, icon: Bell },
   ];
 
   return (
@@ -67,7 +80,7 @@ export default async function DashboardHome() {
       </header>
 
       {/* Stats */}
-      <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map(({ label, value, icon: Icon }) => (
           <div
             key={label}

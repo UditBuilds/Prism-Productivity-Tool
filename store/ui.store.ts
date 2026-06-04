@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { Note, Plan, Task } from "@/types/database";
+import type { Note, Plan, Reminder, Task } from "@/types/database";
 
 interface UIState {
   /** Task create/edit dialog. `editingTask === null` means "create". */
@@ -23,6 +23,13 @@ interface UIState {
   openCreatePlan: () => void;
   openEditPlan: (plan: Plan) => void;
   closePlanDialog: () => void;
+
+  /** Reminder create/edit dialog. `editingReminder === null` means "create". */
+  reminderDialogOpen: boolean;
+  editingReminder: Reminder | null;
+  openCreateReminder: () => void;
+  openEditReminder: (reminder: Reminder) => void;
+  closeReminderDialog: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -43,4 +50,13 @@ export const useUIStore = create<UIState>((set) => ({
   openCreatePlan: () => set({ planDialogOpen: true, editingPlan: null }),
   openEditPlan: (plan) => set({ planDialogOpen: true, editingPlan: plan }),
   closePlanDialog: () => set({ planDialogOpen: false, editingPlan: null }),
+
+  reminderDialogOpen: false,
+  editingReminder: null,
+  openCreateReminder: () =>
+    set({ reminderDialogOpen: true, editingReminder: null }),
+  openEditReminder: (reminder) =>
+    set({ reminderDialogOpen: true, editingReminder: reminder }),
+  closeReminderDialog: () =>
+    set({ reminderDialogOpen: false, editingReminder: null }),
 }));
