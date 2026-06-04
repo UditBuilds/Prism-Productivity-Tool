@@ -68,3 +68,25 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+/* SRS flashcard — pure CSS 3D flip */
+.card-scene {
+  perspective: 1200px;
+}
+.card-3d {
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+.card-3d.flipped {
+  transform: rotateY(180deg);
+}
+.card-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  position: absolute;
+  inset: 0;
+}
+.card-face.back {
+  transform: rotateY(180deg);
+}

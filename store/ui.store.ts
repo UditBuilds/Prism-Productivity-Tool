@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-import type { Note, Plan, Reminder, Task } from "@/types/database";
+import type { Note, Plan, Reminder, SrsCard, Task } from "@/types/database";
+
+export interface SessionRating {
+  card_id: string;
+  rating: number;
+}
 
 interface UIState {
   /** Task create/edit dialog. `editingTask === null` means "create". */
@@ -30,6 +35,24 @@ interface UIState {
   openCreateReminder: () => void;
   openEditReminder: (reminder: Reminder) => void;
   closeReminderDialog: () => void;
+
+  /** SRS card create/edit dialog. `editingCard === null` means "create". */
+  cardDialogOpen: boolean;
+  editingCard: SrsCard | null;
+  openCreateCard: () => void;
+  openEditCard: (card: SrsCard) => void;
+  closeCardDialog: () => void;
+
+  /** SRS review session (a snapshot of due cards being worked through). */
+  sessionCards: SrsCard[];
+  currentIndex: number;
+  isFlipped: boolean;
+  ratingsGiven: SessionRating[];
+  startSession: (cards: SrsCard[]) => void;
+  flipCard: () => void;
+  nextCard: () => void;
+  resetSession: () => void;
+  recordRating: (card_id: string, rating: number) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -59,4 +82,34 @@ export const useUIStore = create<UIState>((set) => ({
     set({ reminderDialogOpen: true, editingReminder: reminder }),
   closeReminderDialog: () =>
     set({ reminderDialogOpen: false, editingReminder: null }),
+
+  cardDialogOpen: false,
+  editingCard: null,
+  openCreateCard: () => set({ cardDialogOpen: true, editingCard: null }),
+  openEditCard: (card) => set({ cardDialogOpen: true, editingCard: card }),
+  closeCardDialog: () => set({ cardDialogOpen: false, editingCard: null }),
+
+  sessionCards: [],
+  currentIndex: 0,
+  isFlipped: false,
+  ratingsGiven: [],
+  startSession: (cards) =>
+    set({
+      sessionCards: cards,
+      currentIndex: 0,
+      isFlipped: false,
+      ratingsGiven: [],
+    }),
+  flipCard: () => set((s) => ({ isFlipped: !s.isFlipped })),
+  nextCard: () =>
+    set((s) => ({ currentIndex: s.currentIndex + 1, isFlipped: false })),
+  resetSession: () =>
+    set({
+      sessionCards: [],
+      currentIndex: 0,
+      isFlipped: false,
+      ratingsGiven: [],
+    }),
+  recordRating: (card_id, rating) =>
+    set((s) => ({ ratingsGiven: [...s.ratingsGiven, { card_id, rating }] })),
 }));

@@ -53,6 +53,11 @@ function istDayIndex(ms: number): number {
   return Math.floor((ms + IST_OFFSET_MS) / 86_400_000);
 }
 
+/** Public IST day index — used by the SRS streak calc (consecutive review days). */
+export function istDayNumber(ms: number): number {
+  return istDayIndex(ms);
+}
+
 /**
  * Relative due-date label, by IST calendar day:
  *   overdue → "N days overdue" (danger, bold)

@@ -16,8 +16,8 @@ Two users (Udit + Drishti). Everything private by default.
 - Session 1: Foundation, auth, tasks module ✅ COMPLETE
 - Session 2: Notes (markdown editor) + Plans ✅ COMPLETE
 - Session 3: Reminders module ✅ COMPLETE
-- Session 4: SRS engine (SM-2) + flashcard review UI ← NEXT
-- Session 5: Gemini integration — auto-generate flashcards from notes
+- Session 4: SRS engine (SM-2) + flashcard review UI ✅ COMPLETE
+- Session 5: Gemini integration — auto-generate flashcards from notes ← NEXT
 - Session 6: Learning curve dashboard + polish
 
 ## Design Rules
@@ -67,8 +67,25 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 ## Conventions & Gotchas (Session 3 — Reminders)
 - lib/date.ts: istDateTimeToIso(date, "HH:MM") builds an IST-anchored instant from the
   form's Calendar date + time input; formatReminderTime(iso) → {label,tone} (overdue/today/
-  future).
+  future). istDayNumber(ms) is the exported IST day index (also used by SRS streak).
 - reminders has NO updated_at column — PATCH must not set it.
 - NotificationChecker (mounted once in dashboard/layout) polls ["reminders"] every 60s,
   fires browser Notification + toast for due cards, marks is_sent. firedRef guards double-fire.
 - TopBar bell dot + dashboard "Reminders Today" stat read pending reminders.
+
+## Conventions & Gotchas (Session 4 — SRS)
+- calculateSM2(quality, repetitions, easeFactor, interval) — rating IS the quality (0|2|4|5).
+  Min interval is 1 day even for lapses; RatingButtons shows "<1 min" for Again to signal the
+  in-session requeue (Review again re-queues cards rated Again/Hard locally; their DB
+  next_review is still +1 day per SM-2).
+- Single SRS cache: hooks/useSRS.ts key ["srs-cards"] = all cards; useDueCards/useDeckStats
+  derive via `select` (no extra fetch). useSubmitReview invalidates ["srs-cards"] (server runs SM-2).
+- Review flow snapshots due cards into Zustand (startSession) so mid-session refetches don't
+  mutate the deck. Session/flip state lives in store/ui.store.ts; resetSession on unmount —
+  the unmount cleanup MUST also clear the started-guard ref, else React Strict Mode's
+  mount→cleanup→remount empties the session and the page shows "Nothing due!".
+- Streak computed server-side in learn/page.tsx from srs_reviews (grace day: yesterday still
+  anchors if nothing reviewed today yet). Learn page = server (streak) wrapping LearnClient.
+- Flip is pure CSS (.card-scene/.card-3d/.card-face in globals.css). Flashcard content uses
+  font-mono (JetBrains Mono) and renders markdown only when it detects md syntax.
+- review/page.tsx wraps useSearchParams in <Suspense> (required for the client route build).
