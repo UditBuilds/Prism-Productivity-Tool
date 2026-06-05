@@ -10,26 +10,35 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords don't match.");
+      return;
+    }
+
     setLoading(true);
 
+    // The recovery session was established from the email link's code by the
+    // browser client (detectSessionInUrl), so updateUser can set the password.
     const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error: updateError } = await supabase.auth.updateUser({ password });
 
-    if (signInError) {
-      setError(signInError.message);
+    if (updateError) {
+      setError(updateError.message);
       setLoading(false);
       return;
     }
@@ -44,34 +53,36 @@ export default function LoginPage() {
         PRISM
       </h1>
       <p className="mb-8 text-center text-sm text-muted-foreground">
-        Sign in to your workspace
+        Choose a new password
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="password">New password</Label>
           <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            placeholder="At least 6 characters"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             required
+            minLength={6}
             className="rounded-lg"
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="confirm">Confirm new password</Label>
           <Input
-            id="password"
+            id="confirm"
             type="password"
-            autoComplete="current-password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            placeholder="Re-enter your password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
             required
+            minLength={6}
             className="rounded-lg"
           />
         </div>
@@ -82,32 +93,18 @@ export default function LoginPage() {
           </p>
         )}
 
-        <Button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg"
-        >
+        <Button type="submit" disabled={loading} className="w-full rounded-lg">
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Sign in
+          Update password
         </Button>
-
-        <p className="text-center text-sm">
-          <Link
-            href="/forgot-password"
-            className="font-medium text-muted-foreground hover:text-foreground"
-          >
-            Forgot password?
-          </Link>
-        </p>
       </form>
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
-        Don&apos;t have an account?{" "}
         <Link
-          href="/signup"
+          href="/login"
           className="font-medium text-accent hover:text-accent-hover"
         >
-          Sign up
+          Back to sign in
         </Link>
       </p>
     </div>
