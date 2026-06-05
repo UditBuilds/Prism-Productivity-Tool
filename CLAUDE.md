@@ -2,14 +2,14 @@
 
 ## What This App Is
 Personal productivity app with AI-native spaced repetition.
-Gemini reads notes and auto-generates flashcards.
+An LLM (Groq / Llama 3.3) reads notes and auto-generates flashcards.
 Two users (Udit + Drishti). Everything private by default.
 
 ## Tech Stack
 - Next.js 14 App Router + TypeScript
 - Supabase (Auth + Postgres)
 - Tailwind CSS + shadcn/ui
-- Gemini 1.5 Flash for AI features
+- Groq (Llama 3.3 70B) for AI features
 - React Query + Zustand
 
 ## Build Sessions
@@ -17,8 +17,8 @@ Two users (Udit + Drishti). Everything private by default.
 - Session 2: Notes (markdown editor) + Plans ✅ COMPLETE
 - Session 3: Reminders module ✅ COMPLETE
 - Session 4: SRS engine (SM-2) + flashcard review UI ✅ COMPLETE
-- Session 5: Gemini integration — auto-generate flashcards from notes ← NEXT
-- Session 6: Learning curve dashboard + polish
+- Session 5: Gemini integration — auto-generate flashcards from notes ✅ COMPLETE
+- Session 6: Learning curve dashboard + polish ← NEXT
 
 ## Design Rules
 - Dark mode default, accent color #7C3AED (violet)
@@ -28,7 +28,7 @@ Two users (Udit + Drishti). Everything private by default.
 
 ## Key Files
 - lib/srs/sm2.ts — SM-2 algorithm
-- lib/gemini/client.ts — Gemini wrapper
+- lib/ai/client.ts — Groq wrapper (flashcard generation)
 - types/database.ts — all DB types
 - store/ui.store.ts — modal/UI state
 
@@ -49,8 +49,7 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - Server state via React Query hooks (hooks/*). UI-only state via Zustand (store/ui.store.ts).
 - Shared task badge styles: components/tasks/task-styles.ts (reused by dashboard home).
 - OneDrive can corrupt the .next cache (EINVAL readlink) — `rm -rf .next` and rebuild if so.
-- lib/srs/sm2.ts (SM-2, ready for Session 4) and lib/gemini/client.ts (gemini-1.5-flash,
-  ready for Session 5) are scaffolded but not yet wired in.
+- lib/srs/sm2.ts (SM-2) and lib/ai/client.ts (Groq) are wired in as of Sessions 4 & 5.
 
 ## Conventions & Gotchas (Session 2)
 - Markdown: NO library (respects pinned stack). lib/markdown.ts has renderMarkdown
@@ -89,3 +88,24 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - Flip is pure CSS (.card-scene/.card-3d/.card-face in globals.css). Flashcard content uses
   font-mono (JetBrains Mono) and renders markdown only when it detects md syntax.
 - review/page.tsx wraps useSearchParams in <Suspense> (required for the client route build).
+
+## Conventions & Gotchas (Session 5 — AI flashcards / Groq)
+- Provider is Groq (model llama-3.3-70b-versatile) via groq-sdk — switched from Gemini because
+  the Gemini key's project had free tier disabled (limit:0). Swap is isolated to lib/ai/client.ts;
+  the route/modal/hooks are provider-agnostic.
+- generateFlashcardsFromNote(title, content) in lib/ai/client.ts is SERVER-ONLY (touches
+  GROQ_API_KEY, no NEXT_PUBLIC). Only call it from /api/srs/generate — never a client component.
+- /api/srs/generate returns draft cards but does NOT persist. Saving is a separate confirm step:
+  GenerateCardsModal bulk-POSTs the (edited) array to /api/srs/cards.
+- /api/srs/cards POST is overloaded: array body → bulk insert (Gemini save); object body → single
+  card. Both share toCardRow() validation.
+- Error mapping in generate route: "Note is too short…" → 400 with the real message; any other
+  Gemini/parse failure → generic 500 "Failed to generate cards. Try again."
+- GenerateCardsModal phases: idle→generating→preview→saving (close on done). Generation errors
+  return to idle; SAVE errors stay on preview so the drafts aren't lost.
+- useGenerateCards has no toast (modal shows inline errors); useSaveGeneratedCards toasts
+  "X cards added to <deck> deck" and invalidates ["srs-cards"].
+- DeckStat.noteId = dominant source note (majority of a deck's cards share it) → DeckCard shows
+  a "From: <note title>" chip (title resolved via useNotesQuery in LearnClient).
+- tsconfig has no `target` (defaults to ES5 iteration) — don't `for…of` over Map/Set iterators;
+  wrap in Array.from() first.

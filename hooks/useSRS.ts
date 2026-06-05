@@ -28,6 +28,8 @@ export interface DeckStat {
   total: number;
   dueCount: number;
   lastReviewed: string | null;
+  /** Dominant source note id, if most cards in the deck share one (else null). */
+  noteId: string | null;
 }
 
 interface ApiResponse<T> {
@@ -88,12 +90,16 @@ export function useDeckStats() {
     select: (cards) => {
       const now = Date.now();
       const byDeck = new Map<string, DeckStat>();
+      // Tally note_id occurrences per deck to find each deck's dominant source.
+      const noteCounts = new Map<string, Map<string, number>>();
+
       for (const card of cards) {
         const stat = byDeck.get(card.deck_name) ?? {
           deckName: card.deck_name,
           total: 0,
           dueCount: 0,
           lastReviewed: null,
+          noteId: null,
         };
         stat.total += 1;
         if (isDue(card, now)) stat.dueCount += 1;
@@ -104,8 +110,32 @@ export function useDeckStats() {
           stat.lastReviewed = card.last_reviewed;
         }
         byDeck.set(card.deck_name, stat);
+
+        if (card.note_id) {
+          const counts =
+            noteCounts.get(card.deck_name) ?? new Map<string, number>();
+          counts.set(card.note_id, (counts.get(card.note_id) ?? 0) + 1);
+          noteCounts.set(card.deck_name, counts);
+        }
       }
-      return Array.from(byDeck.values()).sort((a, b) => {
+
+      // A deck's source note = the note_id shared by a majority of its cards.
+      const decks = Array.from(byDeck.values());
+      for (const stat of decks) {
+        const counts = noteCounts.get(stat.deckName);
+        if (!counts) continue;
+        let bestId: string | null = null;
+        let bestCount = 0;
+        for (const [id, count] of Array.from(counts.entries())) {
+          if (count > bestCount) {
+            bestId = id;
+            bestCount = count;
+          }
+        }
+        if (bestId && bestCount * 2 > stat.total) stat.noteId = bestId;
+      }
+
+      return decks.sort((a, b) => {
         if (a.deckName === "Default") return -1;
         if (b.deckName === "Default") return 1;
         return a.deckName.localeCompare(b.deckName);
@@ -217,6 +247,55 @@ export function useSubmitReview() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: CARDS_KEY });
+    },
+  });
+}
+
+export interface GeneratedCard {
+  front: string;
+  back: string;
+}
+
+/**
+ * Generate draft cards from a note via the AI provider. Does NOT persist — the modal
+ * lets the user review/edit before saving. Errors surface to the caller (the
+ * modal renders them inline), so no toast here.
+ */
+export function useGenerateCards() {
+  return useMutation({
+    mutationFn: (noteId: string) =>
+      request<GeneratedCard[]>("/api/srs/generate", "POST", {
+        note_id: noteId,
+      }),
+  });
+}
+
+export interface SaveGeneratedCardsInput {
+  cards: {
+    front: string;
+    back: string;
+    deck_name: string;
+    note_id?: string | null;
+  }[];
+  /** Deck name for the success toast (same value the cards carry). */
+  deckName: string;
+}
+
+/** Bulk-save reviewed cards (array POST), then refresh the cards cache. */
+export function useSaveGeneratedCards() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SaveGeneratedCardsInput) =>
+      request<SrsCard[]>("/api/srs/cards", "POST", input.cards),
+    onSuccess: (data, variables) => {
+      qc.invalidateQueries({ queryKey: CARDS_KEY });
+      const n = data.length;
+      toast.success(
+        `${n} card${n === 1 ? "" : "s"} added to ${variables.deckName} deck`
+      );
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to save cards");
     },
   });
 }

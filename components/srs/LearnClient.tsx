@@ -6,6 +6,7 @@ import { Plus, Brain, Layers, Flame, CalendarClock, AlertCircle } from "lucide-r
 
 import { istDayContext } from "@/lib/date";
 import { useAllCards, useDeckStats } from "@/hooks/useSRS";
+import { useNotesQuery } from "@/hooks/useNotes";
 import { useUIStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +18,13 @@ export function LearnClient({ streak }: { streak: number }) {
   const openCreateCard = useUIStore((s) => s.openCreateCard);
   const { data: cards, isLoading, isError, refetch } = useAllCards();
   const { data: decks } = useDeckStats();
+  const { data: notes } = useNotesQuery();
+
+  const noteTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const note of notes ?? []) map.set(note.id, note.title);
+    return map;
+  }, [notes]);
 
   const { total, dueToday, dueNow } = useMemo(() => {
     const list = cards ?? [];
@@ -110,7 +118,7 @@ export function LearnClient({ streak }: { streak: number }) {
           <EmptyState
             icon={Brain}
             title="No flashcards yet"
-            description="Add your first card or generate cards from Notes in Session 5."
+            description="Go to Notes and click 'Generate Flashcards' on any note, or add cards manually with the button above."
             action={
               <Button onClick={openCreateCard} className="rounded-lg">
                 <Plus className="mr-1.5 h-4 w-4" />
@@ -121,7 +129,13 @@ export function LearnClient({ streak }: { streak: number }) {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {decks?.map((deck) => (
-              <DeckCard key={deck.deckName} deck={deck} />
+              <DeckCard
+                key={deck.deckName}
+                deck={deck}
+                sourceNoteTitle={
+                  deck.noteId ? noteTitleById.get(deck.noteId) : undefined
+                }
+              />
             ))}
           </div>
         )}

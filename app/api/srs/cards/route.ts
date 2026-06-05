@@ -36,7 +36,28 @@ export async function GET(request: Request) {
   return json<SrsCard[]>({ data: data ?? [], error: null });
 }
 
-// POST /api/srs/cards — create card manually
+type CardInsert = Database["public"]["Tables"]["srs_cards"]["Insert"];
+
+/** Coerce one raw card into a clean insert row, or null if invalid. */
+function toCardRow(raw: unknown, userId: string): CardInsert | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const c = raw as Record<string, unknown>;
+  const front = typeof c.front === "string" ? c.front.trim() : "";
+  const back = typeof c.back === "string" ? c.back.trim() : "";
+  if (!front || !back) return null;
+  return {
+    user_id: userId,
+    front,
+    back,
+    deck_name:
+      typeof c.deck_name === "string" && c.deck_name.trim()
+        ? c.deck_name.trim()
+        : "Default",
+    note_id: typeof c.note_id === "string" ? c.note_id : null,
+  };
+}
+
+// POST /api/srs/cards — create one card (object body) or many (array body)
 export async function POST(request: Request) {
   const supabase = createClient();
   const {
@@ -44,21 +65,44 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return json({ data: null, error: "Invalid JSON body" }, 400);
   }
 
-  const front = typeof body.front === "string" ? body.front.trim() : "";
-  const back = typeof body.back === "string" ? body.back.trim() : "";
+  // Bulk path: an array of cards → single insert (used by AI generation).
+  if (Array.isArray(body)) {
+    const rows = body
+      .map((card) => toCardRow(card, user.id))
+      .filter((row): row is CardInsert => row !== null);
+
+    if (rows.length === 0) {
+      return json({ data: null, error: "No valid cards to save" }, 400);
+    }
+
+    const { data, error } = await supabase
+      .from("srs_cards")
+      .insert(rows)
+      .select();
+
+    if (error) return json({ data: null, error: error.message }, 500);
+    return json<SrsCard[]>({ data: data ?? [], error: null }, 201);
+  }
+
+  const single = (typeof body === "object" && body !== null
+    ? body
+    : {}) as Record<string, unknown>;
+
+  const front = typeof single.front === "string" ? single.front.trim() : "";
+  const back = typeof single.back === "string" ? single.back.trim() : "";
   if (!front) return json({ data: null, error: "Front is required" }, 400);
   if (!back) return json({ data: null, error: "Back is required" }, 400);
 
   const deckName =
-    typeof body.deck_name === "string" && body.deck_name.trim()
-      ? body.deck_name.trim()
+    typeof single.deck_name === "string" && single.deck_name.trim()
+      ? single.deck_name.trim()
       : "Default";
 
   const { data, error } = await supabase
@@ -68,7 +112,7 @@ export async function POST(request: Request) {
       front,
       back,
       deck_name: deckName,
-      note_id: typeof body.note_id === "string" ? body.note_id : null,
+      note_id: typeof single.note_id === "string" ? single.note_id : null,
     })
     .select()
     .single();

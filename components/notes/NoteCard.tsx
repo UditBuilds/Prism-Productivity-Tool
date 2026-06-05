@@ -1,7 +1,7 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Sparkles, Trash2 } from "lucide-react";
 
 import { markdownExcerpt } from "@/lib/markdown";
 import { useUIStore } from "@/store/ui.store";
@@ -11,6 +11,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -22,6 +23,7 @@ export function NoteCard({
   onTagClick?: (tag: string) => void;
 }) {
   const openEditNote = useUIStore((s) => s.openEditNote);
+  const openGenerateModal = useUIStore((s) => s.openGenerateModal);
   const deleteNote = useDeleteNote();
 
   const preview = markdownExcerpt(note.content);
@@ -49,7 +51,7 @@ export function NoteCard({
               <MoreHorizontal className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-36">
+          <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem
               className="cursor-pointer"
               onClick={() => openEditNote(note)}
@@ -57,6 +59,14 @@ export function NoteCard({
               <Pencil className="mr-2 h-4 w-4" />
               Edit
             </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={() => openGenerateModal(note.id, note.title)}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Generate Flashcards
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               className="cursor-pointer text-danger focus:text-danger"
               onClick={() => deleteNote.mutate(note.id)}

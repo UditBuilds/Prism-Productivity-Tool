@@ -53,6 +53,12 @@ interface UIState {
   nextCard: () => void;
   resetSession: () => void;
   recordRating: (card_id: string, rating: number) => void;
+
+  /** "Generate flashcards from note" modal. `generateCardNoteId === null` = closed. */
+  generateCardNoteId: string | null;
+  generateCardNoteTitle: string;
+  openGenerateModal: (id: string, title: string) => void;
+  closeGenerateModal: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -112,4 +118,11 @@ export const useUIStore = create<UIState>((set) => ({
     }),
   recordRating: (card_id, rating) =>
     set((s) => ({ ratingsGiven: [...s.ratingsGiven, { card_id, rating }] })),
+
+  generateCardNoteId: null,
+  generateCardNoteTitle: "",
+  openGenerateModal: (id, title) =>
+    set({ generateCardNoteId: id, generateCardNoteTitle: title }),
+  closeGenerateModal: () =>
+    set({ generateCardNoteId: null, generateCardNoteTitle: "" }),
 }));

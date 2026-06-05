@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { Layers, Play } from "lucide-react";
+import { FileText, Layers, Play } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { DeckStat } from "@/hooks/useSRS";
 import { Button } from "@/components/ui/button";
 
-export function DeckCard({ deck }: { deck: DeckStat }) {
+export function DeckCard({
+  deck,
+  sourceNoteTitle,
+}: {
+  deck: DeckStat;
+  sourceNoteTitle?: string;
+}) {
   const learned = deck.total - deck.dueCount;
   const pct = deck.total === 0 ? 0 : Math.round((learned / deck.total) * 100);
   const lastReviewed = deck.lastReviewed
@@ -29,6 +35,13 @@ export function DeckCard({ deck }: { deck: DeckStat }) {
           </h3>
         </div>
       </div>
+
+      {sourceNoteTitle && (
+        <span className="mt-2 inline-flex max-w-full items-center gap-1 self-start rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          <FileText className="h-3 w-3 shrink-0" />
+          <span className="truncate">From: {sourceNoteTitle}</span>
+        </span>
+      )}
 
       <p className="mt-2 text-sm text-muted-foreground">
         {deck.total} card{deck.total === 1 ? "" : "s"} ·{" "}

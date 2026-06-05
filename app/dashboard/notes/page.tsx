@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NoteList } from "@/components/notes/NoteList";
 import { NoteForm } from "@/components/notes/NoteForm";
+import { GenerateCardsModal } from "@/components/srs/GenerateCardsModal";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 
@@ -26,6 +27,9 @@ function matchesQuery(note: Note, q: string): boolean {
 export default function NotesPage() {
   const [query, setQuery] = useState("");
   const openCreateNote = useUIStore((s) => s.openCreateNote);
+  const generateCardNoteId = useUIStore((s) => s.generateCardNoteId);
+  const generateCardNoteTitle = useUIStore((s) => s.generateCardNoteTitle);
+  const closeGenerateModal = useUIStore((s) => s.closeGenerateModal);
   const { data: notes, isLoading, isError, refetch } = useNotesQuery();
 
   const visible = useMemo(() => {
@@ -111,6 +115,12 @@ export default function NotesPage() {
       </div>
 
       <NoteForm />
+      <GenerateCardsModal
+        noteId={generateCardNoteId ?? ""}
+        noteTitle={generateCardNoteTitle}
+        open={generateCardNoteId !== null}
+        onClose={closeGenerateModal}
+      />
     </div>
   );
 }
