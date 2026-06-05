@@ -18,7 +18,8 @@ Two users (Udit + Drishti). Everything private by default.
 - Session 3: Reminders module ✅ COMPLETE
 - Session 4: SRS engine (SM-2) + flashcard review UI ✅ COMPLETE
 - Session 5: Gemini integration — auto-generate flashcards from notes ✅ COMPLETE
-- Session 6: Learning curve dashboard + polish ← NEXT
+- Session 6: Learning curve dashboard + polish + deploy prep ✅ COMPLETE
+- 🎉 All 6 sessions complete. See DEPLOYMENT.md for shipping.
 
 ## Design Rules
 - Dark mode default, accent color #7C3AED (violet)
@@ -109,3 +110,20 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
   a "From: <note title>" chip (title resolved via useNotesQuery in LearnClient).
 - tsconfig has no `target` (defaults to ES5 iteration) — don't `for…of` over Map/Set iterators;
   wrap in Array.from() first.
+
+## Conventions & Gotchas (Session 6 — Analytics, polish, deploy)
+- Learn page is a Decks/Analytics tabbed layout (shadcn Tabs, default "Decks"). AnalyticsPanel
+  (recharts BarChart) is client-only; recharts pushes /dashboard/learn First Load to ~257 kB —
+  candidate for next/dynamic lazy-load if it matters.
+- /api/srs/analytics (key ["srs-analytics"], useAnalytics 5-min stale) computes totalReviews,
+  mastered (ease≥2.5 & reps≥3), needWork (ease<1.8 OR reps=0 with last_reviewed), 30-day IST
+  activity (gaps filled 0), and per-deck avgEase/masteryPct — all in JS over 3 queries.
+- Chart X-axis dates are IST civil days as "YYYY-MM-DD" (new Date(dayIdx*DAY).toISOString());
+  format with the manual MONTHS helper, NOT date-fns(new Date(str)) which tz-shifts the day.
+- Per-page <title> via tiny segment layout.tsx files (client pages can't export metadata);
+  server pages (dashboard home) export metadata directly. Root layout title is "PRISM".
+- ReactQueryDevtools is gated behind NODE_ENV === "development" in app/providers.tsx.
+- recharts Tooltip formatter: don't annotate the value param as number (type is ValueType|undefined)
+  — stringify it instead.
+- Deploy steps live in DEPLOYMENT.md. CRITICAL post-deploy step: set Supabase Auth Site URL +
+  Redirect URLs (`<vercel-url>/**`) or auth redirects fail on the live domain.

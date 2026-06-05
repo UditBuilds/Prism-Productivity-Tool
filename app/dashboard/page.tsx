@@ -11,6 +11,8 @@ import {
   statusLabel,
 } from "@/components/tasks/task-styles";
 
+export const metadata = { title: "Dashboard | Prism" };
+
 export default async function DashboardHome() {
   const supabase = createClient();
   const {

@@ -6,8 +6,10 @@ import {
 import toast from "react-hot-toast";
 
 import type { SrsCard } from "@/types/database";
+import type { AnalyticsData } from "@/app/api/srs/analytics/route";
 
 const CARDS_KEY = ["srs-cards"] as const;
+const ANALYTICS_KEY = ["srs-analytics"] as const;
 
 export interface CreateCardInput {
   front: string;
@@ -279,6 +281,15 @@ export interface SaveGeneratedCardsInput {
   }[];
   /** Deck name for the success toast (same value the cards carry). */
   deckName: string;
+}
+
+/** Learning-curve analytics (5-min stale). Read-only, its own cache key. */
+export function useAnalytics() {
+  return useQuery<AnalyticsData>({
+    queryKey: ANALYTICS_KEY,
+    queryFn: () => request<AnalyticsData>("/api/srs/analytics", "GET"),
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 /** Bulk-save reviewed cards (array POST), then refresh the cards cache. */

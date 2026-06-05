@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Plus, Brain, Layers, Flame, CalendarClock, AlertCircle } from "lucide-react";
 
 import { istDayContext } from "@/lib/date";
@@ -10,9 +11,35 @@ import { useNotesQuery } from "@/hooks/useNotes";
 import { useUIStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { DeckCard } from "@/components/srs/DeckCard";
 import { CardForm } from "@/components/srs/CardForm";
+
+// Lazy-load the analytics panel so recharts only ships when the Analytics tab
+// is opened (keeps the Learn page's initial bundle lean).
+const AnalyticsPanel = dynamic(
+  () => import("@/components/srs/AnalyticsPanel").then((m) => m.AnalyticsPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="rounded-xl border border-border bg-surface p-4"
+            >
+              <Skeleton className="h-3 w-2/3" />
+              <Skeleton className="mt-3 h-7 w-12" />
+            </div>
+          ))}
+        </div>
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    ),
+  }
+);
 
 export function LearnClient({ streak }: { streak: number }) {
   const openCreateCard = useUIStore((s) => s.openCreateCard);
@@ -56,6 +83,13 @@ export function LearnClient({ streak }: { streak: number }) {
         </Button>
       </div>
 
+      <Tabs defaultValue="decks" className="mt-5">
+        <TabsList className="grid w-full max-w-xs grid-cols-2">
+          <TabsTrigger value="decks">Decks</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="decks">
       {/* Stats banner */}
       <section className="mt-5 grid grid-cols-3 gap-3">
         {stats.map(({ label, value, icon: Icon }) => (
@@ -140,6 +174,12 @@ export function LearnClient({ streak }: { streak: number }) {
           </div>
         )}
       </div>
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-5">
+          <AnalyticsPanel streak={streak} />
+        </TabsContent>
+      </Tabs>
 
       <CardForm />
     </div>
