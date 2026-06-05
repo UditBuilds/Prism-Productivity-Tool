@@ -3,7 +3,7 @@
 ## What This App Is
 Personal productivity app with AI-native spaced repetition.
 An LLM (Groq / Llama 3.3) reads notes and auto-generates flashcards.
-Two users (Udit + Drishti). Everything private by default.
+Two users (you + a collaborator). Everything private by default.
 
 ## Tech Stack
 - Next.js 14 App Router + TypeScript

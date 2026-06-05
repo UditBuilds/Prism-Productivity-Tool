@@ -49,12 +49,12 @@ the change takes effect immediately.
 
 > Tip: if you add a custom domain later, add it to both fields too.
 
-## 4. Invite Drishti
+## 4. Invite your collaborator
 
-1. Share the Vercel URL with her.
-2. She goes to `/signup` and creates her account (email confirmation is **off**, so she lands on
+1. Share the Vercel URL with them.
+2. They go to `/signup` and create their account (email confirmation is **off**, so they land on
    the dashboard immediately).
-3. Her data is fully private from yours — every table has Row Level Security keyed on `user_id`.
+3. Their data is fully private from yours — every table has Row Level Security keyed on `user_id`.
 
 ## Troubleshooting
 
