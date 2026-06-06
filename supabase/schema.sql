@@ -157,3 +157,20 @@ create trigger t_notes before update on notes
   for each row execute procedure update_updated_at();
 create trigger t_srs_cards before update on srs_cards
   for each row execute procedure update_updated_at();
+
+-- PUSH SUBSCRIPTIONS (Web Push — added in Session 8)
+create table push_subscriptions (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  endpoint text not null,
+  p256dh text not null,
+  auth text not null,
+  user_agent text,
+  created_at timestamptz default now(),
+  unique(user_id, endpoint)
+);
+
+alter table push_subscriptions enable row level security;
+
+create policy "own_push_subscriptions"
+  on push_subscriptions for all using (auth.uid() = user_id);

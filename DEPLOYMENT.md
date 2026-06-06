@@ -23,7 +23,7 @@ Deploy Prism (Next.js 14 + Supabase + Groq) to Vercel. Takes ~15 minutes.
 1. Go to [vercel.com/new](https://vercel.com/new) → **Add New… → Project**.
 2. **Import** your GitHub repo.
 3. **Framework Preset:** Next.js (auto-detected). Leave build/output settings at their defaults.
-4. Open **Environment Variables** and add all four (Production + Preview):
+4. Open **Environment Variables** and add all of these (Production + Preview):
 
    | Name | Value |
    |------|-------|
@@ -31,9 +31,22 @@ Deploy Prism (Next.js 14 + Supabase + Groq) to Vercel. Takes ~15 minutes.
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | your Supabase anon/public key |
    | `SUPABASE_SERVICE_ROLE_KEY` | your Supabase service-role key (keep secret) |
    | `GROQ_API_KEY` | your Groq API key |
+   | `NEXT_PUBLIC_APP_URL` | your deployed URL, e.g. `https://prism-xyz.vercel.app` |
+   | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web Push public key (`npx web-push generate-vapid-keys`) |
+   | `VAPID_PRIVATE_KEY` | Web Push private key (keep secret) |
+   | `VAPID_SUBJECT` | `mailto:you@example.com` (contact for push services) |
+   | `CRON_SECRET` | random string guarding `/api/push/due` (keep secret) |
 
-   (Find the Supabase values in **Supabase → Project Settings → API**.)
+   (Find the Supabase values in **Supabase → Project Settings → API**. Generate the
+   VAPID pair once with `npx web-push generate-vapid-keys` and reuse the same pair
+   in `.env.local` and Vercel.)
 5. Click **Deploy** and wait for the build to finish.
+
+> **Web Push (Session 8):** after deploying, schedule the 1-minute reminder check so
+> pushes fire while the app is closed. Run the `pg_cron` SQL from the Session 8 notes in
+> the Supabase SQL editor — it calls `POST /api/push/due` with the `x-cron-secret` header
+> matching `CRON_SECRET`. The `push_subscriptions` table (in `supabase/schema.sql`) must
+> exist first.
 
 ## 3. Supabase URL Configuration (CRITICAL)
 

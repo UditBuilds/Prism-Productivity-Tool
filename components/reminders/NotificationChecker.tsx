@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import { useRemindersQuery, useUpdateReminder } from "@/hooks/useReminders";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
 import type { Reminder } from "@/types/database";
 
 const CHECK_INTERVAL_MS = 60_000;
@@ -18,6 +19,7 @@ const REMINDERS_KEY = ["reminders"] as const;
 export function NotificationChecker() {
   const qc = useQueryClient();
   const updateReminder = useUpdateReminder();
+  const { subscribe } = usePushSubscription();
   // Keep the ["reminders"] cache populated/fresh app-wide.
   useRemindersQuery();
 
@@ -37,6 +39,18 @@ export function NotificationChecker() {
     } catch {
       // Browser doesn't support the Notifications API — ignore.
     }
+  }, []);
+
+  // Register/sync this device's Web Push subscription when notifications are on,
+  // so reminders can fire via the server even while Prism is closed.
+  useEffect(() => {
+    if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted"
+    ) {
+      void subscribe();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // (b) Poll for due reminders.

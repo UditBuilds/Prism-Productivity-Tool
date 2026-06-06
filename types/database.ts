@@ -254,6 +254,36 @@ export interface Database {
         };
         Relationships: [];
       };
+      push_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          endpoint?: string;
+          p256dh?: string;
+          auth?: string;
+          user_agent?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -270,3 +300,5 @@ export type Note = Database["public"]["Tables"]["notes"]["Row"];
 export type Reminder = Database["public"]["Tables"]["reminders"]["Row"];
 export type SrsCard = Database["public"]["Tables"]["srs_cards"]["Row"];
 export type SrsReview = Database["public"]["Tables"]["srs_reviews"]["Row"];
+export type PushSubscriptionRow =
+  Database["public"]["Tables"]["push_subscriptions"]["Row"];
