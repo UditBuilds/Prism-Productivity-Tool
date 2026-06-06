@@ -18,17 +18,24 @@ export default function ForgotPasswordPage() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
 
-    // NEXT_PUBLIC_APP_URL is set in production; fall back to the current origin
-    // (e.g. localhost) so the flow also works in dev.
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin;
+    // No fallback: reset links MUST point at the deployed app, never localhost.
+    // Fail loudly if it isn't configured rather than silently break prod users.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    if (!appUrl) {
+      setError("Configuration error: NEXT_PUBLIC_APP_URL is not set.");
+      throw new Error(
+        "NEXT_PUBLIC_APP_URL is not set — cannot build the reset redirect URL."
+      );
+    }
+    const redirectTo = `${appUrl}/reset-password`;
+
+    setLoading(true);
 
     const supabase = createClient();
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
       email,
-      { redirectTo: `${appUrl}/reset-password` }
+      { redirectTo }
     );
 
     if (resetError) {

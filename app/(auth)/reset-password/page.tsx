@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,18 @@ export default function ResetPasswordPage() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [linkExpired, setLinkExpired] = useState(false);
+
+  // Supabase returns recovery-link errors in the URL hash (and sometimes the
+  // query) — e.g. #error=access_denied&error_code=otp_expired. Detect it so we
+  // can show a clean "expired" card instead of a broken form.
+  useEffect(() => {
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const query = new URLSearchParams(window.location.search);
+    if (hash.get("error") === "access_denied" || query.get("error") === "access_denied") {
+      setLinkExpired(true);
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -45,6 +57,29 @@ export default function ResetPasswordPage() {
 
     router.push("/dashboard");
     router.refresh();
+  }
+
+  if (linkExpired) {
+    return (
+      <div className="rounded-xl border border-border bg-surface p-8 shadow-xl">
+        <h1 className="mb-1 text-center text-3xl font-bold tracking-tight text-accent">
+          PRISM
+        </h1>
+        <div className="mt-6 flex flex-col items-center text-center">
+          <AlertTriangle className="h-10 w-10 text-warning" />
+          <p className="mt-4 text-base font-semibold text-foreground">
+            Reset link expired
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This password reset link has expired. Reset links are valid for 1
+            hour.
+          </p>
+          <Button asChild className="mt-6 w-full rounded-lg">
+            <Link href="/forgot-password">Request a new link</Link>
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
