@@ -71,11 +71,12 @@
 
 /* SRS flashcard — pure CSS 3D flip */
 .card-scene {
-  perspective: 1200px;
+  perspective: 1600px;
 }
 .card-3d {
   transform-style: preserve-3d;
-  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Spring easing gives the flip a subtle bounce. */
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   position: relative;
 }
 .card-3d.flipped {
@@ -89,4 +90,83 @@
 }
 .card-face.back {
   transform: rotateY(180deg);
+}
+
+/* ── Global polish ─────────────────────────────────────────────── */
+
+/* Smooth transitions on all interactive elements */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, box-shadow,
+    transform, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Opt-out for elements that shouldn't animate */
+.no-transition,
+.no-transition * {
+  transition: none !important;
+}
+
+/* Premium scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
+
+/* Smooth page load */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Primary button shimmer effect */
+.btn-primary-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary-shimmer::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -60%;
+  width: 30%;
+  height: 200%;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+  transform: skewX(-20deg);
+  transition: left 0.5s ease;
+}
+.btn-primary-shimmer:hover::after {
+  left: 130%;
+}
+
+/* Modal entrance animation */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.modal-animate {
+  animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }

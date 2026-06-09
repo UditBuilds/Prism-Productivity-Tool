@@ -21,7 +21,7 @@ export const RATING_OPTIONS: RatingOption[] = [
     label: "Again",
     description: "Forgot it",
     className:
-      "border-danger/40 bg-danger/10 text-danger hover:bg-danger/20",
+      "border border-red-800/40 bg-red-950/50 text-red-400 hover:bg-red-900/50 hover:shadow-red-900/20",
     requeues: true,
   },
   {
@@ -29,7 +29,7 @@ export const RATING_OPTIONS: RatingOption[] = [
     label: "Hard",
     description: "Hard",
     className:
-      "border-warning/40 bg-warning/10 text-warning hover:bg-warning/20",
+      "border border-amber-800/40 bg-amber-950/50 text-amber-400 hover:bg-amber-900/50 hover:shadow-amber-900/20",
     requeues: true,
   },
   {
@@ -37,7 +37,7 @@ export const RATING_OPTIONS: RatingOption[] = [
     label: "Good",
     description: "Got it",
     className:
-      "border-blue-500/40 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20",
+      "border border-blue-800/40 bg-blue-950/50 text-blue-400 hover:bg-blue-900/50 hover:shadow-blue-900/20",
     requeues: false,
   },
   {
@@ -45,7 +45,7 @@ export const RATING_OPTIONS: RatingOption[] = [
     label: "Easy",
     description: "Easy",
     className:
-      "border-success/40 bg-success/10 text-success hover:bg-success/20",
+      "border border-green-800/40 bg-green-950/50 text-green-400 hover:bg-green-900/50 hover:shadow-green-900/20",
     requeues: false,
   },
 ];

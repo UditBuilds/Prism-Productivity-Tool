@@ -1,5 +1,7 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { renderMarkdown } from "@/lib/markdown";
 
@@ -8,19 +10,23 @@ function looksLikeMarkdown(text: string): boolean {
   return /(^|\n)\s*(#{1,6}\s|[-*]\s|\d+\.\s|>)|\*\*|`|\[[^\]]+\]\(/.test(text);
 }
 
-function CardContent({ text }: { text: string }) {
+function CardContent({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}) {
   if (looksLikeMarkdown(text)) {
     return (
       <div
-        className="prose-preview max-w-full text-center text-base leading-relaxed"
+        className={cn("prose-preview max-w-full text-center", className)}
         dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
       />
     );
   }
   return (
-    <p className="whitespace-pre-wrap text-center text-lg leading-relaxed">
-      {text}
-    </p>
+    <p className={cn("whitespace-pre-wrap text-center", className)}>{text}</p>
   );
 }
 
@@ -36,7 +42,7 @@ export function FlashCard({
   onFlip: () => void;
 }) {
   return (
-    <div className="card-scene h-56 w-full md:h-64">
+    <div className="card-scene h-64 w-full md:h-72">
       <button
         type="button"
         onClick={onFlip}
@@ -47,18 +53,35 @@ export function FlashCard({
         )}
       >
         {/* Front (question) */}
-        <div className="card-face flex flex-col items-center justify-center rounded-xl border border-border bg-surface p-6 font-mono text-foreground">
-          <div className="flex flex-1 items-center justify-center overflow-auto">
-            <CardContent text={front} />
-          </div>
-          <span className="mt-2 shrink-0 text-xs text-muted-foreground">
-            Click to reveal
+        <div className="card-face flex flex-col rounded-xl border border-[#252525] bg-gradient-to-br from-[#161616] to-[#0D0D0D] p-6 font-mono text-foreground shadow-2xl shadow-black/50">
+          <span className="text-[10px] tracking-[0.2em] text-[#444]">
+            QUESTION
           </span>
+          <div className="flex flex-1 items-center justify-center overflow-auto py-2">
+            <CardContent
+              text={front}
+              className="text-lg font-medium leading-relaxed md:text-xl"
+            />
+          </div>
+          {!isFlipped && (
+            <span className="flex animate-bounce items-center justify-center gap-1 text-[10px] text-[#333]">
+              tap to reveal
+              <ChevronDown className="h-2 w-2" />
+            </span>
+          )}
         </div>
 
         {/* Back (answer) */}
-        <div className="card-face back flex items-center justify-center overflow-auto rounded-xl border border-border bg-surface-raised p-6 font-mono text-foreground">
-          <CardContent text={back} />
+        <div className="card-face back flex flex-col rounded-xl border border-violet-900/30 bg-gradient-to-br from-[#130D1F] to-[#0D0B14] p-6 font-mono text-foreground shadow-2xl shadow-violet-900/10">
+          <span className="text-[10px] tracking-[0.2em] text-violet-500/60">
+            ANSWER
+          </span>
+          <div className="flex flex-1 items-center justify-center overflow-auto py-2">
+            <CardContent
+              text={back}
+              className="text-lg font-medium leading-relaxed text-violet-50"
+            />
+          </div>
         </div>
       </button>
     </div>

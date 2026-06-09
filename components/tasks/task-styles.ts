@@ -1,9 +1,10 @@
 import type { TaskPriority, TaskStatus } from "@/types/database";
 
 export const priorityStyles: Record<TaskPriority, string> = {
-  low: "bg-muted text-muted-foreground",
-  medium: "bg-warning/15 text-warning",
-  high: "bg-danger/15 text-danger",
+  low: "bg-gradient-to-r from-gray-800 to-gray-700 text-gray-400 border border-gray-700/50",
+  medium:
+    "bg-gradient-to-r from-amber-900/40 to-amber-800/30 text-amber-400 border border-amber-700/30",
+  high: "bg-gradient-to-r from-red-900/40 to-red-800/30 text-red-400 border border-red-700/30",
 };
 
 export const statusStyles: Record<TaskStatus, string> = {

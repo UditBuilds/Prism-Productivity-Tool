@@ -36,7 +36,7 @@ export function TaskCard({ task }: { task: Task }) {
   const isDone = task.status === "done";
 
   return (
-    <div className="group rounded-xl border border-border bg-surface p-4 transition-colors hover:border-muted-foreground/40">
+    <div className="group cursor-default rounded-xl border border-[#1F1F1F] bg-[#111111] p-4 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/30">
       <div className="flex items-start justify-between gap-2">
         <Link
           href={`/dashboard/tasks/${task.id}`}
@@ -92,7 +92,7 @@ export function TaskCard({ task }: { task: Task }) {
             updateTask.mutate({ id: task.id, status: nextStatus[task.status] })
           }
           className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-medium transition-opacity hover:opacity-80",
+            "cursor-pointer rounded-full px-2 py-0.5 text-xs font-medium hover:opacity-90 active:scale-95",
             statusStyles[task.status]
           )}
           title="Click to change status"
@@ -103,11 +103,17 @@ export function TaskCard({ task }: { task: Task }) {
         {due && (
           <span
             className={cn(
-              "ml-auto text-xs",
+              "ml-auto flex items-center gap-1.5 text-xs",
               dueToneClass[due.tone],
               due.bold && "font-semibold"
             )}
           >
+            {due.tone === "danger" && (
+              <span
+                aria-hidden
+                className="h-1.5 w-1.5 animate-pulse rounded-full bg-danger"
+              />
+            )}
             {due.label}
           </span>
         )}

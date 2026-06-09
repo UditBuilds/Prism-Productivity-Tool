@@ -24,7 +24,7 @@ export function Sidebar({ displayName }: { displayName: string }) {
       <div className="flex h-16 items-center px-6">
         <Link
           href="/dashboard"
-          className="text-2xl font-bold tracking-tight text-accent"
+          className="bg-gradient-to-r from-violet-400 to-violet-600 bg-clip-text text-xl font-bold tracking-tight text-transparent"
         >
           PRISM
         </Link>
@@ -39,9 +39,9 @@ export function Sidebar({ displayName }: { displayName: string }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2 text-sm font-medium hover:translate-x-0.5",
                 active
-                  ? "border-accent bg-accent/15 text-accent"
+                  ? "border-accent bg-[linear-gradient(to_right,rgba(124,58,237,0.12),transparent)] text-violet-400"
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
               )}
             >
@@ -52,8 +52,8 @@ export function Sidebar({ displayName }: { displayName: string }) {
         })}
       </nav>
 
-      <div className="border-t border-border p-3">
-        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+      <div className="mt-auto border-t border-[#1A1A1A] p-3 pt-3">
+        <div className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-surface-raised">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/20 text-sm font-semibold text-accent">
             {getInitials(displayName)}
           </div>
@@ -63,7 +63,7 @@ export function Sidebar({ displayName }: { displayName: string }) {
           <button
             onClick={handleLogout}
             aria-label="Log out"
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-raised hover:text-danger"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-surface-raised hover:text-danger"
           >
             <LogOut className="h-[18px] w-[18px]" />
           </button>

@@ -63,10 +63,30 @@ export default async function DashboardHome() {
   const remindersTodayCount = remindersRes.count ?? 0;
 
   const stats = [
-    { label: "Due Today", value: dueCount, icon: CalendarClock },
-    { label: "Completed", value: completedCount, icon: CheckCircle2 },
-    { label: "Cards to Review", value: cardsCount, icon: Brain },
-    { label: "Reminders Today", value: remindersTodayCount, icon: Bell },
+    {
+      label: "Due Today",
+      value: dueCount,
+      icon: CalendarClock,
+      accent: "border-t-warning/70",
+    },
+    {
+      label: "Completed",
+      value: completedCount,
+      icon: CheckCircle2,
+      accent: "border-t-success/70",
+    },
+    {
+      label: "Cards to Review",
+      value: cardsCount,
+      icon: Brain,
+      accent: "border-t-violet-500/70",
+    },
+    {
+      label: "Reminders Today",
+      value: remindersTodayCount,
+      icon: Bell,
+      accent: "border-t-blue-500/70",
+    },
   ];
 
   return (
@@ -74,27 +94,28 @@ export default async function DashboardHome() {
       {/* Greeting */}
       <header>
         <h1 className="text-2xl font-semibold text-foreground">
-          {greetingForHour(hour)}, {displayName}
+          {greetingForHour(hour)},{" "}
+          <span className="font-bold text-violet-400">{displayName}</span>
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Here&apos;s your day at a glance.
-        </p>
       </header>
 
       {/* Stats */}
       <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map(({ label, value, icon: Icon }) => (
+        {stats.map(({ label, value, icon: Icon, accent }) => (
           <div
             key={label}
-            className="rounded-xl border border-border bg-surface p-5"
+            className={cn(
+              "rounded-xl border border-[#1F1F1F] border-t-2 bg-[#111111] p-5 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/20",
+              accent
+            )}
           >
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">{label}</span>
+              <span className="text-xs font-medium uppercase tracking-widest text-[#666]">
+                {label}
+              </span>
               <Icon className="h-4 w-4 text-muted-foreground" />
             </div>
-            <p className="mt-3 text-3xl font-semibold text-foreground">
-              {value}
-            </p>
+            <p className="mt-3 text-3xl font-bold text-white">{value}</p>
           </div>
         ))}
       </section>

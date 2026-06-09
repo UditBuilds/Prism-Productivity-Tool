@@ -23,12 +23,12 @@ export function RatingButtons({
           title={option.description}
           onClick={() => onRate(option.quality)}
           className={cn(
-            "flex flex-col items-center justify-center gap-0.5 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-50",
+            "flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-3 text-sm font-semibold hover:-translate-y-0.5 hover:shadow-lg active:scale-95 disabled:pointer-events-none disabled:opacity-50",
             option.className
           )}
         >
           <span>{option.label}</span>
-          <span className="text-xs font-normal opacity-80">
+          <span className="mt-0.5 text-[11px] font-normal opacity-60">
             {previewInterval(card, option)}
           </span>
         </button>
