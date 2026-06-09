@@ -27,22 +27,14 @@ export function NotificationChecker() {
   // between the optimistic is_sent flip and the next refetch.
   const firedRef = useRef<Set<string>>(new Set());
 
-  // (a) Ask for notification permission once, on mount.
-  useEffect(() => {
-    try {
-      if (
-        typeof Notification !== "undefined" &&
-        Notification.permission === "default"
-      ) {
-        void Notification.requestPermission();
-      }
-    } catch {
-      // Browser doesn't support the Notifications API — ignore.
-    }
-  }, []);
-
-  // Register/sync this device's Web Push subscription when notifications are on,
-  // so reminders can fire via the server even while Prism is closed.
+  // Do NOT auto-request notification permission here: iOS only shows the prompt
+  // in response to a user gesture (a button tap), so requesting on mount is
+  // silently blocked. Permission is requested from the Settings page button.
+  //
+  // If permission was already granted (e.g. on a previous visit), register/sync
+  // this device's Web Push subscription so reminders can fire while Prism is
+  // closed. This does not prompt — getSubscription/subscribe only proceed when
+  // permission is already 'granted'.
   useEffect(() => {
     if (
       typeof Notification !== "undefined" &&

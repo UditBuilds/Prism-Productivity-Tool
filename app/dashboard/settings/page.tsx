@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { NotificationsCard } from "@/components/settings/NotificationsCard";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -108,6 +109,8 @@ export default function SettingsPage() {
           </form>
         )}
       </div>
+
+      <NotificationsCard />
     </div>
   );
 }

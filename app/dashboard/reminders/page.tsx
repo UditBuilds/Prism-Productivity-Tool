@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Plus, Bell, BellOff, CheckCheck, AlertCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -46,8 +47,20 @@ const tabs: { value: Filter; label: string }[] = [
 
 export default function RemindersPage() {
   const [filter, setFilter] = useState<Filter>("all");
+  const [showEnableBanner, setShowEnableBanner] = useState(false);
   const openCreateReminder = useUIStore((s) => s.openCreateReminder);
   const { data: reminders, isLoading, isError, refetch } = useRemindersQuery();
+
+  // Nudge users to turn on notifications (client-only — Notification is
+  // undefined during SSR). Only when permission hasn't been decided yet.
+  useEffect(() => {
+    if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "default"
+    ) {
+      setShowEnableBanner(true);
+    }
+  }, []);
 
   const counts = useMemo(() => {
     const list = reminders ?? [];
@@ -74,6 +87,22 @@ export default function RemindersPage() {
           New Reminder
         </Button>
       </div>
+
+      {showEnableBanner && (
+        <Link
+          href="/dashboard/settings"
+          className="mt-4 flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-accent/15"
+        >
+          <Bell className="h-4 w-4 shrink-0 text-accent" />
+          <span className="flex-1">
+            Enable notifications in Settings to get reminders when the app is
+            closed
+          </span>
+          <span aria-hidden className="text-accent">
+            →
+          </span>
+        </Link>
+      )}
 
       <Tabs
         value={filter}
