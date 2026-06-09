@@ -28,6 +28,13 @@ export async function POST(request: Request) {
   const noteId = typeof body.note_id === "string" ? body.note_id : "";
   if (!noteId) return json({ data: null, error: "note_id is required" }, 400);
 
+  // Optional desired card count (clamp 5–30; default 8 if absent/invalid).
+  const rawCount =
+    typeof body.cardCount === "number" ? body.cardCount : NaN;
+  const cardCount = Number.isFinite(rawCount)
+    ? Math.min(30, Math.max(5, Math.round(rawCount)))
+    : 8;
+
   // Fetch the note (RLS scopes to the user; also explicit-check ownership).
   const { data: note, error: noteError } = await supabase
     .from("notes")
@@ -40,7 +47,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const cards = await generateFlashcardsFromNote(note.title, note.content);
+    const cards = await generateFlashcardsFromNote(
+      note.title,
+      note.content,
+      cardCount
+    );
     return json<GeneratedCard[]>({ data: cards, error: null });
   } catch (err) {
     console.error("AI generate error:", err);

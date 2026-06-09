@@ -258,6 +258,11 @@ export interface GeneratedCard {
   back: string;
 }
 
+export interface GenerateCardsInput {
+  noteId: string;
+  cardCount?: number;
+}
+
 /**
  * Generate draft cards from a note via the AI provider. Does NOT persist — the modal
  * lets the user review/edit before saving. Errors surface to the caller (the
@@ -265,9 +270,10 @@ export interface GeneratedCard {
  */
 export function useGenerateCards() {
   return useMutation({
-    mutationFn: (noteId: string) =>
+    mutationFn: (input: GenerateCardsInput) =>
       request<GeneratedCard[]>("/api/srs/generate", "POST", {
-        note_id: noteId,
+        note_id: input.noteId,
+        cardCount: input.cardCount,
       }),
   });
 }

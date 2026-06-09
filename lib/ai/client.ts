@@ -11,7 +11,8 @@ const MODEL = "llama-3.3-70b-versatile";
  */
 export async function generateFlashcardsFromNote(
   noteTitle: string,
-  noteContent: string
+  noteContent: string,
+  cardCount: number = 8
 ): Promise<{ front: string; back: string }[]> {
   // Guard: too short to generate meaningful cards
   if (noteContent.trim().length < 100) {
@@ -25,7 +26,7 @@ export async function generateFlashcardsFromNote(
 RULES:
 1. Return ONLY a valid JSON array. No markdown, no explanation, no preamble, no trailing text.
 2. Format: [{"front":"question","back":"answer"}]
-3. Generate 4-8 cards based on note complexity.
+3. Generate exactly ${cardCount} cards (or fewer only if the content genuinely doesn't support that many).
 4. Questions must be specific and testable, not vague.
 5. Break complex ideas into multiple focused cards.
 6. Never generate cards that are too obvious.

@@ -8,7 +8,7 @@ import { generateFlashcardsFromNote } from "@/lib/ai/client";
 export const runtime = "nodejs";
 
 const MAX_BYTES = 4 * 1024 * 1024; // 4MB
-const MAX_CHARS = 6000; // Groq context safety
+const MAX_CHARS = 20000; // Groq LLaMA 3.3-70B has 128K-token context — safe
 const MIN_CHARS = 100;
 
 type GeneratedCard = { front: string; back: string };
@@ -58,6 +58,14 @@ export async function POST(request: Request) {
     return json({ data: null, error: "PDF too large (max 4MB)" }, 400);
   }
 
+  // Optional desired card count (clamp 5–30; default 10 if absent/invalid).
+  const rawCount = formData.get("cardCount");
+  const parsedCount =
+    typeof rawCount === "string" ? parseInt(rawCount, 10) : NaN;
+  const cardCount = Number.isFinite(parsedCount)
+    ? Math.min(30, Math.max(5, parsedCount))
+    : 10;
+
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
 
@@ -82,7 +90,7 @@ export async function POST(request: Request) {
 
     const filename = file.name;
     const title = filename.replace(/\.pdf$/i, "");
-    const cards = await generateFlashcardsFromNote(title, cleanText);
+    const cards = await generateFlashcardsFromNote(title, cleanText, cardCount);
 
     return json<AnalyzeData>({
       data: {

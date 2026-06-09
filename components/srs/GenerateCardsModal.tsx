@@ -15,6 +15,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CardCountPills } from "@/components/shared/CardCountPills";
+
+const CARD_COUNT_OPTIONS = [5, 8, 10, 15, 20];
 
 type Phase = "idle" | "generating" | "preview" | "saving";
 
@@ -41,6 +44,7 @@ export function GenerateCardsModal({
   const [phase, setPhase] = useState<Phase>("idle");
   const [cards, setCards] = useState<DraftCard[]>([]);
   const [deckName, setDeckName] = useState(noteTitle);
+  const [cardCount, setCardCount] = useState(8);
   const [error, setError] = useState<string | null>(null);
 
   // Reset to a clean idle state every time the modal opens.
@@ -49,6 +53,7 @@ export function GenerateCardsModal({
       setPhase("idle");
       setCards([]);
       setDeckName(noteTitle);
+      setCardCount(8);
       setError(null);
     }
   }, [open, noteTitle]);
@@ -64,7 +69,7 @@ export function GenerateCardsModal({
     setError(null);
     setPhase("generating");
     try {
-      const result = await generate.mutateAsync(noteId);
+      const result = await generate.mutateAsync({ noteId, cardCount });
       setCards(
         result.map((c) => ({
           id: crypto.randomUUID(),
@@ -134,6 +139,18 @@ export function GenerateCardsModal({
             <span className="max-w-full truncate rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
               {noteTitle}
             </span>
+          </div>
+        )}
+
+        {/* Card count selector */}
+        {phase === "idle" && (
+          <div className="space-y-2">
+            <Label>Number of cards to generate</Label>
+            <CardCountPills
+              value={cardCount}
+              onChange={setCardCount}
+              options={CARD_COUNT_OPTIONS}
+            />
           </div>
         )}
 

@@ -26,8 +26,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CardCountPills } from "@/components/shared/CardCountPills";
 
 const MAX_BYTES = 4 * 1024 * 1024;
+const CARD_COUNT_OPTIONS = [5, 10, 15, 20, 25, 30];
 
 type Phase = "idle" | "uploading" | "preview" | "saving";
 
@@ -53,8 +55,15 @@ function validateFile(file: File): string | null {
   return null;
 }
 
-function baseName(filename: string): string {
-  return filename.replace(/\.pdf$/i, "");
+/** Turn a messy PDF filename into a readable deck name. */
+function cleanFilename(filename: string): string {
+  return filename
+    .replace(/\.pdf$/i, "")
+    .replace(/^[_\-\s]*[a-zA-Z0-9]+\.[a-zA-Z]{2,4}[_\-\s]*/i, "")
+    // removes domain prefixes like _OceanofPDF.com_
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** POST JSON and unwrap the { data, error } envelope, throwing on failure. */
@@ -82,6 +91,7 @@ export function PDFUploadModal() {
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [cards, setCards] = useState<DraftCard[]>([]);
   const [deckName, setDeckName] = useState("");
+  const [cardCount, setCardCount] = useState(10);
   const [saveAsNote, setSaveAsNote] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -96,6 +106,7 @@ export function PDFUploadModal() {
       setResult(null);
       setCards([]);
       setDeckName("");
+      setCardCount(10);
       setSaveAsNote(true);
       setError(null);
       setDragging(false);
@@ -107,12 +118,13 @@ export function PDFUploadModal() {
     close();
   }
 
-  async function analyze(file: File) {
+  async function analyze(target: File) {
     setError(null);
     setPhase("uploading");
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", target);
+      fd.append("cardCount", String(cardCount));
       const res = await fetch("/api/pdf/analyze", { method: "POST", body: fd });
       const json = (await res.json()) as {
         data: AnalyzeResult | null;
@@ -129,7 +141,7 @@ export function PDFUploadModal() {
           back: c.back,
         }))
       );
-      setDeckName(baseName(json.data.filename));
+      setDeckName(cleanFilename(json.data.filename));
       setPhase("preview");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to analyze the PDF.");
@@ -137,28 +149,28 @@ export function PDFUploadModal() {
     }
   }
 
-  function acceptFile(selected: File | undefined | null) {
+  function selectFile(selected: File | undefined | null) {
     if (!selected) return;
     const validationError = validateFile(selected);
     if (validationError) {
       setError(validationError);
       return;
     }
+    setError(null);
     setFile(selected);
-    void analyze(selected);
   }
 
   async function handleSave() {
     if (!result || cards.length === 0) return;
     setError(null);
     setPhase("saving");
-    const deck = deckName.trim() || baseName(result.filename) || "Default";
+    const deck = deckName.trim() || cleanFilename(result.filename) || "Default";
 
     try {
       let noteId: string | null = null;
       if (saveAsNote) {
         const note = await postJson<Note>("/api/notes", {
-          title: baseName(result.filename),
+          title: cleanFilename(result.filename) || result.filename,
           content: result.extractedText,
           tags: ["pdf-import"],
         });
@@ -200,11 +212,16 @@ export function PDFUploadModal() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-accent" />
-            {phase === "preview"
-              ? `Review Generated Cards (${cards.length} card${
-                  cards.length === 1 ? "" : "s"
-                })`
-              : "Generate Flashcards from PDF"}
+            {phase === "preview" ? (
+              <>
+                Review Generated Cards
+                <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground">
+                  {cards.length}
+                </span>
+              </>
+            ) : (
+              "Generate Flashcards from PDF"
+            )}
           </DialogTitle>
           {phase === "idle" && (
             <DialogDescription>
@@ -222,44 +239,66 @@ export function PDFUploadModal() {
           </div>
         )}
 
-        {/* IDLE — drop zone */}
+        {/* IDLE — drop zone + count selector */}
         {phase === "idle" && (
-          <div>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              className="hidden"
-              onChange={(e) => acceptFile(e.target.files?.[0])}
-            />
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragging(false);
-                acceptFile(e.dataTransfer.files?.[0]);
-              }}
-              className={cn(
-                "flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors",
-                dragging
-                  ? "border-accent bg-accent/10"
-                  : "border-border bg-surface hover:border-muted-foreground/40"
+          <div className="space-y-4">
+            <div>
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={(e) => selectFile(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  selectFile(e.dataTransfer.files?.[0]);
+                }}
+                className={cn(
+                  "flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors md:min-h-32",
+                  dragging
+                    ? "border-accent bg-accent/10"
+                    : "border-border bg-surface hover:border-muted-foreground/40"
+                )}
+              >
+                <FileText className="h-10 w-10 text-accent" />
+                <span className="text-sm font-medium text-foreground">
+                  Drop your PDF here or click to browse
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Text-based PDFs only · Max 4MB
+                </span>
+              </button>
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                Text-based PDFs only — scanned images won&apos;t work
+              </p>
+
+              {/* Selected file (not yet uploading) */}
+              {file && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm">
+                  <FileText className="h-4 w-4 shrink-0 text-accent" />
+                  <span className="truncate text-foreground">{file.name}</span>
+                </div>
               )}
-            >
-              <FileText className="h-10 w-10 text-accent" />
-              <span className="text-sm font-medium text-foreground">
-                Drop your PDF here or click to browse
-              </span>
-              <span className="text-xs text-muted-foreground">
-                Text-based PDFs only · Max 4MB
-              </span>
-            </button>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Number of cards to generate</Label>
+              <CardCountPills
+                value={cardCount}
+                onChange={setCardCount}
+                options={CARD_COUNT_OPTIONS}
+              />
+            </div>
           </div>
         )}
 
@@ -295,10 +334,13 @@ export function PDFUploadModal() {
               </div>
             )}
 
-            <p className="truncate text-xs text-muted-foreground">
-              {result.filename} · {result.pageCount} page
-              {result.pageCount === 1 ? "" : "s"}
-            </p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <FileText className="h-4 w-4 shrink-0 text-accent" />
+              <span className="truncate">{cleanFilename(result.filename)}</span>
+              <span className="shrink-0">
+                · {result.pageCount} page{result.pageCount === 1 ? "" : "s"}
+              </span>
+            </div>
 
             <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
               {cards.length === 0 ? (
@@ -377,14 +419,23 @@ export function PDFUploadModal() {
               </Button>
             </>
           ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleClose}
-              disabled={busy}
-            >
-              Cancel
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleClose}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => file && analyze(file)}
+                disabled={!file || busy}
+              >
+                Generate Cards
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>
