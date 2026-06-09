@@ -59,6 +59,11 @@ interface UIState {
   generateCardNoteTitle: string;
   openGenerateModal: (id: string, title: string) => void;
   closeGenerateModal: () => void;
+
+  /** "Generate flashcards from PDF" upload modal. */
+  pdfModalOpen: boolean;
+  openPdfModal: () => void;
+  closePdfModal: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -125,4 +130,8 @@ export const useUIStore = create<UIState>((set) => ({
     set({ generateCardNoteId: id, generateCardNoteTitle: title }),
   closeGenerateModal: () =>
     set({ generateCardNoteId: null, generateCardNoteTitle: "" }),
+
+  pdfModalOpen: false,
+  openPdfModal: () => set({ pdfModalOpen: true }),
+  closePdfModal: () => set({ pdfModalOpen: false }),
 }));

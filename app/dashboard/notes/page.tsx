@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Search, FileText, AlertCircle, X } from "lucide-react";
+import { Plus, Search, FileText, Upload, AlertCircle, X } from "lucide-react";
 
 import { useNotesQuery } from "@/hooks/useNotes";
 import { useUIStore } from "@/store/ui.store";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { NoteList } from "@/components/notes/NoteList";
 import { NoteForm } from "@/components/notes/NoteForm";
 import { GenerateCardsModal } from "@/components/srs/GenerateCardsModal";
+import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 
@@ -27,6 +28,7 @@ function matchesQuery(note: Note, q: string): boolean {
 export default function NotesPage() {
   const [query, setQuery] = useState("");
   const openCreateNote = useUIStore((s) => s.openCreateNote);
+  const openPdfModal = useUIStore((s) => s.openPdfModal);
   const generateCardNoteId = useUIStore((s) => s.generateCardNoteId);
   const generateCardNoteTitle = useUIStore((s) => s.generateCardNoteTitle);
   const closeGenerateModal = useUIStore((s) => s.closeGenerateModal);
@@ -44,10 +46,20 @@ export default function NotesPage() {
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-foreground">Notes</h1>
-        <Button onClick={openCreateNote} className="rounded-lg">
-          <Plus className="mr-1.5 h-4 w-4" />
-          New Note
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={openPdfModal}
+            className="rounded-lg"
+          >
+            <Upload className="mr-1.5 h-4 w-4" />
+            Upload PDF
+          </Button>
+          <Button onClick={openCreateNote} className="rounded-lg">
+            <Plus className="mr-1.5 h-4 w-4" />
+            New Note
+          </Button>
+        </div>
       </div>
 
       {hasNotes && (
@@ -121,6 +133,7 @@ export default function NotesPage() {
         open={generateCardNoteId !== null}
         onClose={closeGenerateModal}
       />
+      <PDFUploadModal />
     </div>
   );
 }

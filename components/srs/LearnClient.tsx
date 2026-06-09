@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Plus, Brain, Layers, Flame, CalendarClock, AlertCircle } from "lucide-react";
+import { Plus, Upload, Brain, Layers, Flame, CalendarClock, AlertCircle } from "lucide-react";
 
 import { istDayContext } from "@/lib/date";
 import { useAllCards, useDeckStats } from "@/hooks/useSRS";
@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { DeckCard } from "@/components/srs/DeckCard";
 import { CardForm } from "@/components/srs/CardForm";
+import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
 
 // Lazy-load the analytics panel so recharts only ships when the Analytics tab
 // is opened (keeps the Learn page's initial bundle lean).
@@ -43,6 +44,7 @@ const AnalyticsPanel = dynamic(
 
 export function LearnClient({ streak }: { streak: number }) {
   const openCreateCard = useUIStore((s) => s.openCreateCard);
+  const openPdfModal = useUIStore((s) => s.openPdfModal);
   const { data: cards, isLoading, isError, refetch } = useAllCards();
   const { data: decks } = useDeckStats();
   const { data: notes } = useNotesQuery();
@@ -77,10 +79,20 @@ export function LearnClient({ streak }: { streak: number }) {
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-foreground">Learn</h1>
-        <Button onClick={openCreateCard} className="rounded-lg">
-          <Plus className="mr-1.5 h-4 w-4" />
-          Add Card
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={openPdfModal}
+            className="rounded-lg"
+          >
+            <Upload className="mr-1.5 h-4 w-4" />
+            Upload PDF
+          </Button>
+          <Button onClick={openCreateCard} className="rounded-lg">
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Card
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="decks" className="mt-5">
@@ -182,6 +194,7 @@ export function LearnClient({ streak }: { streak: number }) {
       </Tabs>
 
       <CardForm />
+      <PDFUploadModal />
     </div>
   );
 }

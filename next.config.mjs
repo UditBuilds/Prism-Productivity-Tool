@@ -19,6 +19,13 @@ const withPWA = withPWAInit({
 });
 
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  experimental: {
+    // Don't bundle pdf-parse into the server build — require() it at runtime.
+    // Bundling triggers its index.js debug branch (module.parent undefined →
+    // fs.readFileSync of a test PDF → ENOENT) and pulls in pdfjs needlessly.
+    serverComponentsExternalPackages: ["pdf-parse"],
+  },
+};
 
 export default withPWA(nextConfig);
