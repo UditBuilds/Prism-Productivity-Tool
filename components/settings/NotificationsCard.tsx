@@ -41,8 +41,13 @@ export function NotificationsCard() {
       setPermission(result);
       if (result === "granted") {
         const sub = await subscribe();
-        setSubscribed(!!sub);
-        if (sub) toast.success("Notifications enabled");
+        if (sub.success) {
+          setSubscribed(true);
+          toast.success("Notifications enabled!");
+        } else {
+          // Surface the real failure (helps debug iOS push issues).
+          toast.error(`Notification setup failed: ${sub.error}`);
+        }
       }
     } catch {
       toast.error("Couldn't enable notifications");

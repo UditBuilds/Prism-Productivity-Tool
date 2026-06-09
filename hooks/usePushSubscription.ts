@@ -1,5 +1,11 @@
 // Browser push subscription helper. Subscribes the current device to Web Push
 // and syncs the subscription to the DB so the cron job can reach it.
+import { useState } from "react";
+
+export interface SubscribeResult {
+  success: boolean;
+  error?: string;
+}
 
 /**
  * base64url → Uint8Array (loop form; avoids ES5 iterable-spread issues).
@@ -27,12 +33,18 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+/**
+ * POST the subscription to the DB. Throws on a missing-key or non-OK response
+ * so the caller's try/catch can surface the real reason a row never appeared.
+ */
 async function syncSubscription(sub: PushSubscription): Promise<void> {
   const key = sub.getKey("p256dh");
   const auth = sub.getKey("auth");
-  if (!key || !auth) return;
+  if (!key || !auth) {
+    throw new Error("Subscription is missing encryption keys");
+  }
 
-  await fetch("/api/push/subscribe", {
+  const res = await fetch("/api/push/subscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -42,36 +54,65 @@ async function syncSubscription(sub: PushSubscription): Promise<void> {
       userAgent: navigator.userAgent,
     }),
   });
+
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) detail = body.error;
+    } catch {
+      // Non-JSON response — keep the status code.
+    }
+    throw new Error(`Saving subscription failed (${detail})`);
+  }
 }
 
 export function usePushSubscription() {
-  const subscribe = async (): Promise<PushSubscription | null> => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      return null; // Not supported (e.g. iOS < 16.4, or non-PWA context)
+  const [error, setError] = useState<string | null>(null);
+
+  const subscribe = async (): Promise<SubscribeResult> => {
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        return {
+          success: false,
+          error: "Push not supported on this browser",
+        };
+      }
+
+      // iOS can be slow to activate the service worker — race a 10s timeout so
+      // a stuck SW surfaces as an error instead of hanging forever.
+      const registration = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Service worker timed out after 10s")),
+            10000
+          )
+        ),
+      ]);
+
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        await syncSubscription(existing);
+        return { success: true };
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(
+          process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+        ),
+      });
+
+      await syncSubscription(subscription);
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Push subscribe failed:", err);
+      setError(message);
+      return { success: false, error: message };
     }
-
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return null;
-
-    const registration = await navigator.serviceWorker.ready;
-
-    const existing = await registration.pushManager.getSubscription();
-    if (existing) {
-      // Already subscribed — make sure the DB has it.
-      await syncSubscription(existing);
-      return existing;
-    }
-
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(
-        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
-      ),
-    });
-
-    await syncSubscription(subscription);
-    return subscription;
   };
 
-  return { subscribe };
+  return { subscribe, subscribeError: error };
 }
