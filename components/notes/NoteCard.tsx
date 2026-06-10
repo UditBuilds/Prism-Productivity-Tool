@@ -4,6 +4,7 @@ import { formatDistanceToNow } from "date-fns";
 import { MoreHorizontal, Pencil, Sparkles, Trash2 } from "lucide-react";
 
 import { markdownExcerpt } from "@/lib/markdown";
+import { getTagColor } from "@/lib/tag-colors";
 import { useUIStore } from "@/store/ui.store";
 import { useDeleteNote } from "@/hooks/useNotes";
 import type { Note } from "@/types/database";
@@ -90,16 +91,19 @@ export function NoteCard({
 
       {note.tags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {note.tags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => onTagClick?.(tag)}
-              className="rounded-md bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent transition hover:bg-accent/25"
-            >
-              #{tag}
-            </button>
-          ))}
+          {note.tags.map((tag) => {
+            const color = getTagColor(tag);
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => onTagClick?.(tag)}
+                className={`${color.bg} ${color.text} ${color.border} rounded-full border px-2 py-0.5 text-[11px] font-medium hover:opacity-80`}
+              >
+                #{tag}
+              </button>
+            );
+          })}
         </div>
       )}
 

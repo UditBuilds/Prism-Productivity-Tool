@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, Settings } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/hooks/useUser";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { NotificationsCard } from "@/components/settings/NotificationsCard";
 
 export default function SettingsPage() {
@@ -53,7 +54,11 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
+      <PageHeader
+        title="Settings"
+        subtitle="Account and preferences"
+        icon={Settings}
+      />
 
       <div className="mt-5 max-w-lg rounded-xl border border-border bg-surface p-6">
         <h2 className="text-base font-semibold text-foreground">Profile</h2>

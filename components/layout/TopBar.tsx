@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -30,6 +31,16 @@ export function TopBar({
   const title = titleForPath(pathname);
   const today = format(new Date(), "EEEE, d MMMM");
 
+  // Live clock, ticking every minute. Rendered only after mount to avoid a
+  // server/client hydration mismatch.
+  const [time, setTime] = useState<string | null>(null);
+  useEffect(() => {
+    const tick = () => setTime(format(new Date(), "h:mm a"));
+    tick();
+    const interval = setInterval(tick, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Dot when a pending reminder is due within the next 24 hours.
   const { data: upcoming } = useUpcomingReminders();
   const hasSoonReminder = (upcoming ?? []).some((r) => {
@@ -51,6 +62,12 @@ export function TopBar({
       <div className="flex items-center gap-4">
         <span className="hidden text-sm text-muted-foreground sm:block">
           {today}
+          {time && (
+            <>
+              <span className="text-[#333]"> · </span>
+              <span className="text-[#555]">{time}</span>
+            </>
+          )}
         </span>
 
         <button

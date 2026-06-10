@@ -124,16 +124,8 @@ export default async function DashboardHome() {
 
       {/* Due Today */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center gap-2 border-l-2 border-violet-500 pl-3">
           <h2 className="text-base font-semibold text-foreground">Due Today</h2>
-          {dueCount > 5 && (
-            <Link
-              href="/dashboard/tasks"
-              className="text-sm font-medium text-accent hover:text-accent-hover"
-            >
-              View all tasks →
-            </Link>
-          )}
         </div>
 
         {dueError ? (
@@ -151,42 +143,54 @@ export default async function DashboardHome() {
             </p>
           </div>
         ) : (
-          <ul className="space-y-2">
-            {dueTasks.map((task) => (
-              <li
-                key={task.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3"
+          <>
+            <ul className="space-y-2">
+              {dueTasks.map((task) => (
+                <li key={task.id}>
+                  <Link
+                    href={`/dashboard/tasks/${task.id}`}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition hover:bg-[#111]"
+                  >
+                    <span
+                      className={cn(
+                        "truncate text-sm font-medium text-foreground",
+                        task.status === "done" &&
+                          "text-muted-foreground line-through"
+                      )}
+                    >
+                      {task.title}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "rounded-md px-2 py-0.5 text-xs font-medium capitalize",
+                          priorityStyles[task.priority]
+                        )}
+                      >
+                        {task.priority}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-xs font-medium",
+                          statusStyles[task.status]
+                        )}
+                      >
+                        {statusLabel[task.status]}
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 text-right">
+              <Link
+                href="/dashboard/tasks"
+                className="text-xs text-violet-400 hover:text-violet-300"
               >
-                <span
-                  className={cn(
-                    "truncate text-sm font-medium text-foreground",
-                    task.status === "done" &&
-                      "text-muted-foreground line-through"
-                  )}
-                >
-                  {task.title}
-                </span>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span
-                    className={cn(
-                      "rounded-md px-2 py-0.5 text-xs font-medium capitalize",
-                      priorityStyles[task.priority]
-                    )}
-                  >
-                    {task.priority}
-                  </span>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs font-medium",
-                      statusStyles[task.status]
-                    )}
-                  >
-                    {statusLabel[task.status]}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
+                View all →
+              </Link>
+            </div>
+          </>
         )}
       </section>
     </div>

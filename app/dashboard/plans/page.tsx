@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlanList, type PlanTaskStat } from "@/components/plans/PlanList";
 import { PlanForm } from "@/components/plans/PlanForm";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 
@@ -86,13 +87,17 @@ export default function PlansPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Plans</h1>
-        <Button onClick={openCreatePlan} className="rounded-lg">
-          <Plus className="mr-1.5 h-4 w-4" />
-          New Plan
-        </Button>
-      </div>
+      <PageHeader
+        title="Plans"
+        subtitle="Goals and projects"
+        icon={Target}
+        actions={
+          <Button onClick={openCreatePlan} className="rounded-lg">
+            <Plus className="mr-1.5 h-4 w-4" />
+            New Plan
+          </Button>
+        }
+      />
 
       <Tabs
         value={filter}

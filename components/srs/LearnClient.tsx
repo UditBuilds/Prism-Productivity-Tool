@@ -12,7 +12,9 @@ import { useUIStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptyCards } from "@/components/shared/EmptyStates";
 import { DeckCard } from "@/components/srs/DeckCard";
 import { CardForm } from "@/components/srs/CardForm";
 import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
@@ -77,23 +79,28 @@ export function LearnClient({ streak }: { streak: number }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Learn</h1>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            onClick={openPdfModal}
-            className="rounded-lg"
-          >
-            <Upload className="mr-1.5 h-4 w-4" />
-            Upload PDF
-          </Button>
-          <Button onClick={openCreateCard} className="rounded-lg">
-            <Plus className="mr-1.5 h-4 w-4" />
-            Add Card
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Learn"
+        subtitle="Spaced repetition system"
+        icon={Brain}
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              onClick={openPdfModal}
+              className="rounded-lg"
+            >
+              <Upload className="mr-1.5 h-4 w-4" />
+              <span className="hidden sm:inline">Upload PDF</span>
+              <span className="sm:hidden">PDF</span>
+            </Button>
+            <Button onClick={openCreateCard} className="rounded-lg">
+              <Plus className="mr-1.5 h-4 w-4" />
+              Add Card
+            </Button>
+          </>
+        }
+      />
 
       <Tabs defaultValue="decks" className="mt-5">
         <TabsList className="grid w-full max-w-xs grid-cols-2">
@@ -161,10 +168,7 @@ export function LearnClient({ streak }: { streak: number }) {
             }
           />
         ) : (decks?.length ?? 0) === 0 ? (
-          <EmptyState
-            icon={Brain}
-            title="No flashcards yet"
-            description="Go to Notes and click 'Generate Flashcards' on any note, or add cards manually with the button above."
+          <EmptyCards
             action={
               <Button onClick={openCreateCard} className="rounded-lg">
                 <Plus className="mr-1.5 h-4 w-4" />

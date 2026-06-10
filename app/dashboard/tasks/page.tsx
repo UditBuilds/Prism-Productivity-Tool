@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react";
 import {
   Plus,
-  Inbox,
   ListTodo,
   Clock,
+  CheckSquare,
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
@@ -20,8 +20,10 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskList } from "@/components/tasks/TaskList";
 import { TaskForm } from "@/components/tasks/TaskForm";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptyTasks } from "@/components/shared/EmptyStates";
 
 type Filter = "all" | TaskStatus;
 
@@ -44,15 +46,11 @@ function sortTasks(tasks: Task[]): Task[] {
   });
 }
 
+// Filter-specific empties; the "all" case uses the custom EmptyTasks SVG.
 const emptyByFilter: Record<
-  Filter,
+  Exclude<Filter, "all">,
   { icon: LucideIcon; title: string; description: string }
 > = {
-  all: {
-    icon: Inbox,
-    title: "No tasks yet",
-    description: "Create your first task to get started.",
-  },
   todo: {
     icon: ListTodo,
     title: "Nothing to do",
@@ -101,13 +99,17 @@ export default function TasksPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Tasks</h1>
-        <Button onClick={openCreateTask} className="rounded-lg">
-          <Plus className="mr-1.5 h-4 w-4" />
-          New Task
-        </Button>
-      </div>
+      <PageHeader
+        title="Tasks"
+        subtitle="Manage and track your work"
+        icon={CheckSquare}
+        actions={
+          <Button onClick={openCreateTask} className="rounded-lg">
+            <Plus className="mr-1.5 h-4 w-4" />
+            New Task
+          </Button>
+        }
+      />
 
       <Tabs
         value={filter}
@@ -161,19 +163,22 @@ export default function TasksPage() {
             }
           />
         ) : visible.length === 0 ? (
-          <EmptyState
-            icon={emptyByFilter[filter].icon}
-            title={emptyByFilter[filter].title}
-            description={emptyByFilter[filter].description}
-            action={
-              filter === "all" ? (
+          filter === "all" ? (
+            <EmptyTasks
+              action={
                 <Button onClick={openCreateTask} className="rounded-lg">
                   <Plus className="mr-1.5 h-4 w-4" />
                   New Task
                 </Button>
-              ) : undefined
-            }
-          />
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={emptyByFilter[filter].icon}
+              title={emptyByFilter[filter].title}
+              description={emptyByFilter[filter].description}
+            />
+          )
         ) : (
           <TaskList tasks={visible} />
         )}

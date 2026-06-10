@@ -5,9 +5,11 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { mobileNavItems, isNavActive } from "./nav-config";
+import { NavBadge, useNavBadgeCounts } from "./NavBadges";
 
 export function MobileNav() {
   const pathname = usePathname();
+  const badges = useNavBadgeCounts();
 
   return (
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 flex border-t border-[#1A1A1A] bg-[#0A0A0A]/90 backdrop-blur-xl md:hidden">
@@ -23,10 +25,26 @@ export function MobileNav() {
               active ? "text-violet-400" : "text-muted-foreground"
             )}
           >
-            <Icon
-              className={cn("h-6 w-6", active && "fill-violet-500/20")}
-              strokeWidth={active ? 2.25 : 2}
-            />
+            <span className="relative">
+              <Icon
+                className={cn("h-6 w-6", active && "fill-violet-500/20")}
+                strokeWidth={active ? 2.25 : 2}
+              />
+              {item.href === "/dashboard/learn" && (
+                <NavBadge
+                  count={badges.learn}
+                  color="violet"
+                  className="-right-2 -top-1.5"
+                />
+              )}
+              {item.href === "/dashboard/reminders" && (
+                <NavBadge
+                  count={badges.reminders}
+                  color="amber"
+                  className="-right-2 -top-1.5"
+                />
+              )}
+            </span>
             {item.label}
           </Link>
         );

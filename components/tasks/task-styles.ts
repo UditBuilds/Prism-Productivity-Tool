@@ -7,6 +7,17 @@ export const priorityStyles: Record<TaskPriority, string> = {
   high: "bg-gradient-to-r from-red-900/40 to-red-800/30 text-red-400 border border-red-700/30",
 };
 
+/**
+ * Left accent border per priority — instantly scannable on task cards.
+ * hover: variants re-assert the color so the card's hover:border-* (which sets
+ * all four sides) doesn't wash out the accent.
+ */
+export const priorityBorder: Record<TaskPriority, string> = {
+  low: "border-l-gray-600 hover:border-l-gray-600",
+  medium: "border-l-amber-500 hover:border-l-amber-500",
+  high: "border-l-red-500 hover:border-l-red-500",
+};
+
 export const statusStyles: Record<TaskStatus, string> = {
   todo: "bg-muted text-muted-foreground",
   in_progress: "bg-blue-500/15 text-blue-400",

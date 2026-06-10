@@ -7,10 +7,12 @@ import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn, getInitials } from "@/lib/utils";
 import { navItems, isNavActive } from "./nav-config";
+import { NavBadge, useNavBadgeCounts } from "./NavBadges";
 
 export function Sidebar({ displayName }: { displayName: string }) {
   const pathname = usePathname();
   const router = useRouter();
+  const badges = useNavBadgeCounts();
 
   async function handleLogout() {
     const supabase = createClient();
@@ -39,7 +41,7 @@ export function Sidebar({ displayName }: { displayName: string }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2 text-sm font-medium hover:translate-x-0.5",
+                "relative flex items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2 text-sm font-medium hover:translate-x-0.5",
                 active
                   ? "border-accent bg-[linear-gradient(to_right,rgba(124,58,237,0.12),transparent)] text-violet-400"
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
@@ -47,6 +49,12 @@ export function Sidebar({ displayName }: { displayName: string }) {
             >
               <Icon className="h-[18px] w-[18px] shrink-0" />
               {item.label}
+              {item.href === "/dashboard/learn" && (
+                <NavBadge count={badges.learn} color="violet" />
+              )}
+              {item.href === "/dashboard/reminders" && (
+                <NavBadge count={badges.reminders} color="amber" />
+              )}
             </Link>
           );
         })}

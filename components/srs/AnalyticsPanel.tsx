@@ -134,39 +134,49 @@ export function AnalyticsPanel({ streak }: { streak: number }) {
                 data={data.dailyActivity}
                 margin={{ top: 4, right: 8, bottom: 0, left: -20 }}
               >
+                <defs>
+                  <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#7C3AED" />
+                    <stop offset="100%" stopColor="#4C1D95" />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid
-                  strokeDasharray="3 3"
+                  strokeDasharray="4 4"
                   vertical={false}
-                  stroke="hsl(var(--border))"
+                  stroke="#1A1A1A"
                 />
                 <XAxis
                   dataKey="date"
                   tickFormatter={shortDate}
                   interval={4}
-                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fill: "#555", fontSize: 11 }}
                   tickLine={false}
-                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  axisLine={{ stroke: "#1A1A1A" }}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fill: "#555", fontSize: 11 }}
                   tickLine={false}
                   axisLine={false}
                   width={32}
                 />
                 <Tooltip
-                  cursor={{ fill: "hsl(var(--muted))" }}
+                  cursor={{ fill: "rgba(124, 58, 237, 0.06)" }}
                   contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "0.5rem",
+                    backgroundColor: "#111111",
+                    border: "1px solid #2A2A2A",
+                    borderRadius: "8px",
                     fontSize: "12px",
                   }}
-                  labelStyle={{ color: "hsl(var(--foreground))" }}
+                  labelStyle={{ color: "#F5F5F5" }}
                   labelFormatter={(label) => shortDate(String(label))}
                   formatter={(value) => [`${value}`, "Reviews"]}
                 />
-                <Bar dataKey="count" fill="#7C3AED" radius={[4, 4, 0, 0]} />
+                <Bar
+                  dataKey="count"
+                  fill="url(#barGradient)"
+                  radius={[4, 4, 0, 0]}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

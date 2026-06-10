@@ -13,8 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReminderList } from "@/components/reminders/ReminderList";
 import { ReminderForm } from "@/components/reminders/ReminderForm";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptyReminders } from "@/components/shared/EmptyStates";
 
 type Filter = "all" | "pending" | "sent";
 
@@ -80,13 +82,17 @@ export default function RemindersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Reminders</h1>
-        <Button onClick={openCreateReminder} className="rounded-lg">
-          <Plus className="mr-1.5 h-4 w-4" />
-          New Reminder
-        </Button>
-      </div>
+      <PageHeader
+        title="Reminders"
+        subtitle="Never miss what matters"
+        icon={Bell}
+        actions={
+          <Button onClick={openCreateReminder} className="rounded-lg">
+            <Plus className="mr-1.5 h-4 w-4" />
+            New Reminder
+          </Button>
+        }
+      />
 
       {showEnableBanner && (
         <Link
@@ -147,19 +153,22 @@ export default function RemindersPage() {
             }
           />
         ) : visible.length === 0 ? (
-          <EmptyState
-            icon={emptyByFilter[filter].icon}
-            title={emptyByFilter[filter].title}
-            description={emptyByFilter[filter].description}
-            action={
-              filter === "all" ? (
+          filter === "all" ? (
+            <EmptyReminders
+              action={
                 <Button onClick={openCreateReminder} className="rounded-lg">
                   <Plus className="mr-1.5 h-4 w-4" />
                   New Reminder
                 </Button>
-              ) : undefined
-            }
-          />
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={emptyByFilter[filter].icon}
+              title={emptyByFilter[filter].title}
+              description={emptyByFilter[filter].description}
+            />
+          )
         ) : (
           <ReminderList reminders={visible} />
         )}

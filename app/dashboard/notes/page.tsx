@@ -12,8 +12,10 @@ import { NoteList } from "@/components/notes/NoteList";
 import { NoteForm } from "@/components/notes/NoteForm";
 import { GenerateCardsModal } from "@/components/srs/GenerateCardsModal";
 import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptyNotes } from "@/components/shared/EmptyStates";
 
 /** Case-insensitive match across title, content, and tags. */
 function matchesQuery(note: Note, q: string): boolean {
@@ -44,23 +46,28 @@ export default function NotesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Notes</h1>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            onClick={openPdfModal}
-            className="rounded-lg"
-          >
-            <Upload className="mr-1.5 h-4 w-4" />
-            Upload PDF
-          </Button>
-          <Button onClick={openCreateNote} className="rounded-lg">
-            <Plus className="mr-1.5 h-4 w-4" />
-            New Note
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Notes"
+        subtitle="Your knowledge base"
+        icon={FileText}
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              onClick={openPdfModal}
+              className="rounded-lg"
+            >
+              <Upload className="mr-1.5 h-4 w-4" />
+              <span className="hidden sm:inline">Upload PDF</span>
+              <span className="sm:hidden">PDF</span>
+            </Button>
+            <Button onClick={openCreateNote} className="rounded-lg">
+              <Plus className="mr-1.5 h-4 w-4" />
+              New Note
+            </Button>
+          </>
+        }
+      />
 
       {hasNotes && (
         <div className="relative mt-5">
@@ -99,10 +106,7 @@ export default function NotesPage() {
             }
           />
         ) : !hasNotes ? (
-          <EmptyState
-            icon={FileText}
-            title="No notes yet"
-            description="Capture an idea — notes are the source AI will read to generate flashcards."
+          <EmptyNotes
             action={
               <Button onClick={openCreateNote} className="rounded-lg">
                 <Plus className="mr-1.5 h-4 w-4" />

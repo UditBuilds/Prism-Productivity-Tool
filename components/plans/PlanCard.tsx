@@ -88,18 +88,28 @@ export function PlanCard({
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <ListChecks className="h-3.5 w-3.5" />
-            {taskCount === 0
-              ? "No tasks yet"
-              : `${doneCount}/${taskCount} done`}
+            Progress
           </span>
-          {taskCount > 0 && <span className="tabular-nums">{pct}%</span>}
+          {taskCount > 0 && (
+            <span className="text-sm font-semibold tabular-nums text-violet-400">
+              {pct}%
+            </span>
+          )}
         </div>
-        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full bg-accent transition-all"
-            style={{ width: `${pct}%` }}
+            style={{
+              width: `${pct}%`,
+              ...(pct > 0 && { boxShadow: "0 0 6px rgba(124,58,237,0.5)" }),
+            }}
           />
         </div>
+        <p className="mt-1.5 text-xs text-[#555]">
+          {taskCount === 0
+            ? "No tasks linked yet"
+            : `${doneCount} of ${taskCount} task${taskCount === 1 ? "" : "s"} complete`}
+        </p>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

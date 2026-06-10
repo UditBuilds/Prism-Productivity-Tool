@@ -205,3 +205,23 @@ button,
 body {
   overscroll-behavior-y: contain;
 }
+
+/* ── Precision details ─────────────────────────────────────────── */
+
+/* Custom text selection color */
+::selection {
+  background-color: rgba(124, 58, 237, 0.3);
+  color: white;
+}
+
+/* Custom focus ring — violet instead of default */
+*:focus-visible {
+  outline: 2px solid rgba(124, 58, 237, 0.6);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Subtle glow on violet buttons when focused */
+.btn-primary-shimmer:focus-visible {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
+}
