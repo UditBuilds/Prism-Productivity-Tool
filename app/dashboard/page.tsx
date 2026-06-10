@@ -100,12 +100,12 @@ export default async function DashboardHome() {
       </header>
 
       {/* Stats */}
-      <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {stats.map(({ label, value, icon: Icon, accent }) => (
           <div
             key={label}
             className={cn(
-              "rounded-xl border border-[#1F1F1F] border-t-2 bg-[#111111] p-5 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/20",
+              "rounded-xl border border-[#1F1F1F] border-t-2 bg-[#111111] p-4 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/20 active:scale-[0.98] lg:p-6",
               accent
             )}
           >
@@ -113,9 +113,11 @@ export default async function DashboardHome() {
               <span className="text-xs font-medium uppercase tracking-widest text-[#666]">
                 {label}
               </span>
-              <Icon className="h-4 w-4 text-muted-foreground" />
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             </div>
-            <p className="mt-3 text-3xl font-bold text-white">{value}</p>
+            <p className="mt-3 text-2xl font-bold text-white lg:text-3xl">
+              {value}
+            </p>
           </div>
         ))}
       </section>

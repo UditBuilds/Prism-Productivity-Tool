@@ -45,7 +45,7 @@ export function TopBar({
   }
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur md:px-8">
+    <header className="pt-safe sticky top-0 z-20 flex h-[calc(4rem_+_env(safe-area-inset-top))] items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur md:px-8">
       <h1 className="text-lg font-semibold text-foreground">{title}</h1>
 
       <div className="flex items-center gap-4">

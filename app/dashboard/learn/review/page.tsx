@@ -202,8 +202,8 @@ function ReviewSession() {
         />
       </div>
 
-      {/* Controls */}
-      <div className="mt-6 min-h-[5rem]">
+      {/* Controls — sticky to the thumb zone (above the bottom nav) on mobile */}
+      <div className="sticky bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-20 -mx-4 mt-6 min-h-[5rem] border-t border-[#1A1A1A] bg-background/95 px-4 py-4 backdrop-blur-sm sm:static sm:mx-0 sm:border-none sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
         {isFlipped ? (
           <RatingButtons card={card} onRate={handleRate} />
         ) : (

@@ -36,7 +36,7 @@ export function TaskCard({ task }: { task: Task }) {
   const isDone = task.status === "done";
 
   return (
-    <div className="group cursor-default rounded-xl border border-[#1F1F1F] bg-[#111111] p-4 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/30">
+    <div className="group cursor-default rounded-xl border border-[#1F1F1F] bg-[#111111] p-4 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/30 active:scale-[0.98] active:opacity-90">
       <div className="flex items-start justify-between gap-2">
         <Link
           href={`/dashboard/tasks/${task.id}`}

@@ -70,10 +70,10 @@ const emptyByFilter: Record<
   },
 };
 
-const tabs: { value: Filter; label: string }[] = [
+const tabs: { value: Filter; label: string; shortLabel?: string }[] = [
   { value: "all", label: "All" },
   { value: "todo", label: "Todo" },
-  { value: "in_progress", label: "In Progress" },
+  { value: "in_progress", label: "In Progress", shortLabel: "Active" },
   { value: "done", label: "Done" },
 ];
 
@@ -121,7 +121,16 @@ export default function TasksPage() {
               value={tab.value}
               className="gap-1.5 text-xs sm:text-sm"
             >
-              <span className="truncate">{tab.label}</span>
+              <span className="truncate">
+                {tab.shortLabel ? (
+                  <>
+                    <span className="hidden sm:inline">{tab.label}</span>
+                    <span className="sm:hidden">{tab.shortLabel}</span>
+                  </>
+                ) : (
+                  tab.label
+                )}
+              </span>
               <span
                 className={cn(
                   "rounded-full px-1.5 text-[11px] tabular-nums",

@@ -42,7 +42,7 @@ export function FlashCard({
   onFlip: () => void;
 }) {
   return (
-    <div className="card-scene h-64 w-full md:h-72">
+    <div className="card-scene h-72 w-full sm:h-64">
       <button
         type="button"
         onClick={onFlip}

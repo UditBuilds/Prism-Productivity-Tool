@@ -35,7 +35,7 @@ export default async function DashboardLayout({
       <Sidebar displayName={displayName} />
       <div className="md:pl-60">
         <TopBar displayName={displayName} email={email} />
-        <main className="mx-auto max-w-6xl px-4 py-6 pb-24 md:px-8 md:pb-10">
+        <main className="mx-auto max-w-6xl px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] md:px-8 md:pb-10">
           {children}
         </main>
       </div>
