@@ -21,6 +21,8 @@ Two users (you + a collaborator). Everything private by default.
 - Session 6: Learning curve dashboard + polish + deploy prep ✅ COMPLETE
 - Session 7: PWA — installable on iOS + Android ✅ COMPLETE
 - Session 8: Web Push notifications (fire while app closed) ✅ COMPLETE & VERIFIED
+- Session 9: PDF → flashcards (pdf-parse + Groq) ✅ COMPLETE
+- Session 10: Focus timer, countdowns, quote of day, mobile UX ✅ COMPLETE
 - 🎉 Shipped. See DEPLOYMENT.md for deploy + cron setup.
 
 ## Design Rules
@@ -157,3 +159,25 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
   non-OK /api/push/subscribe response so silent DB-save failures surface. SW-ready has a 10s
   race-timeout. Byte helpers use loops (ES5 target) and an explicit ArrayBuffer for the
   applicationServerKey type.
+
+## Conventions & Gotchas (Session 10 — Focus, countdowns, quotes)
+- Focus timer state lives in store/focus.store.ts (Zustand). The 1-second ticker +
+  completion side effects (notification, PATCH completed, toast) live in
+  components/focus/FloatingTimer.tsx, which is ALWAYS mounted in dashboard/layout —
+  so the timer survives navigation. The focus page only renders state; never add a
+  second interval.
+- focus_sessions row is created on start (POST /api/focus) and the id stored via
+  setSessionId; ended via PATCH {completed}. Timer starts instantly, DB id attaches async.
+- Categories/durations in components/focus/categories.ts (static activeClass strings
+  for Tailwind JIT).
+- countdowns: target_date is a civil DATE ("YYYY-MM-DD"). Day math via lib/date.ts
+  daysUntilIst/formatCountdown/countdownProgressPct (IST day indexes — never new Date(str)
+  comparisons). Management UI = "Countdowns" tab on the Reminders page; dashboard
+  "Upcoming" widget server-fetches the next 3.
+- Quote of the day: lib/quotes.ts (exactly 100 entries, day-of-year rotation) +
+  components/dashboard/QuoteCard.tsx (client, tap-to-expand) above the greeting.
+- Mobile nav now shows Dashboard/Tasks/Notes/Focus/Learn — Settings moved out
+  (reachable via TopBar avatar dropdown), alongside Plans/Reminders.
+- TaskCard supports swipe gestures (touch only): right = mark done, left = delete with
+  a 5s Undo toast (setTimeout cancelled by the toast button). Horizontal-intent lock +
+  touch-action: pan-y keeps vertical scrolling intact.

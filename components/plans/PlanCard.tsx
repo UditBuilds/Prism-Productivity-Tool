@@ -39,7 +39,7 @@ export function PlanCard({
   const pct = taskCount === 0 ? 0 : Math.round((doneCount / taskCount) * 100);
 
   return (
-    <div className="group flex flex-col rounded-xl border border-border bg-surface p-4 hover:-translate-y-0.5 hover:border-muted-foreground/40 active:scale-[0.98] active:opacity-90">
+    <div className="group flex flex-col rounded-xl border border-border bg-surface p-4 duration-75 hover:-translate-y-0.5 hover:border-muted-foreground/40 active:scale-[0.99] active:opacity-90">
       <div className="flex items-start justify-between gap-2">
         <button
           type="button"

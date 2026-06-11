@@ -4,6 +4,7 @@ import {
   FileText,
   Target,
   Bell,
+  Timer,
   Brain,
   Settings,
   type LucideIcon,
@@ -21,13 +22,19 @@ export const navItems: NavItem[] = [
   { label: "Notes", href: "/dashboard/notes", icon: FileText },
   { label: "Plans", href: "/dashboard/plans", icon: Target },
   { label: "Reminders", href: "/dashboard/reminders", icon: Bell },
+  { label: "Focus", href: "/dashboard/focus", icon: Timer },
   { label: "Learn", href: "/dashboard/learn", icon: Brain },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
-// Mobile bottom bar shows 5. Plans and Reminders are omitted to keep the bar
-// uncrowded at 375px — Reminders stays reachable via the TopBar bell on mobile.
-const MOBILE_EXCLUDED = ["/dashboard/plans", "/dashboard/reminders"];
+// Mobile bottom bar shows 5. Plans/Reminders/Settings are omitted to keep the
+// bar uncrowded at 375px — Reminders stays reachable via the TopBar bell, and
+// Settings via the TopBar avatar dropdown.
+const MOBILE_EXCLUDED = [
+  "/dashboard/plans",
+  "/dashboard/reminders",
+  "/dashboard/settings",
+];
 export const mobileNavItems: NavItem[] = navItems.filter(
   (item) => !MOBILE_EXCLUDED.includes(item.href)
 );

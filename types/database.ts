@@ -254,6 +254,66 @@ export interface Database {
         };
         Relationships: [];
       };
+      focus_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          category: string;
+          duration_minutes: number;
+          completed: boolean;
+          started_at: string;
+          ended_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          category?: string;
+          duration_minutes: number;
+          completed?: boolean;
+          started_at?: string;
+          ended_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          category?: string;
+          duration_minutes?: number;
+          completed?: boolean;
+          started_at?: string;
+          ended_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      countdowns: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          target_date: string;
+          emoji: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          target_date: string;
+          emoji?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          target_date?: string;
+          emoji?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       push_subscriptions: {
         Row: {
           id: string;
@@ -302,3 +362,6 @@ export type SrsCard = Database["public"]["Tables"]["srs_cards"]["Row"];
 export type SrsReview = Database["public"]["Tables"]["srs_reviews"]["Row"];
 export type PushSubscriptionRow =
   Database["public"]["Tables"]["push_subscriptions"]["Row"];
+export type FocusSession =
+  Database["public"]["Tables"]["focus_sessions"]["Row"];
+export type Countdown = Database["public"]["Tables"]["countdowns"]["Row"];

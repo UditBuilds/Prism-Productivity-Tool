@@ -1,15 +1,29 @@
 import Link from "next/link";
-import { CalendarClock, CheckCircle2, Brain, Bell, Coffee, AlertCircle } from "lucide-react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  Brain,
+  Bell,
+  Coffee,
+  AlertCircle,
+  CalendarDays,
+} from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
-import { istDayContext, greetingForHour } from "@/lib/date";
+import {
+  istDayContext,
+  greetingForHour,
+  formatCountdown,
+  countdownProgressPct,
+} from "@/lib/date";
 import { cn } from "@/lib/utils";
-import type { Task } from "@/types/database";
+import type { Countdown, Task } from "@/types/database";
 import {
   priorityStyles,
   statusStyles,
   statusLabel,
 } from "@/components/tasks/task-styles";
+import { QuoteCard } from "@/components/dashboard/QuoteCard";
 
 export const metadata = { title: "Dashboard | Prism" };
 
@@ -23,7 +37,7 @@ export default async function DashboardHome() {
   const { startOfToday, endOfToday, startOfWeek, hour } = istDayContext();
   const nowIso = new Date().toISOString();
 
-  const [profileRes, dueRes, completedRes, cardsRes, remindersRes] =
+  const [profileRes, dueRes, completedRes, cardsRes, remindersRes, countdownsRes] =
     await Promise.all([
       supabase
         .from("profiles")
@@ -52,6 +66,11 @@ export default async function DashboardHome() {
         .gte("remind_at", startOfToday)
         .lt("remind_at", endOfToday)
         .eq("is_sent", false),
+      supabase
+        .from("countdowns")
+        .select("*")
+        .order("target_date", { ascending: true })
+        .limit(3),
     ]);
 
   const displayName = profileRes.data?.display_name ?? "there";
@@ -61,6 +80,7 @@ export default async function DashboardHome() {
   const completedCount = completedRes.count ?? 0;
   const cardsCount = cardsRes.count ?? 0;
   const remindersTodayCount = remindersRes.count ?? 0;
+  const countdowns: Countdown[] = countdownsRes.data ?? [];
 
   const stats = [
     {
@@ -91,6 +111,9 @@ export default async function DashboardHome() {
 
   return (
     <div>
+      {/* Quote of the day */}
+      <QuoteCard />
+
       {/* Greeting */}
       <header>
         <h1 className="text-2xl font-semibold text-foreground">
@@ -188,6 +211,81 @@ export default async function DashboardHome() {
                 className="text-xs text-violet-400 hover:text-violet-300"
               >
                 View all →
+              </Link>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Upcoming countdowns */}
+      <section className="mt-8">
+        <div className="mb-3 flex items-center gap-2 border-l-2 border-violet-500 pl-3">
+          <h2 className="text-base font-semibold text-foreground">Upcoming</h2>
+        </div>
+
+        {countdowns.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
+            <CalendarDays className="h-8 w-8 text-muted-foreground" />
+            <p className="mt-3 text-sm text-muted-foreground">
+              No upcoming events
+            </p>
+            <Link
+              href="/dashboard/reminders"
+              className="mt-3 text-xs font-medium text-violet-400 hover:text-violet-300"
+            >
+              + Add countdown
+            </Link>
+          </div>
+        ) : (
+          <>
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+              {countdowns.map((c) => {
+                const display = formatCountdown(c.target_date);
+                const toneClass =
+                  display.tone === "accent"
+                    ? "text-violet-400 font-semibold"
+                    : display.tone === "warning"
+                      ? "text-amber-400 font-medium"
+                      : display.tone === "dimmed"
+                        ? "text-muted-foreground/50"
+                        : "text-muted-foreground";
+                return (
+                  <li
+                    key={c.id}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
+                  >
+                    <span aria-hidden className="text-2xl">
+                      {c.emoji}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {c.title}
+                      </p>
+                      <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-accent"
+                          style={{
+                            width: `${countdownProgressPct(
+                              c.created_at,
+                              c.target_date
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <span className={cn("shrink-0 text-xs", toneClass)}>
+                      {display.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="mt-2 text-right">
+              <Link
+                href="/dashboard/reminders"
+                className="text-xs text-violet-400 hover:text-violet-300"
+              >
+                + Add countdown
               </Link>
             </div>
           </>

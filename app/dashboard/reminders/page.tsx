@@ -6,6 +6,7 @@ import { Plus, Bell, BellOff, CheckCheck, AlertCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { useRemindersQuery } from "@/hooks/useReminders";
+import { useCountdownsQuery } from "@/hooks/useCountdowns";
 import { useUIStore } from "@/store/ui.store";
 import { cn } from "@/lib/utils";
 import type { Reminder } from "@/types/database";
@@ -13,15 +14,16 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReminderList } from "@/components/reminders/ReminderList";
 import { ReminderForm } from "@/components/reminders/ReminderForm";
+import { CountdownsTab } from "@/components/countdowns/CountdownsTab";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { EmptyReminders } from "@/components/shared/EmptyStates";
 
-type Filter = "all" | "pending" | "sent";
+type Filter = "all" | "pending" | "sent" | "countdowns";
 
 const emptyByFilter: Record<
-  Filter,
+  Exclude<Filter, "countdowns">,
   { icon: LucideIcon; title: string; description: string }
 > = {
   all: {
@@ -41,10 +43,11 @@ const emptyByFilter: Record<
   },
 };
 
-const tabs: { value: Filter; label: string }[] = [
+const tabs: { value: Filter; label: string; shortLabel?: string }[] = [
   { value: "all", label: "All" },
   { value: "pending", label: "Pending" },
   { value: "sent", label: "Sent" },
+  { value: "countdowns", label: "Countdowns", shortLabel: "Events" },
 ];
 
 export default function RemindersPage() {
@@ -52,6 +55,7 @@ export default function RemindersPage() {
   const [showEnableBanner, setShowEnableBanner] = useState(false);
   const openCreateReminder = useUIStore((s) => s.openCreateReminder);
   const { data: reminders, isLoading, isError, refetch } = useRemindersQuery();
+  const { data: countdowns } = useCountdownsQuery();
 
   // Nudge users to turn on notifications (client-only — Notification is
   // undefined during SSR). Only when permission hasn't been decided yet.
@@ -70,8 +74,9 @@ export default function RemindersPage() {
       all: list.length,
       pending: list.filter((r) => !r.is_sent).length,
       sent: list.filter((r) => r.is_sent).length,
+      countdowns: countdowns?.length ?? 0,
     } satisfies Record<Filter, number>;
-  }, [reminders]);
+  }, [reminders, countdowns]);
 
   const visible = useMemo<Reminder[]>(() => {
     const list = reminders ?? [];
@@ -115,14 +120,23 @@ export default function RemindersPage() {
         onValueChange={(v) => setFilter(v as Filter)}
         className="mt-5"
       >
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           {tabs.map((tab) => (
             <TabsTrigger
               key={tab.value}
               value={tab.value}
               className="gap-1.5 text-xs sm:text-sm"
             >
-              <span className="truncate">{tab.label}</span>
+              <span className="truncate">
+                {tab.shortLabel ? (
+                  <>
+                    <span className="hidden sm:inline">{tab.label}</span>
+                    <span className="sm:hidden">{tab.shortLabel}</span>
+                  </>
+                ) : (
+                  tab.label
+                )}
+              </span>
               <span
                 className={cn(
                   "rounded-full px-1.5 text-[11px] tabular-nums",
@@ -139,7 +153,9 @@ export default function RemindersPage() {
       </Tabs>
 
       <div className="mt-5">
-        {isLoading ? (
+        {filter === "countdowns" ? (
+          <CountdownsTab />
+        ) : isLoading ? (
           <LoadingSkeleton count={3} />
         ) : isError ? (
           <EmptyState

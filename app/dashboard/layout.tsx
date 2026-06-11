@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/layout/MobileNav";
 import { TopBar } from "@/components/layout/TopBar";
 import { NotificationChecker } from "@/components/reminders/NotificationChecker";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { FloatingTimer } from "@/components/focus/FloatingTimer";
 
 export default async function DashboardLayout({
   children,
@@ -42,6 +43,7 @@ export default async function DashboardLayout({
       <MobileNav />
       <InstallPrompt />
       <NotificationChecker />
+      <FloatingTimer />
     </div>
   );
 }

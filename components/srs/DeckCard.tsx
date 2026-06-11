@@ -26,7 +26,7 @@ export function DeckCard({
   )}`;
 
   return (
-    <div className="flex flex-col rounded-xl border border-border bg-surface p-5 hover:-translate-y-0.5 hover:border-muted-foreground/40 active:scale-[0.98] active:opacity-90">
+    <div className="flex flex-col rounded-xl border border-border bg-surface p-5 duration-75 hover:-translate-y-0.5 hover:border-muted-foreground/40 active:scale-[0.99] active:opacity-90">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />

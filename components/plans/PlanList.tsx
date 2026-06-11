@@ -15,7 +15,7 @@ export function PlanList({
   stats: Record<string, PlanTaskStat>;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 md:gap-4 lg:grid-cols-2">
       {plans.map((plan) => (
         <PlanCard
           key={plan.id}

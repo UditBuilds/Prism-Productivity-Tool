@@ -59,6 +59,49 @@ export function istDayNumber(ms: number): number {
 }
 
 /**
+ * Whole IST days from today until a civil date ("YYYY-MM-DD").
+ * 0 = today, 1 = tomorrow, negative = past.
+ */
+export function daysUntilIst(dateStr: string): number {
+  const target = istDayIndex(Date.parse(`${dateStr}T00:00:00.000+05:30`));
+  return target - istDayIndex(Date.now());
+}
+
+export interface CountdownDisplay {
+  label: string;
+  tone: "accent" | "warning" | "muted" | "dimmed";
+}
+
+/** % of a countdown's creation→target window already elapsed (clamped 0–100). */
+export function countdownProgressPct(
+  createdAtIso: string,
+  targetDate: string
+): number {
+  const createdIdx = istDayIndex(Date.parse(createdAtIso));
+  const todayIdx = istDayIndex(Date.now());
+  const targetIdx = todayIdx + daysUntilIst(targetDate);
+  const total = targetIdx - createdIdx;
+  if (total <= 0) return 100; // target on/before creation day, or already past
+  const elapsed = todayIdx - createdIdx;
+  return Math.min(100, Math.max(0, (elapsed / total) * 100));
+}
+
+/** Label + tone for a countdown's remaining days. */
+export function formatCountdown(dateStr: string): CountdownDisplay {
+  const days = daysUntilIst(dateStr);
+  if (days === 0) return { label: "Today!", tone: "accent" };
+  if (days === 1) return { label: "Tomorrow", tone: "warning" };
+  if (days < 0) {
+    const n = -days;
+    return { label: `${n} day${n === 1 ? "" : "s"} ago`, tone: "dimmed" };
+  }
+  return {
+    label: `${days} days`,
+    tone: days <= 7 ? "warning" : "muted",
+  };
+}
+
+/**
  * Relative due-date label, by IST calendar day:
  *   overdue → "N days overdue" (danger, bold)
  *   today   → "Today" (warning)
