@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { CountdownForm } from "./CountdownForm";
 
 const toneClass: Record<string, string> = {
-  accent: "text-violet-400 font-semibold",
+  accent: "text-accent font-semibold",
   warning: "text-warning font-medium",
   muted: "text-muted-foreground",
   dimmed: "text-muted-foreground/50",

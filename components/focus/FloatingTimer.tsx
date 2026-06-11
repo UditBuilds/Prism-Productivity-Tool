@@ -87,7 +87,7 @@ export function FloatingTimer() {
       : CATEGORIES.find((c) => c.label === category)?.emoji ?? "🎯";
 
   return (
-    <div className="fixed left-1/2 top-[calc(env(safe-area-inset-top)_+_0.5rem)] z-50 flex -translate-x-1/2 items-center gap-1 rounded-full border border-violet-800/40 bg-[#111111]/95 py-1 pl-1 pr-1 shadow-lg shadow-black/40 backdrop-blur-xl sm:bottom-6 sm:left-auto sm:right-6 sm:top-auto sm:translate-x-0">
+    <div className="fixed left-1/2 top-[calc(env(safe-area-inset-top)_+_0.5rem)] z-50 flex -translate-x-1/2 items-center gap-1 rounded-full border border-accent/30 bg-[#111111]/95 py-1 pl-1 pr-1 shadow-lg shadow-black/40 backdrop-blur-xl sm:bottom-6 sm:left-auto sm:right-6 sm:top-auto sm:translate-x-0">
       <button
         type="button"
         onClick={() => router.push("/dashboard/focus")}
@@ -97,7 +97,7 @@ export function FloatingTimer() {
         <span aria-hidden>{emoji}</span>
         <span
           className={`text-sm font-semibold tabular-nums ${
-            isPaused ? "text-muted-foreground" : "text-violet-300"
+            isPaused ? "text-muted-foreground" : "text-accent"
           }`}
         >
           {formatClock(timeLeft)}

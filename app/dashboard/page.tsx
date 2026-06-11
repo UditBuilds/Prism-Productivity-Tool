@@ -100,7 +100,7 @@ export default async function DashboardHome() {
       label: "Cards to Review",
       value: cardsCount,
       icon: Brain,
-      accent: "border-t-violet-500/70",
+      accent: "border-t-accent/70",
     },
     {
       label: "Reminders Today",
@@ -122,7 +122,7 @@ export default async function DashboardHome() {
       <header>
         <h1 className="text-2xl font-semibold text-foreground">
           {greetingForHour(hour)},{" "}
-          <span className="font-bold text-violet-400">{displayName}</span>
+          <span className="font-bold text-accent">{displayName}</span>
         </h1>
       </header>
 
@@ -137,12 +137,12 @@ export default async function DashboardHome() {
             )}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium uppercase tracking-widest text-[#666]">
+              <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
                 {label}
               </span>
               <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             </div>
-            <p className="mt-3 text-2xl font-bold text-white lg:text-3xl">
+            <p className="mt-3 text-2xl font-bold tracking-tight text-white lg:text-3xl">
               {value}
             </p>
           </div>
@@ -151,7 +151,7 @@ export default async function DashboardHome() {
 
       {/* Due Today */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2 border-l-2 border-violet-500 pl-3">
+        <div className="mb-3 flex items-center gap-2 border-l-2 border-accent pl-3">
           <h2 className="text-base font-semibold text-foreground">Due Today</h2>
         </div>
 
@@ -176,7 +176,7 @@ export default async function DashboardHome() {
                 <li key={task.id}>
                   <Link
                     href={`/dashboard/tasks/${task.id}`}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition hover:bg-[#111]"
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition hover:border-[#2A2A2A] hover:bg-surface-raised/60"
                   >
                     <span
                       className={cn(
@@ -212,7 +212,7 @@ export default async function DashboardHome() {
             <div className="mt-2 text-right">
               <Link
                 href="/dashboard/tasks"
-                className="text-xs text-violet-400 hover:text-violet-300"
+                className="text-xs text-accent hover:text-accent-hover"
               >
                 View all →
               </Link>
@@ -223,7 +223,7 @@ export default async function DashboardHome() {
 
       {/* Upcoming countdowns */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2 border-l-2 border-violet-500 pl-3">
+        <div className="mb-3 flex items-center gap-2 border-l-2 border-accent pl-3">
           <h2 className="text-base font-semibold text-foreground">Upcoming</h2>
         </div>
 
@@ -235,7 +235,7 @@ export default async function DashboardHome() {
             </p>
             <Link
               href="/dashboard/reminders"
-              className="mt-3 text-xs font-medium text-violet-400 hover:text-violet-300"
+              className="mt-3 text-xs font-medium text-accent hover:text-accent-hover"
             >
               + Add countdown
             </Link>
@@ -247,7 +247,7 @@ export default async function DashboardHome() {
                 const display = formatCountdown(c.target_date);
                 const toneClass =
                   display.tone === "accent"
-                    ? "text-violet-400 font-semibold"
+                    ? "text-accent font-semibold"
                     : display.tone === "warning"
                       ? "text-amber-400 font-medium"
                       : display.tone === "dimmed"
@@ -287,7 +287,7 @@ export default async function DashboardHome() {
             <div className="mt-2 text-right">
               <Link
                 href="/dashboard/reminders"
-                className="text-xs text-violet-400 hover:text-violet-300"
+                className="text-xs text-accent hover:text-accent-hover"
               >
                 + Add countdown
               </Link>

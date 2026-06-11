@@ -21,27 +21,32 @@ export function MobileNav() {
             key={item.href}
             href={item.href}
             className={cn(
-              "flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium active:scale-95",
-              active ? "text-violet-400" : "text-muted-foreground"
+              "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium tracking-wide active:scale-95",
+              active ? "text-accent" : "text-muted-foreground"
             )}
           >
-            <span className="relative">
+            <span
+              className={cn(
+                "relative flex h-8 w-14 items-center justify-center rounded-full",
+                active && "bg-accent/[0.12]"
+              )}
+            >
               <Icon
-                className={cn("h-6 w-6", active && "fill-violet-500/20")}
+                className={cn("h-[22px] w-[22px]", active && "fill-accent/20")}
                 strokeWidth={active ? 2.25 : 2}
               />
               {item.href === "/dashboard/learn" && (
                 <NavBadge
                   count={badges.learn}
                   color="violet"
-                  className="-right-2 -top-1.5"
+                  className="right-1.5 top-0"
                 />
               )}
               {item.href === "/dashboard/reminders" && (
                 <NavBadge
                   count={badges.reminders}
                   color="amber"
-                  className="-right-2 -top-1.5"
+                  className="right-1.5 top-0"
                 />
               )}
             </span>

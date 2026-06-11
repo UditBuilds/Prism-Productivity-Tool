@@ -41,7 +41,8 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 96%;
 
-    --border: 0 0% 16%;
+    /* Softer default border (#1F1F1F) — hover states step up to #2A2A2A. */
+    --border: 0 0% 12%;
     --input: 0 0% 16%;
     --ring: 262 83% 58%;
 
@@ -142,18 +143,22 @@ html.theme-cyan {
 
 /* Premium scrollbar */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
-  border-radius: 2px;
+  background: #262626;
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #3a3a3a;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #262626 transparent;
 }
 
 /* Smooth page load */

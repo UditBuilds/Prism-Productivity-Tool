@@ -56,7 +56,7 @@ export function TaskCard({ task }: { task: Task }) {
           {task.title.length > 24 ? "…" : ""}&rdquo;
           <button
             type="button"
-            className="font-semibold text-violet-400"
+            className="font-semibold text-accent"
             onClick={() => {
               clearTimeout(timeout);
               toast.dismiss(t.id);

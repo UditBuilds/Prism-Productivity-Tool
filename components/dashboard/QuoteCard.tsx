@@ -17,25 +17,25 @@ export function QuoteCard() {
       className="mb-6 flex w-full items-start justify-center gap-2 px-2 text-center sm:px-6"
       aria-label="Quote of the day — tap to expand"
     >
-      <span aria-hidden className="-mt-2 select-none text-4xl text-violet-800/40">
+      <span aria-hidden className="-mt-2 select-none text-4xl text-accent/25">
         &ldquo;
       </span>
       <span className="min-w-0">
         <span
           className={cn(
-            "block text-sm italic leading-relaxed text-[#666]",
+            "mx-auto block max-w-2xl text-sm italic leading-relaxed text-muted-foreground/80",
             !expanded && "line-clamp-2"
           )}
         >
           {quote.text}
         </span>
         {quote.author && (
-          <span className="mt-1 block text-xs text-[#444]">
+          <span className="mt-1.5 block text-xs text-muted-foreground/50">
             — {quote.author}
           </span>
         )}
       </span>
-      <span aria-hidden className="-mt-2 select-none text-4xl text-violet-800/40">
+      <span aria-hidden className="-mt-2 select-none text-4xl text-accent/25">
         &rdquo;
       </span>
     </button>

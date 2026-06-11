@@ -72,14 +72,14 @@ export function FlashCard({
         </div>
 
         {/* Back (answer) */}
-        <div className="card-face back flex flex-col rounded-xl border border-violet-900/30 bg-gradient-to-br from-[#130D1F] to-[#0D0B14] p-6 font-mono text-foreground shadow-2xl shadow-violet-900/10">
-          <span className="text-[10px] tracking-[0.2em] text-violet-500/60">
+        <div className="card-face back flex flex-col rounded-xl border border-accent/20 bg-gradient-to-br from-[#141117] to-[#0D0C10] p-6 font-mono text-foreground shadow-2xl shadow-black/50">
+          <span className="text-[10px] tracking-[0.2em] text-accent/60">
             ANSWER
           </span>
           <div className="flex flex-1 items-center justify-center overflow-auto py-2">
             <CardContent
               text={back}
-              className="text-lg font-medium leading-relaxed text-violet-50"
+              className="text-lg font-medium leading-relaxed text-foreground"
             />
           </div>
         </div>

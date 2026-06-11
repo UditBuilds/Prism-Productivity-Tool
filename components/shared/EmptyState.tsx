@@ -13,14 +13,16 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-14 text-center">
-      <Icon className="h-8 w-8 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium text-foreground">{title}</p>
+      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-surface-raised">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <p className="mt-4 text-sm font-medium text-foreground">{title}</p>
       {description && (
-        <p className="mt-1 max-w-xs text-sm text-muted-foreground">
+        <p className="mt-1 max-w-xs text-[13px] leading-relaxed text-muted-foreground">
           {description}
         </p>
       )}
-      {action && <div className="mt-4">{action}</div>}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }

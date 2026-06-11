@@ -156,8 +156,8 @@ function StatsContent({ streak }: { streak: number }) {
               >
                 <defs>
                   <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7C3AED" />
-                    <stop offset="100%" stopColor="#4C1D95" />
+                    <stop offset="0%" style={{ stopColor: "rgb(var(--accent-rgb))", stopOpacity: 1 }} />
+                    <stop offset="100%" style={{ stopColor: "rgb(var(--accent-hover-rgb))", stopOpacity: 0.55 }} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid
@@ -181,7 +181,7 @@ function StatsContent({ streak }: { streak: number }) {
                   width={32}
                 />
                 <Tooltip
-                  cursor={{ fill: "rgba(124, 58, 237, 0.06)" }}
+                  cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
                   contentStyle={{
                     backgroundColor: "#111111",
                     border: "1px solid #2A2A2A",

@@ -91,7 +91,7 @@ export function PlanCard({
             Progress
           </span>
           {taskCount > 0 && (
-            <span className="text-sm font-semibold tabular-nums text-violet-400">
+            <span className="text-sm font-semibold tabular-nums text-accent">
               {pct}%
             </span>
           )}
@@ -101,11 +101,11 @@ export function PlanCard({
             className="h-full rounded-full bg-accent transition-all"
             style={{
               width: `${pct}%`,
-              ...(pct > 0 && { boxShadow: "0 0 6px rgba(124,58,237,0.5)" }),
+              ...(pct > 0 && { boxShadow: "0 0 6px rgb(var(--accent-rgb) / 0.5)" }),
             }}
           />
         </div>
-        <p className="mt-1.5 text-xs text-[#555]">
+        <p className="mt-1.5 text-xs text-muted-foreground/60">
           {taskCount === 0
             ? "No tasks linked yet"
             : `${doneCount} of ${taskCount} task${taskCount === 1 ? "" : "s"} complete`}

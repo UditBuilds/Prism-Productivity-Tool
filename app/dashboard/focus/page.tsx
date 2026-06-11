@@ -77,11 +77,12 @@ function IdleView() {
         icon={Timer}
       />
 
+      <div className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
       {/* Category selector */}
-      <p className="mb-2 text-xs font-medium uppercase tracking-widest text-[#666]">
+      <p className="mb-2.5 text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
         Category
       </p>
-      <div className="scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+      <div className="scrollbar-none -mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         {CATEGORIES.map((c) => (
           <button
             key={c.label}
@@ -101,7 +102,7 @@ function IdleView() {
       </div>
 
       {/* Duration selector */}
-      <p className="mb-2 mt-6 text-xs font-medium uppercase tracking-widest text-[#666]">
+      <p className="mb-2.5 mt-6 text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
         Duration
       </p>
       <div className="flex flex-wrap items-center gap-2">
@@ -149,16 +150,17 @@ function IdleView() {
       </div>
 
       {/* Start */}
-      <div className="mt-8 sm:flex sm:justify-center">
+      <div className="mt-7">
         <Button
           size="lg"
           disabled={!canStart}
           onClick={handleStart}
-          className="w-full rounded-xl sm:w-auto sm:px-12"
+          className="w-full rounded-xl"
         >
           <Play className="mr-2 h-4 w-4" />
           Start {category} Session ({minutes}m)
         </Button>
+      </div>
       </div>
 
       {/* Recent sessions */}
@@ -183,7 +185,7 @@ function IdleView() {
               return (
                 <li
                   key={s.id}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm transition-colors hover:border-[#2A2A2A]"
                 >
                   <span aria-hidden>{cat?.emoji ?? "🎯"}</span>
                   <span className="font-medium text-foreground">
@@ -260,8 +262,8 @@ function RunningView() {
         >
           <defs>
             <linearGradient id="ringGradient" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#7C3AED" />
-              <stop offset="100%" stopColor="#6D28D9" />
+              <stop offset="0%" style={{ stopColor: "rgb(var(--accent-rgb))" }} />
+              <stop offset="100%" style={{ stopColor: "rgb(var(--accent-hover-rgb))" }} />
             </linearGradient>
           </defs>
           <circle
@@ -287,7 +289,7 @@ function RunningView() {
         </svg>
         <span
           className="absolute text-7xl font-bold tabular-nums tracking-tight text-white"
-          style={{ textShadow: "0 0 32px rgba(124,58,237,0.45)" }}
+          style={{ textShadow: "0 0 32px rgb(var(--accent-rgb) / 0.45)" }}
         >
           {formatClock(timeLeft)}
         </span>
@@ -299,7 +301,7 @@ function RunningView() {
           type="button"
           onClick={isPaused ? resumeTimer : pauseTimer}
           aria-label={isPaused ? "Resume" : "Pause"}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-violet-900/30 hover:bg-accent/90 active:scale-95"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-black/40 hover:bg-accent/90 active:scale-95"
         >
           {isPaused ? (
             <Play className="ml-0.5 h-6 w-6" />

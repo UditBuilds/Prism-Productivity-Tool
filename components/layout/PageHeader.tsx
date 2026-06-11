@@ -14,15 +14,21 @@ export function PageHeader({
   icon: Icon,
 }: PageHeaderProps) {
   return (
-    <div className="mb-6 flex items-center gap-3">
+    <div className="mb-6 flex items-center gap-3.5">
       {Icon && (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-950/50">
-          <Icon className="h-[18px] w-[18px] text-violet-400" />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/20 bg-accent/10">
+          <Icon className="h-[18px] w-[18px] text-accent" />
         </div>
       )}
       <div className="min-w-0">
-        <h1 className="truncate text-xl font-bold text-white">{title}</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-[#666]">{subtitle}</p>}
+        <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">
+          {title}
+        </h1>
+        {subtitle && (
+          <p className="mt-0.5 truncate text-[13px] text-muted-foreground/80">
+            {subtitle}
+          </p>
+        )}
       </div>
       {actions && (
         <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>

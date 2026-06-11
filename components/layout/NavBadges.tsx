@@ -39,7 +39,7 @@ export function NavBadge({
       className={cn(
         "absolute flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums",
         color === "violet"
-          ? "bg-violet-600 text-white"
+          ? "bg-accent text-accent-foreground"
           : "bg-amber-500 text-amber-950",
         className ?? "right-1 top-1"
       )}

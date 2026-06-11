@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** Renders `count` card-shaped skeletons (animate-pulse via shadcn Skeleton). */
 export function LoadingSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 md:gap-4 lg:grid-cols-2">
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}

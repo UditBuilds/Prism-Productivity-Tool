@@ -91,7 +91,7 @@ export function MoodWidget() {
                 onClick={() => setSelected(m.value)}
                 aria-pressed={selected === m.value}
                 className={cn(
-                  "flex flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 transition-transform",
+                  "flex flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 transition-transform hover:bg-surface-raised",
                   selected === m.value &&
                     "scale-110 border-accent bg-accent/10"
                 )}

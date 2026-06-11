@@ -14,11 +14,13 @@ function EmptyShell({
 }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      <div className="text-violet-400/60 [filter:drop-shadow(0_0_12px_rgba(124,58,237,0.25))]">
+      <div className="text-accent/60 [filter:drop-shadow(0_0_12px_rgb(var(--accent-rgb)/0.25))]">
         {svg}
       </div>
-      <p className="mt-5 text-base font-medium text-[#555]">{title}</p>
-      <p className="mt-1 text-sm text-[#444]">{subtitle}</p>
+      <p className="mt-5 text-[15px] font-medium text-muted-foreground">
+        {title}
+      </p>
+      <p className="mt-1 text-[13px] text-muted-foreground/60">{subtitle}</p>
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
