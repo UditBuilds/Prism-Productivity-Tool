@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { NotificationsCard } from "@/components/settings/NotificationsCard";
+import { ThemeCard } from "@/components/settings/ThemeCard";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -115,6 +116,7 @@ export default function SettingsPage() {
         )}
       </div>
 
+      <ThemeCard />
       <NotificationsCard />
     </div>
   );

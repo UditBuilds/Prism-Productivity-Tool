@@ -54,7 +54,37 @@
     --danger: 0 84% 60%;
 
     --radius: 0.75rem;
+
+    /* Theme accent (RGB triplets for Tailwind's rgb(var()/alpha) syntax) */
+    --accent-rgb: 124 58 237; /* violet */
+    --accent-hover-rgb: 109 40 217;
   }
+}
+
+/* Accent theme classes — applied to <html> by ThemeProvider */
+html.theme-violet {
+  --accent-rgb: 124 58 237;
+  --accent-hover-rgb: 109 40 217;
+}
+html.theme-blue {
+  --accent-rgb: 59 130 246;
+  --accent-hover-rgb: 37 99 235;
+}
+html.theme-emerald {
+  --accent-rgb: 16 185 129;
+  --accent-hover-rgb: 5 150 105;
+}
+html.theme-amber {
+  --accent-rgb: 245 158 11;
+  --accent-hover-rgb: 217 119 6;
+}
+html.theme-rose {
+  --accent-rgb: 244 63 94;
+  --accent-hover-rgb: 225 29 72;
+}
+html.theme-cyan {
+  --accent-rgb: 6 182 212;
+  --accent-hover-rgb: 8 145 178;
 }
 
 @layer base {
@@ -208,20 +238,20 @@ body {
 
 /* ── Precision details ─────────────────────────────────────────── */
 
-/* Custom text selection color */
+/* Custom text selection color (follows the accent theme) */
 ::selection {
-  background-color: rgba(124, 58, 237, 0.3);
+  background-color: rgb(var(--accent-rgb) / 0.3);
   color: white;
 }
 
-/* Custom focus ring — violet instead of default */
+/* Custom focus ring — accent instead of default */
 *:focus-visible {
-  outline: 2px solid rgba(124, 58, 237, 0.6);
+  outline: 2px solid rgb(var(--accent-rgb) / 0.6);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* Subtle glow on violet buttons when focused */
+/* Subtle glow on primary buttons when focused */
 .btn-primary-shimmer:focus-visible {
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.25);
 }

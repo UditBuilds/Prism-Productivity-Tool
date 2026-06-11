@@ -13,6 +13,7 @@ export type Json =
 export type TaskStatus = "todo" | "in_progress" | "done";
 export type TaskPriority = "low" | "medium" | "high";
 export type PlanStatus = "active" | "completed" | "archived";
+export type MoodValue = "great" | "good" | "neutral" | "tired" | "stressed";
 
 export interface Database {
   public: {
@@ -314,6 +315,33 @@ export interface Database {
         };
         Relationships: [];
       };
+      mood_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          mood: MoodValue;
+          note: string | null;
+          logged_date: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          mood: MoodValue;
+          note?: string | null;
+          logged_date: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          mood?: MoodValue;
+          note?: string | null;
+          logged_date?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       push_subscriptions: {
         Row: {
           id: string;
@@ -365,3 +393,4 @@ export type PushSubscriptionRow =
 export type FocusSession =
   Database["public"]["Tables"]["focus_sessions"]["Row"];
 export type Countdown = Database["public"]["Tables"]["countdowns"]["Row"];
+export type MoodLog = Database["public"]["Tables"]["mood_logs"]["Row"];

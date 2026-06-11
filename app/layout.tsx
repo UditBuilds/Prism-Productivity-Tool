@@ -47,7 +47,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      className={`dark ${inter.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        {/* Apply the saved accent theme before first paint (no violet flash). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("prism-theme");if(t)document.documentElement.classList.add("theme-"+t)}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="font-sans">
         <Providers>{children}</Providers>
       </body>

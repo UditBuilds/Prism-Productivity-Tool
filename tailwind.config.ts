@@ -46,7 +46,7 @@ const config: Config = {
           foreground: "hsl(var(--popover-foreground))",
         },
         primary: {
-          DEFAULT: "hsl(var(--primary))",
+          DEFAULT: "rgb(var(--accent-rgb) / <alpha-value>)",
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
@@ -58,9 +58,9 @@ const config: Config = {
           foreground: "hsl(var(--muted-foreground))",
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
+          DEFAULT: "rgb(var(--accent-rgb) / <alpha-value>)",
           foreground: "hsl(var(--accent-foreground))",
-          hover: "hsl(var(--accent-hover))",
+          hover: "rgb(var(--accent-hover-rgb) / <alpha-value>)",
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
@@ -68,13 +68,13 @@ const config: Config = {
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
+        ring: "rgb(var(--accent-rgb) / <alpha-value>)",
 
         // PRISM design-system extras (direct, non-colliding names)
         surface: "hsl(var(--surface))",
         "surface-raised": "hsl(var(--surface-raised))",
         "border-col": "hsl(var(--border-col))",
-        "accent-hover": "hsl(var(--accent-hover))",
+        "accent-hover": "rgb(var(--accent-hover-rgb) / <alpha-value>)",
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         danger: "hsl(var(--danger))",

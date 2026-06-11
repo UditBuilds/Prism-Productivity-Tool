@@ -58,6 +58,16 @@ export function istDayNumber(ms: number): number {
   return istDayIndex(ms);
 }
 
+/** IST civil date ("YYYY-MM-DD") for an instant. Defaults to now. */
+export function istDateString(ms: number = Date.now()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
 /**
  * Whole IST days from today until a civil date ("YYYY-MM-DD").
  * 0 = today, 1 = tomorrow, negative = past.

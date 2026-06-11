@@ -24,6 +24,7 @@ import {
   statusLabel,
 } from "@/components/tasks/task-styles";
 import { QuoteCard } from "@/components/dashboard/QuoteCard";
+import { MoodWidget } from "@/components/dashboard/MoodWidget";
 
 export const metadata = { title: "Dashboard | Prism" };
 
@@ -113,6 +114,9 @@ export default async function DashboardHome() {
     <div>
       {/* Quote of the day */}
       <QuoteCard />
+
+      {/* Daily mood check-in */}
+      <MoodWidget />
 
       {/* Greeting */}
       <header>

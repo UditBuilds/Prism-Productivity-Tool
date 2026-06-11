@@ -23,7 +23,9 @@ import { cn } from "@/lib/utils";
 import { useAnalytics } from "@/hooks/useSRS";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { MoodPanel } from "@/components/srs/MoodPanel";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -62,7 +64,25 @@ function StatCard({
   );
 }
 
+/** Analytics tab content: SRS stats + a Mood history sub-tab. */
 export function AnalyticsPanel({ streak }: { streak: number }) {
+  return (
+    <Tabs defaultValue="stats">
+      <TabsList className="grid w-full max-w-xs grid-cols-2">
+        <TabsTrigger value="stats">Stats</TabsTrigger>
+        <TabsTrigger value="mood">Mood</TabsTrigger>
+      </TabsList>
+      <TabsContent value="stats" className="mt-5">
+        <StatsContent streak={streak} />
+      </TabsContent>
+      <TabsContent value="mood" className="mt-5">
+        <MoodPanel />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function StatsContent({ streak }: { streak: number }) {
   const { data, isLoading, isError, refetch } = useAnalytics();
 
   if (isLoading) {

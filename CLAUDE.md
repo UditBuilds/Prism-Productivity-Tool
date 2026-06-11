@@ -23,6 +23,7 @@ Two users (you + a collaborator). Everything private by default.
 - Session 8: Web Push notifications (fire while app closed) ✅ COMPLETE & VERIFIED
 - Session 9: PDF → flashcards (pdf-parse + Groq) ✅ COMPLETE
 - Session 10: Focus timer, countdowns, quote of day, mobile UX ✅ COMPLETE
+- Session 11: Mood check-in, tiny wins push, theme accents ✅ COMPLETE
 - 🎉 Shipped. See DEPLOYMENT.md for deploy + cron setup.
 
 ## Design Rules
@@ -181,3 +182,19 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - TaskCard supports swipe gestures (touch only): right = mark done, left = delete with
   a 5s Undo toast (setTimeout cancelled by the toast button). Horizontal-intent lock +
   touch-action: pan-y keeps vertical scrolling intact.
+
+## Conventions & Gotchas (Session 11 — Mood, tiny wins, themes)
+- Theme accents: accent/accent-hover/primary/ring in tailwind.config resolve from
+  --accent-rgb / --accent-hover-rgb (RGB triplets, rgb(var()/alpha) syntax). Six
+  html.theme-* classes in globals.css; ThemeProvider (localStorage "prism-theme")
+  + a pre-hydration <head> script in app/layout (suppressHydrationWarning on <html>)
+  prevent the violet flash. primary was re-pointed at the accent var on purpose —
+  buttons follow the theme.
+- mood_logs: one row per user per IST day (unique user_id+logged_date, upsert
+  onConflict). istDateString(ms) in lib/date.ts = IST civil date via Intl en-CA.
+- Mood cache: single ["mood-logs"] key; useTodaysMood derives via select. Widget on
+  dashboard (between quote and greeting); history = "Mood" sub-tab inside
+  AnalyticsPanel (Stats | Mood tabs).
+- /api/push/tinywin: cron-secret guarded, 9 PM IST daily summary (tasks done +
+  completed focus minutes + reviews today, IST window). Skips users with all-zero
+  stats; sent = users delivered; prunes dead subscriptions; marks nothing.

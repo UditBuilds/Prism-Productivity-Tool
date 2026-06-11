@@ -26,7 +26,11 @@ export function Sidebar({ displayName }: { displayName: string }) {
       <div className="flex h-16 items-center px-6">
         <Link
           href="/dashboard"
-          className="bg-gradient-to-r from-violet-400 to-violet-600 bg-clip-text text-xl font-bold tracking-tight text-transparent"
+          className="bg-clip-text text-xl font-bold tracking-tight text-transparent"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgb(var(--accent-rgb) / 0.85), rgb(var(--accent-hover-rgb)))",
+          }}
         >
           PRISM
         </Link>
@@ -43,7 +47,7 @@ export function Sidebar({ displayName }: { displayName: string }) {
               className={cn(
                 "relative flex items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2 text-sm font-medium hover:translate-x-0.5",
                 active
-                  ? "border-accent bg-[linear-gradient(to_right,rgba(124,58,237,0.12),transparent)] text-violet-400"
+                  ? "border-accent bg-[linear-gradient(to_right,rgb(var(--accent-rgb)/0.12),transparent)] text-accent"
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
               )}
             >
