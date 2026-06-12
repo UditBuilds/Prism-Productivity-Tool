@@ -4,6 +4,7 @@ import {
   FileText,
   Target,
   Bell,
+  Calendar,
   Timer,
   Brain,
   CalendarCheck,
@@ -23,18 +24,20 @@ export const navItems: NavItem[] = [
   { label: "Notes", href: "/dashboard/notes", icon: FileText },
   { label: "Plans", href: "/dashboard/plans", icon: Target },
   { label: "Reminders", href: "/dashboard/reminders", icon: Bell },
+  { label: "Calendar", href: "/dashboard/calendar", icon: Calendar },
   { label: "Focus", href: "/dashboard/focus", icon: Timer },
   { label: "Learn", href: "/dashboard/learn", icon: Brain },
   { label: "Review", href: "/dashboard/review", icon: CalendarCheck },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
-// Mobile bottom bar shows 5. Plans/Reminders/Settings/Review are omitted to
-// keep the bar uncrowded at 375px — Reminders stays reachable via the TopBar
-// bell, and Settings + Weekly Review via the TopBar avatar dropdown.
+// Mobile bottom bar shows 5. Plans/Reminders/Calendar/Review/Settings are
+// omitted to keep the bar uncrowded at 375px — Reminders stays reachable via
+// the TopBar bell; Calendar, Weekly Review and Settings via the avatar dropdown.
 const MOBILE_EXCLUDED = [
   "/dashboard/plans",
   "/dashboard/reminders",
+  "/dashboard/calendar",
   "/dashboard/review",
   "/dashboard/settings",
 ];

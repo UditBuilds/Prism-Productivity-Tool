@@ -252,3 +252,16 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - Nav: "Review" in sidebar after Learn; EXCLUDED from mobile bottom bar (stays at 5);
   mobile access via TopBar avatar dropdown (alongside Profile) — that dropdown is the
   established overflow pattern.
+
+## Conventions & Gotchas (Session F — Calendar)
+- /dashboard/calendar + /api/calendar?month=YYYY-MM (auth-guarded; fetches ONLY that
+  month's window — tasks by due_date, reminders by remind_at, grouped onto IST civil
+  dates; sparse days array). Hook useCalendarMonth, key ["calendar", month], 60s stale.
+- The month grid is BESPOKE (not react-day-picker): the shadcn Calendar is a compact
+  popover picker shared by all forms — overriding its day cells for indicators would
+  risk every date field. Grid math: weekdayMon0 = (istDayNumber + 3) % 7 (epoch day 0
+  = Thursday), Monday-start, fixed 42 cells; verified against Intl for 60 dates.
+- Day cells show orientation dots only (accent = tasks, amber = reminders); all detail
+  lives in the selected-day panel. Spillover days are disabled and indicator-free.
+- Nav: sidebar after Reminders; mobile bar stays at 5; avatar dropdown = Calendar +
+  Weekly Review + Profile (the mobile overflow pattern).
