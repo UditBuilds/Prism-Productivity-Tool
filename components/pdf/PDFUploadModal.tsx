@@ -10,10 +10,22 @@ import {
   AlertCircle,
   AlertTriangle,
   RefreshCw,
+  Check,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui.store";
+import { createClient } from "@/lib/supabase/client";
+import {
+  MODE_INFO,
+  PDF_BUCKET,
+  PDF_ERROR_HINTS,
+  PDF_MAX_BYTES,
+  RANGE_MAX_PAGES,
+  type AnalyzeData,
+  type AnalyzeMode,
+  type PdfErrorCode,
+} from "@/lib/pdf/types";
 import type { Note } from "@/types/database";
 import {
   Dialog,
@@ -28,10 +40,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CardCountPills } from "@/components/shared/CardCountPills";
 
-const MAX_BYTES = 4 * 1024 * 1024;
 const CARD_COUNT_OPTIONS = [5, 10, 15, 20, 25, 30];
+const MODES: AnalyzeMode[] = ["quick", "smart", "range"];
 
-type Phase = "idle" | "uploading" | "preview" | "saving";
+type Phase = "select" | "uploading" | "processing" | "preview" | "saving";
 
 interface DraftCard {
   id: string;
@@ -39,20 +51,22 @@ interface DraftCard {
   back: string;
 }
 
-interface AnalyzeResult {
-  cards: { front: string; back: string }[];
-  extractedText: string;
-  filename: string;
-  pageCount: number;
-  truncated: boolean;
+interface PdfError {
+  message: string;
+  code?: PdfErrorCode;
 }
 
 function validateFile(file: File): string | null {
   const isPdf =
     file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
   if (!isPdf) return "Please choose a PDF file.";
-  if (file.size > MAX_BYTES) return "PDF too large (max 4MB).";
+  if (file.size > PDF_MAX_BYTES) return "PDF too large (max 25 MB).";
   return null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** Turn a messy PDF filename into a readable deck name. */
@@ -85,54 +99,156 @@ export function PDFUploadModal() {
   const close = useUIStore((s) => s.closePdfModal);
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
+  // Storage path of an uploaded-but-not-yet-cleaned object (for cleanup).
+  const uploadedPathRef = useRef<string | null>(null);
 
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [phase, setPhase] = useState<Phase>("select");
   const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<AnalyzeResult | null>(null);
+  const [mode, setMode] = useState<AnalyzeMode>("quick");
+  const [pageStart, setPageStart] = useState("1");
+  const [pageEnd, setPageEnd] = useState("10");
+  const [cardCount, setCardCount] = useState(10);
+  const [result, setResult] = useState<AnalyzeData | null>(null);
   const [cards, setCards] = useState<DraftCard[]>([]);
   const [deckName, setDeckName] = useState("");
-  const [cardCount, setCardCount] = useState(10);
   const [saveAsNote, setSaveAsNote] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PdfError | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const busy = phase === "uploading" || phase === "saving";
+  const busy =
+    phase === "uploading" || phase === "processing" || phase === "saving";
 
-  // Reset to a clean idle state whenever the modal opens.
+  // Reset to a clean state whenever the modal opens.
   useEffect(() => {
     if (open) {
-      setPhase("idle");
+      setPhase("select");
       setFile(null);
+      setMode("quick");
+      setPageStart("1");
+      setPageEnd("10");
+      setCardCount(10);
       setResult(null);
       setCards([]);
       setDeckName("");
-      setCardCount(10);
       setSaveAsNote(true);
       setError(null);
       setDragging(false);
     }
   }, [open]);
 
+  /** Best-effort removal of an orphaned temp upload (server cleans the rest). */
+  function cleanupOrphan() {
+    const path = uploadedPathRef.current;
+    if (!path) return;
+    uploadedPathRef.current = null;
+    void createClient().storage.from(PDF_BUCKET).remove([path]);
+  }
+
   function handleClose() {
     if (busy) return; // don't close mid-request
+    cleanupOrphan();
     close();
   }
 
-  async function analyze(target: File) {
+  function selectFile(selected: File | undefined | null) {
+    if (!selected) return;
+    const validationError = validateFile(selected);
+    if (validationError) {
+      setError({ message: validationError, code: "FILE_TOO_LARGE" });
+      return;
+    }
     setError(null);
+    setFile(selected);
+  }
+
+  // Range validity (client-side; the server re-validates).
+  const rangeStart = parseInt(pageStart, 10);
+  const rangeEnd = parseInt(pageEnd, 10);
+  const rangeValid =
+    Number.isFinite(rangeStart) &&
+    Number.isFinite(rangeEnd) &&
+    rangeStart >= 1 &&
+    rangeEnd >= rangeStart &&
+    rangeEnd - rangeStart + 1 <= RANGE_MAX_PAGES;
+
+  const canAnalyze =
+    !!file && !busy && (mode !== "range" || rangeValid);
+
+  async function handleAnalyze() {
+    if (!file || !canAnalyze) return;
+    setError(null);
+
+    const supabase = createClient();
+    let path: string;
+
+    // 1. Upload directly to private storage (bypasses the request-body limit).
     setPhase("uploading");
     try {
-      const fd = new FormData();
-      fd.append("file", target);
-      fd.append("cardCount", String(cardCount));
-      const res = await fetch("/api/pdf/analyze", { method: "POST", body: fd });
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+
+      const slug = file.name
+        .toLowerCase()
+        .replace(/[^a-z0-9.]+/g, "-")
+        .replace(/-+/g, "-")
+        .slice(-80);
+      path = `${user.id}/${Date.now()}-${slug || "document.pdf"}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(PDF_BUCKET)
+        .upload(path, file, {
+          contentType: "application/pdf",
+          upsert: false,
+        });
+      if (uploadError) throw new Error(uploadError.message);
+      uploadedPathRef.current = path;
+    } catch (e) {
+      setError({
+        message:
+          e instanceof Error && e.message
+            ? `Upload failed: ${e.message}`
+            : "Upload failed",
+        code: "STORAGE_FAILED",
+      });
+      setPhase("select");
+      return;
+    }
+
+    // 2. Server-side analysis from storage.
+    setPhase("processing");
+    try {
+      const res = await fetch("/api/pdf/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path,
+          filename: file.name,
+          mode,
+          cardCount,
+          ...(mode === "range"
+            ? { pageStart: rangeStart, pageEnd: rangeEnd }
+            : {}),
+        }),
+      });
       const json = (await res.json()) as {
-        data: AnalyzeResult | null;
+        data: AnalyzeData | null;
         error: string | null;
+        code?: PdfErrorCode;
       };
+      // The server deletes the temp object whatever happens.
+      uploadedPathRef.current = null;
+
       if (!res.ok || json.error || json.data === null) {
-        throw new Error(json.error ?? `Request failed (${res.status})`);
+        setError({
+          message: json.error ?? `Analysis failed (${res.status})`,
+          code: json.code,
+        });
+        setPhase("select");
+        return;
       }
+
       setResult(json.data);
       setCards(
         json.data.cards.map((c) => ({
@@ -143,21 +259,13 @@ export function PDFUploadModal() {
       );
       setDeckName(cleanFilename(json.data.filename));
       setPhase("preview");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to analyze the PDF.");
-      setPhase("idle");
+    } catch {
+      setError({
+        message: "Couldn't reach the analyzer — check your connection.",
+        code: "EXTRACT_FAILED",
+      });
+      setPhase("select");
     }
-  }
-
-  function selectFile(selected: File | undefined | null) {
-    if (!selected) return;
-    const validationError = validateFile(selected);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    setError(null);
-    setFile(selected);
   }
 
   async function handleSave() {
@@ -197,7 +305,9 @@ export function PDFUploadModal() {
       );
       close();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save.");
+      setError({
+        message: e instanceof Error ? e.message : "Failed to save.",
+      });
       setPhase("preview"); // keep drafts so the user can retry
     }
   }
@@ -205,6 +315,8 @@ export function PDFUploadModal() {
   function deleteCard(id: string) {
     setCards((prev) => prev.filter((c) => c.id !== id));
   }
+
+  const modeLabel = result ? MODE_INFO[result.mode].label : "";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -223,24 +335,31 @@ export function PDFUploadModal() {
               "Generate Flashcards from PDF"
             )}
           </DialogTitle>
-          {phase === "idle" && (
+          {phase === "select" && (
             <DialogDescription>
-              Upload a text-based PDF. AI will extract the content and create
-              spaced repetition cards automatically.
+              Upload a text-based PDF — AI extracts the content and creates
+              spaced repetition cards. Scanned/image PDFs aren&apos;t supported.
             </DialogDescription>
           )}
         </DialogHeader>
 
-        {/* Inline error */}
+        {/* Inline error + recovery hint */}
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
+          <div className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
+            <p className="flex items-start gap-2 text-danger">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error.message}</span>
+            </p>
+            {error.code && PDF_ERROR_HINTS[error.code] && (
+              <p className="mt-1.5 pl-6 text-xs text-danger/70">
+                {PDF_ERROR_HINTS[error.code]}
+              </p>
+            )}
           </div>
         )}
 
-        {/* IDLE — drop zone + count selector */}
-        {phase === "idle" && (
+        {/* SELECT — file, mode, range, count */}
+        {phase === "select" && (
           <div className="space-y-4">
             <div>
               <input
@@ -264,29 +383,101 @@ export function PDFUploadModal() {
                   selectFile(e.dataTransfer.files?.[0]);
                 }}
                 className={cn(
-                  "flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors md:min-h-32",
+                  "flex w-full flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors",
                   dragging
                     ? "border-accent bg-accent/10"
                     : "border-border bg-surface hover:border-muted-foreground/40"
                 )}
               >
-                <FileText className="h-10 w-10 text-accent" />
+                <FileText className="h-9 w-9 text-accent" />
                 <span className="text-sm font-medium text-foreground">
-                  Drop your PDF here or click to browse
+                  {file ? "Choose a different PDF" : "Drop your PDF here or click to browse"}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  Text-based PDFs only · Max 4MB
+                  Text-based PDFs only · Max 25 MB
                 </span>
               </button>
-              <p className="mt-2 text-center text-xs text-muted-foreground">
-                Text-based PDFs only — scanned images won&apos;t work
-              </p>
 
-              {/* Selected file (not yet uploading) */}
               {file && (
-                <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm">
+                <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm">
                   <FileText className="h-4 w-4 shrink-0 text-accent" />
-                  <span className="truncate text-foreground">{file.name}</span>
+                  <span className="min-w-0 truncate text-foreground">
+                    {file.name}
+                  </span>
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                    {formatBytes(file.size)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Extraction mode */}
+            <div className="space-y-2">
+              <Label>Extraction mode</Label>
+              <div className="space-y-1.5">
+                {MODES.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    aria-pressed={mode === m}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left",
+                      mode === m
+                        ? "border-accent/60 bg-accent/10"
+                        : "border-border bg-surface hover:border-muted-foreground/40"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+                        mode === m
+                          ? "border-accent bg-accent"
+                          : "border-muted-foreground/40"
+                      )}
+                    >
+                      {mode === m && (
+                        <Check className="h-3 w-3 text-accent-foreground" />
+                      )}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-foreground">
+                        {MODE_INFO[m].label}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {MODE_INFO[m].description}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {mode === "range" && (
+                <div className="flex items-center gap-2 pt-1">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={pageStart}
+                    onChange={(e) => setPageStart(e.target.value)}
+                    className="h-9 w-24 rounded-lg"
+                    aria-label="From page"
+                    placeholder="From"
+                  />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={pageEnd}
+                    onChange={(e) => setPageEnd(e.target.value)}
+                    className="h-9 w-24 rounded-lg"
+                    aria-label="To page"
+                    placeholder="To"
+                  />
+                  {!rangeValid && (
+                    <span className="text-xs text-danger">
+                      1 ≤ from ≤ to, max {RANGE_MAX_PAGES} pages
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -302,13 +493,48 @@ export function PDFUploadModal() {
           </div>
         )}
 
-        {/* UPLOADING */}
-        {phase === "uploading" && (
-          <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground">
-            <Loader2 className="h-6 w-6 animate-spin text-accent" />
-            <p className="text-sm">Reading PDF and generating cards with AI…</p>
+        {/* UPLOADING / PROCESSING — staged progress */}
+        {(phase === "uploading" || phase === "processing") && (
+          <div className="space-y-3 py-6">
+            {[
+              { key: "upload", label: "Uploading PDF to secure storage" },
+              {
+                key: "analyze",
+                label: "Extracting text & generating cards",
+              },
+            ].map((step, i) => {
+              const isDone = phase === "processing" && i === 0;
+              const isActive =
+                (phase === "uploading" && i === 0) ||
+                (phase === "processing" && i === 1);
+              return (
+                <div
+                  key={step.key}
+                  className={cn(
+                    "flex items-center gap-3 text-sm",
+                    isActive
+                      ? "text-foreground"
+                      : isDone
+                        ? "text-muted-foreground"
+                        : "text-muted-foreground/40"
+                  )}
+                >
+                  {isDone ? (
+                    <Check className="h-4 w-4 shrink-0 text-success" />
+                  ) : isActive ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+                  ) : (
+                    <span className="h-4 w-4 shrink-0 rounded-full border border-border" />
+                  )}
+                  {step.label}
+                </div>
+              );
+            })}
             {file && (
-              <p className="max-w-full truncate text-xs">{file.name}</p>
+              <p className="truncate pt-1 text-xs text-muted-foreground/60">
+                {file.name} · {formatBytes(file.size)} ·{" "}
+                {MODE_INFO[mode].label}
+              </p>
             )}
           </div>
         )}
@@ -324,22 +550,34 @@ export function PDFUploadModal() {
         {/* PREVIEW */}
         {phase === "preview" && result && (
           <div className="space-y-4">
-            {result.truncated && (
+            {result.sampled && (
               <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
-                  PDF was large — cards generated from the first portion of
-                  content.
+                  Large document — content was sampled across{" "}
+                  {result.pagesUsed} of {result.pageCount} pages.
                 </span>
               </div>
             )}
 
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {/* Analysis summary */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <FileText className="h-4 w-4 shrink-0 text-accent" />
-              <span className="truncate">{cleanFilename(result.filename)}</span>
-              <span className="shrink-0">
-                · {result.pageCount} page{result.pageCount === 1 ? "" : "s"}
+              <span className="max-w-[12rem] truncate">
+                {cleanFilename(result.filename)}
               </span>
+              <span aria-hidden>·</span>
+              <span>
+                {result.pageCount} page{result.pageCount === 1 ? "" : "s"}
+              </span>
+              <span aria-hidden>·</span>
+              <span>{modeLabel}</span>
+              {result.chunkCount > 1 && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{result.chunkCount} sections analyzed</span>
+                </>
+              )}
             </div>
 
             <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
@@ -404,7 +642,7 @@ export function PDFUploadModal() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => file && analyze(file)}
+                onClick={handleAnalyze}
                 disabled={!file}
               >
                 <RefreshCw className="mr-1.5 h-4 w-4" />
@@ -430,8 +668,8 @@ export function PDFUploadModal() {
               </Button>
               <Button
                 type="button"
-                onClick={() => file && analyze(file)}
-                disabled={!file || busy}
+                onClick={handleAnalyze}
+                disabled={!canAnalyze}
               >
                 Generate Cards
               </Button>

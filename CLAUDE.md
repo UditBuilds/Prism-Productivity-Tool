@@ -198,3 +198,26 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - /api/push/tinywin: cron-secret guarded, 9 PM IST daily summary (tasks done +
   completed focus minutes + reviews today, IST window). Skips users with all-zero
   stats; sent = users delivered; prunes dead subscriptions; marks nothing.
+
+## Conventions & Gotchas (Session B — PDF analyzer pipeline)
+- PDFs upload CLIENT -> private Supabase Storage bucket "pdf-uploads" (25MB bucket cap,
+  path {user_id}/{ts}-{slug}.pdf, RLS: insert/select/delete own folder only). The analyze
+  route receives only JSON {path, filename, mode, cardCount, pageStart?, pageEnd?} — never
+  file bytes — which sidesteps Vercel's ~4.5MB request-body cap.
+- /api/pdf/analyze: maxDuration 60; downloads from storage, verifies path prefix = auth.uid();
+  per-page extraction via pdf-parse pagerender closure (lib/pdf/extract.ts — pages render
+  sequentially, so a closure collects page-level text; numpages stays the full doc total).
+- Modes: quick (first ~30 pages until ~14k chars, 1 chunk), smart (up to 200 pages, up to 4
+  chunks sampled EVENLY across the doc when over budget), range (validated, max 120 pages,
+  up to 3 chunks). Chunking = sentence-boundary, lib/pdf/chunk.ts.
+- Generation is sequential per chunk (Groq rate-limit friendly); merge via lib/pdf/merge-cards
+  round-robin across chunks + near-dup detection (normalized equality OR content-word Jaccard
+  > 0.75 with STOPWORDS stripped — question scaffolding otherwise makes different cards look
+  identical). Unit-tested via node.
+- Typed failures: PdfAnalyzeError codes (FILE_TOO_LARGE/SCANNED_PDF/TOO_LITTLE_TEXT/
+  INVALID_RANGE/EXTRACT_FAILED/AI_FAILED/STORAGE_FAILED) -> {error, code} + status; modal maps
+  code -> recovery hint (lib/pdf/types PDF_ERROR_HINTS). Scanned heuristic: <250 total chars
+  AND <15 chars/page average.
+- Cleanup: route deletes the temp object in finally (all paths incl. validation throws);
+  modal removes orphans on close if upload succeeded but analysis never returned. NO OCR —
+  scanned PDFs intentionally fail with SCANNED_PDF.
