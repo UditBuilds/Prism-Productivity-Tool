@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
+import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import type { SrsCard } from "@/types/database";
 import type { AnalyticsData } from "@/app/api/srs/analytics/route";
 
@@ -249,6 +250,7 @@ export function useSubmitReview() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: CARDS_KEY });
+      invalidateDerivedCaches(qc, "srs-review");
     },
   });
 }

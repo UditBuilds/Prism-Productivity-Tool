@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
+import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import type { Task, TaskPriority, TaskStatus } from "@/types/database";
 
 const TASKS_KEY = ["tasks"] as const;
@@ -84,7 +85,10 @@ export function useCreateTask() {
       toast.error(err instanceof Error ? err.message : "Failed to create task");
     },
     onSuccess: () => toast.success("Task created"),
-    onSettled: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: TASKS_KEY });
+      invalidateDerivedCaches(qc, "tasks");
+    },
   });
 }
 
@@ -109,7 +113,10 @@ export function useUpdateTask() {
       if (ctx?.previous) qc.setQueryData(TASKS_KEY, ctx.previous);
       toast.error(err instanceof Error ? err.message : "Failed to update task");
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: TASKS_KEY });
+      invalidateDerivedCaches(qc, "tasks");
+    },
   });
 }
 
@@ -131,6 +138,9 @@ export function useDeleteTask() {
       toast.error(err instanceof Error ? err.message : "Failed to delete task");
     },
     onSuccess: () => toast.success("Task deleted"),
-    onSettled: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: TASKS_KEY });
+      invalidateDerivedCaches(qc, "tasks");
+    },
   });
 }

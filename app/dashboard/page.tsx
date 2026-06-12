@@ -12,6 +12,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import {
   istDayContext,
+  istDateString,
   greetingForHour,
   formatCountdown,
   countdownProgressPct,
@@ -67,9 +68,13 @@ export default async function DashboardHome() {
         .gte("remind_at", startOfToday)
         .lt("remind_at", endOfToday)
         .eq("is_sent", false),
+      // "Upcoming" = today or later (IST). Past countdowns sort FIRST on
+      // target_date, so without this filter they'd hog the 3 slots forever.
+      // They stay visible in the Reminders → Countdowns tab.
       supabase
         .from("countdowns")
         .select("*")
+        .gte("target_date", istDateString())
         .order("target_date", { ascending: true })
         .limit(3),
     ]);

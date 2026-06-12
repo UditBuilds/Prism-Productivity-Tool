@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
+import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import type { FocusSession } from "@/types/database";
 
 const FOCUS_KEY = ["focus-sessions"] as const;
@@ -55,6 +56,11 @@ export function useEndFocusSession() {
   return useMutation({
     mutationFn: (input: { id: string; completed: boolean }) =>
       request<FocusSession>("PATCH", input),
-    onSettled: () => qc.invalidateQueries({ queryKey: FOCUS_KEY }),
+    // Analytics only count completed=true sessions, so session START doesn't
+    // need this — only ending one can change the derived numbers.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: FOCUS_KEY });
+      invalidateDerivedCaches(qc, "focus");
+    },
   });
 }

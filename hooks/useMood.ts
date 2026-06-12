@@ -6,6 +6,7 @@ import {
 import toast from "react-hot-toast";
 
 import { istDateString } from "@/lib/date";
+import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import type { MoodLog, MoodValue } from "@/types/database";
 
 const MOOD_KEY = ["mood-logs"] as const;
@@ -79,6 +80,9 @@ export function useLogMood() {
       if (ctx?.previous) qc.setQueryData(MOOD_KEY, ctx.previous);
       toast.error(err instanceof Error ? err.message : "Failed to log mood");
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: MOOD_KEY }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: MOOD_KEY });
+      invalidateDerivedCaches(qc, "mood");
+    },
   });
 }

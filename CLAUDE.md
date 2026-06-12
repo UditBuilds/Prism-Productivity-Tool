@@ -265,3 +265,27 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
   lives in the selected-day panel. Spillover days are disabled and indicator-free.
 - Nav: sidebar after Reminders; mobile bar stays at 5; avatar dropdown = Calendar +
   Weekly Review + Profile (the mobile overflow pattern).
+
+## Conventions & Gotchas (Session G — stabilization pass)
+- Derived-cache invalidation: lib/derived-caches.ts invalidateDerivedCaches(qc, source)
+  maps each activity source (tasks/reminders/focus/srs-review/mood) to the read-model
+  query keys it feeds (["calendar"], ["productivity-analytics"], ["weekly-review"],
+  ["srs-analytics"]). Every mutation hook calls it in onSettled/onSuccess alongside its
+  own key. If a NEW derived/analytics query is added, register its key there — don't
+  scatter ad-hoc invalidations. Focus invalidates only on session END (analytics count
+  completed=true sessions only); session start changes nothing derived.
+- DOCUMENTED tradeoff (accepted, do not "fix" without a completed_at column + SQL-first
+  sign-off): "completed task" = status='done' bucketed by updated_at, app-wide
+  (dashboard Done This Week, productivity, weekly review, tiny-wins). Editing an old
+  done task (title fix, etc.) re-dates its completion to today on all those surfaces.
+  Consistency over precision until the schema grows a real completed_at.
+- TopBar date chip + clock are IST via Intl (Asia/Kolkata), NOT date-fns local time.
+  Local time would render yesterday's date during SSR on UTC Vercel between 00:00–05:30
+  IST and hydration-mismatch the client. The date label recomputes on the minute tick,
+  so it rolls over at IST midnight without a reload.
+- Dashboard "Upcoming" countdowns filter .gte("target_date", istDateString()) — past
+  countdowns sort first on target_date and would permanently occupy the 3 slots.
+  Full history (incl. past, dimmed) lives in Reminders → Countdowns tab.
+- Calendar page "today" highlight is computed per render; a tab left open across IST
+  midnight keeps the old highlight until any re-render/navigation. Known + accepted
+  (next interaction fixes it).

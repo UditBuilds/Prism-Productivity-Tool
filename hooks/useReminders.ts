@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
+import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import type { Reminder } from "@/types/database";
 
 const REMINDERS_KEY = ["reminders"] as const;
@@ -106,7 +107,10 @@ export function useCreateReminder() {
       );
     },
     onSuccess: () => toast.success("Reminder created"),
-    onSettled: () => qc.invalidateQueries({ queryKey: REMINDERS_KEY }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: REMINDERS_KEY });
+      invalidateDerivedCaches(qc, "reminders");
+    },
   });
 }
 
@@ -133,7 +137,10 @@ export function useUpdateReminder() {
         err instanceof Error ? err.message : "Failed to update reminder"
       );
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: REMINDERS_KEY }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: REMINDERS_KEY });
+      invalidateDerivedCaches(qc, "reminders");
+    },
   });
 }
 
@@ -157,6 +164,9 @@ export function useDeleteReminder() {
       );
     },
     onSuccess: () => toast.success("Reminder deleted"),
-    onSettled: () => qc.invalidateQueries({ queryKey: REMINDERS_KEY }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: REMINDERS_KEY });
+      invalidateDerivedCaches(qc, "reminders");
+    },
   });
 }

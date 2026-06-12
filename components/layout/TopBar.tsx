@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { format } from "date-fns";
 import { Bell, Calendar, CalendarCheck, LogOut, User } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
@@ -19,6 +18,31 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { titleForPath } from "./nav-config";
 
+// IST-anchored (app convention): local-time formatting here would show the
+// wrong date between 00:00–05:30 IST when server-rendered on UTC (Vercel),
+// and mismatch the client on hydration.
+const istDateFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+
+const istClockFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Kolkata",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+
+/** "Thursday, 12 June" — identical on server and client for the same IST day. */
+function istTodayLabel(now: Date): string {
+  const parts = istDateFmt.formatToParts(now);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("weekday")}, ${get("day")} ${get("month")}`;
+}
+
 export function TopBar({
   displayName,
   email,
@@ -29,13 +53,14 @@ export function TopBar({
   const pathname = usePathname();
   const router = useRouter();
   const title = titleForPath(pathname);
-  const today = format(new Date(), "EEEE, d MMMM");
+  // Recomputed on every minute tick below, so it rolls over at IST midnight.
+  const today = istTodayLabel(new Date());
 
   // Live clock, ticking every minute. Rendered only after mount to avoid a
   // server/client hydration mismatch.
   const [time, setTime] = useState<string | null>(null);
   useEffect(() => {
-    const tick = () => setTime(format(new Date(), "h:mm a"));
+    const tick = () => setTime(istClockFmt.format(new Date()));
     tick();
     const interval = setInterval(tick, 60_000);
     return () => clearInterval(interval);
