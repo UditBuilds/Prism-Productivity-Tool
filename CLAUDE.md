@@ -221,3 +221,20 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - Cleanup: route deletes the temp object in finally (all paths incl. validation throws);
   modal removes orphans on close if upload succeeded but analysis never returned. NO OCR —
   scanned PDFs intentionally fail with SCANNED_PDF.
+
+## Conventions & Gotchas (Session C — Productivity analytics)
+- /api/analytics/productivity (NOT under /api/srs — spans focus+tasks+reviews): 30-IST-day
+  window, zero-filled daily series, IST Monday week boundaries via istDayContext. Hook
+  useProductivityAnalytics (key ["productivity-analytics"], 5-min stale).
+- "Completed task" = status='done' bucketed by updated_at — same semantics as the dashboard
+  Completed stat and tiny-wins. updated_at moves on ANY edit, so daily task counts are an
+  approximation (no completed_at column by design).
+- Focus buckets by started_at; only completed=true sessions count toward minutes/categories/
+  insights. Insights (peak hour via lib/date istHour, best weekday via Intl Asia/Kolkata)
+  return null under 3 completed sessions — UI hides the chips.
+- Category chart colors live on CATEGORIES (chartColor hex per category) in
+  components/focus/categories.ts + categoryChartColor() fallback — don't invent new ones.
+- AnalyticsPanel tabs: Stats | Productivity | Mood. ProductivityPanel is statically imported
+  by AnalyticsPanel, which stays behind the next/dynamic boundary in LearnClient — keep it
+  that way so recharts stays out of the Learn first load.
+- NO combined streaks/badges in analytics — intentionally excluded (vanity metric).

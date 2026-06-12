@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { MoodPanel } from "@/components/srs/MoodPanel";
+import { ProductivityPanel } from "@/components/srs/ProductivityPanel";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -68,12 +69,16 @@ function StatCard({
 export function AnalyticsPanel({ streak }: { streak: number }) {
   return (
     <Tabs defaultValue="stats">
-      <TabsList className="grid w-full max-w-xs grid-cols-2">
+      <TabsList className="grid w-full max-w-md grid-cols-3">
         <TabsTrigger value="stats">Stats</TabsTrigger>
+        <TabsTrigger value="productivity">Productivity</TabsTrigger>
         <TabsTrigger value="mood">Mood</TabsTrigger>
       </TabsList>
       <TabsContent value="stats" className="mt-5">
         <StatsContent streak={streak} />
+      </TabsContent>
+      <TabsContent value="productivity" className="mt-5">
+        <ProductivityPanel />
       </TabsContent>
       <TabsContent value="mood" className="mt-5">
         <MoodPanel />

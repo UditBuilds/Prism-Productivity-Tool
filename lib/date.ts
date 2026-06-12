@@ -58,6 +58,11 @@ export function istDayNumber(ms: number): number {
   return istDayIndex(ms);
 }
 
+/** IST hour-of-day (0–23) for an instant — for peak-focus-hour bucketing. */
+export function istHour(ms: number): number {
+  return new Date(ms + IST_OFFSET_MS).getUTCHours();
+}
+
 /** IST civil date ("YYYY-MM-DD") for an instant. Defaults to now. */
 export function istDateString(ms: number = Date.now()): string {
   return new Intl.DateTimeFormat("en-CA", {
