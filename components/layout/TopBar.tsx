@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { Bell, LogOut, User } from "lucide-react";
+import { Bell, CalendarCheck, LogOut, User } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
@@ -103,6 +103,12 @@ export function TopBar({
               {email}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/dashboard/review" className="cursor-pointer">
+                <CalendarCheck className="mr-2 h-4 w-4" />
+                Weekly Review
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href="/dashboard/settings" className="cursor-pointer">
                 <User className="mr-2 h-4 w-4" />

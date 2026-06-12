@@ -6,6 +6,7 @@ import {
   Bell,
   Timer,
   Brain,
+  CalendarCheck,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -24,15 +25,17 @@ export const navItems: NavItem[] = [
   { label: "Reminders", href: "/dashboard/reminders", icon: Bell },
   { label: "Focus", href: "/dashboard/focus", icon: Timer },
   { label: "Learn", href: "/dashboard/learn", icon: Brain },
+  { label: "Review", href: "/dashboard/review", icon: CalendarCheck },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
-// Mobile bottom bar shows 5. Plans/Reminders/Settings are omitted to keep the
-// bar uncrowded at 375px — Reminders stays reachable via the TopBar bell, and
-// Settings via the TopBar avatar dropdown.
+// Mobile bottom bar shows 5. Plans/Reminders/Settings/Review are omitted to
+// keep the bar uncrowded at 375px — Reminders stays reachable via the TopBar
+// bell, and Settings + Weekly Review via the TopBar avatar dropdown.
 const MOBILE_EXCLUDED = [
   "/dashboard/plans",
   "/dashboard/reminders",
+  "/dashboard/review",
   "/dashboard/settings",
 ];
 export const mobileNavItems: NavItem[] = navItems.filter(

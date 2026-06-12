@@ -238,3 +238,17 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
   by AnalyticsPanel, which stays behind the next/dynamic boundary in LearnClient — keep it
   that way so recharts stays out of the Learn first load.
 - NO combined streaks/badges in analytics — intentionally excluded (vanity metric).
+
+## Conventions & Gotchas (Session E — Weekly Review)
+- /dashboard/review + /api/review/weekly?week=current|previous (IST Mon-Sun via
+  istDayContext startOfWeek; previous = -7d). Hook useWeeklyReview(week), key
+  ["weekly-review", week], 5-min stale.
+- Day score (ranking only, NOT gamification): min(focus,180)/10 + tasks*2 + reviews*0.5.
+  bestDay = top-scoring active day; worstDay ("Quietest day" in UI) only with >= 2 active
+  days; both null otherwise. Insights are deterministic strings (2-4, data-only).
+- Task completion semantics same as dashboard/productivity: status='done' by updated_at.
+- The page intentionally uses NO recharts (bar rows + Mon-Sun strip) — keep it light;
+  don't add charts here, the analytics tab owns charts.
+- Nav: "Review" in sidebar after Learn; EXCLUDED from mobile bottom bar (stays at 5);
+  mobile access via TopBar avatar dropdown (alongside Profile) — that dropdown is the
+  established overflow pattern.
