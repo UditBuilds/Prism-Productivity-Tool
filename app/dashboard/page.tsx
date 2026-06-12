@@ -91,7 +91,7 @@ export default async function DashboardHome() {
       accent: "border-t-warning/70",
     },
     {
-      label: "Completed",
+      label: "Done This Week",
       value: completedCount,
       icon: CheckCircle2,
       accent: "border-t-success/70",
@@ -112,19 +112,17 @@ export default async function DashboardHome() {
 
   return (
     <div>
-      {/* Quote of the day */}
-      <QuoteCard />
-
-      {/* Daily mood check-in */}
-      <MoodWidget />
-
-      {/* Greeting */}
+      {/* Hero: greeting anchors the page; the quote is its quiet subtext */}
       <header>
-        <h1 className="text-2xl font-semibold text-foreground">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           {greetingForHour(hour)},{" "}
           <span className="font-bold text-accent">{displayName}</span>
         </h1>
+        <QuoteCard />
       </header>
+
+      {/* Daily mood check-in */}
+      <MoodWidget />
 
       {/* Stats */}
       <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
@@ -136,13 +134,13 @@ export default async function DashboardHome() {
               accent
             )}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
                 {label}
               </span>
-              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground/50" />
             </div>
-            <p className="mt-3 text-2xl font-bold tracking-tight text-white lg:text-3xl">
+            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-white lg:text-3xl">
               {value}
             </p>
           </div>
@@ -151,27 +149,50 @@ export default async function DashboardHome() {
 
       {/* Due Today */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2 border-l-2 border-accent pl-3">
+        <div className="mb-3 flex items-center gap-2.5 border-l-2 border-accent pl-3">
           <h2 className="text-base font-semibold text-foreground">Due Today</h2>
+          {dueCount > 0 && (
+            <span className="rounded-full border border-border bg-surface-raised px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+              {dueCount}
+            </span>
+          )}
+          <Link
+            href="/dashboard/tasks"
+            className="ml-auto text-xs font-medium text-accent hover:text-accent-hover"
+          >
+            View all →
+          </Link>
         </div>
 
         {dueError ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-12 text-center">
-            <AlertCircle className="h-8 w-8 text-danger" />
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-raised">
+              <AlertCircle className="h-5 w-5 text-danger" />
+            </div>
             <p className="mt-3 text-sm text-muted-foreground">
               Couldn&apos;t load today&apos;s tasks. Try refreshing.
             </p>
           </div>
         ) : dueTasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-12 text-center">
-            <Coffee className="h-8 w-8 text-muted-foreground" />
-            <p className="mt-3 text-sm text-muted-foreground">
-              Nothing due today. Good day to get ahead.
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-raised">
+              <Coffee className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-foreground">
+              All clear for today
             </p>
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              Nothing due — a good day to get ahead.
+            </p>
+            <Link
+              href="/dashboard/tasks"
+              className="mt-3 text-xs font-medium text-accent hover:text-accent-hover"
+            >
+              Add a task →
+            </Link>
           </div>
         ) : (
-          <>
-            <ul className="space-y-2">
+          <ul className="space-y-2">
               {dueTasks.map((task) => (
                 <li key={task.id}>
                   <Link
@@ -208,30 +229,32 @@ export default async function DashboardHome() {
                   </Link>
                 </li>
               ))}
-            </ul>
-            <div className="mt-2 text-right">
-              <Link
-                href="/dashboard/tasks"
-                className="text-xs text-accent hover:text-accent-hover"
-              >
-                View all →
-              </Link>
-            </div>
-          </>
+          </ul>
         )}
       </section>
 
       {/* Upcoming countdowns */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2 border-l-2 border-accent pl-3">
+        <div className="mb-3 flex items-center gap-2.5 border-l-2 border-accent pl-3">
           <h2 className="text-base font-semibold text-foreground">Upcoming</h2>
+          <Link
+            href="/dashboard/reminders"
+            className="ml-auto text-xs font-medium text-accent hover:text-accent-hover"
+          >
+            + Add countdown
+          </Link>
         </div>
 
         {countdowns.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
-            <CalendarDays className="h-8 w-8 text-muted-foreground" />
-            <p className="mt-3 text-sm text-muted-foreground">
-              No upcoming events
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-raised">
+              <CalendarDays className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-foreground">
+              Nothing coming up
+            </p>
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              Count down to exams, trips, launches, birthdays.
             </p>
             <Link
               href="/dashboard/reminders"
@@ -241,8 +264,7 @@ export default async function DashboardHome() {
             </Link>
           </div>
         ) : (
-          <>
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
               {countdowns.map((c) => {
                 const display = formatCountdown(c.target_date);
                 const toneClass =
@@ -283,16 +305,7 @@ export default async function DashboardHome() {
                   </li>
                 );
               })}
-            </ul>
-            <div className="mt-2 text-right">
-              <Link
-                href="/dashboard/reminders"
-                className="text-xs text-accent hover:text-accent-hover"
-              >
-                + Add countdown
-              </Link>
-            </div>
-          </>
+          </ul>
         )}
       </section>
     </div>
