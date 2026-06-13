@@ -6,7 +6,6 @@ import {
   Bell,
   Coffee,
   AlertCircle,
-  CalendarDays,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
@@ -14,6 +13,7 @@ import {
   istDayContext,
   istDateString,
   greetingForHour,
+  formatDueDate,
   formatCountdown,
   countdownProgressPct,
 } from "@/lib/date";
@@ -24,7 +24,6 @@ import {
   statusStyles,
   statusLabel,
 } from "@/components/tasks/task-styles";
-import { QuoteCard } from "@/components/dashboard/QuoteCard";
 import { MoodWidget } from "@/components/dashboard/MoodWidget";
 
 export const metadata = { title: "Dashboard | Prism" };
@@ -89,41 +88,20 @@ export default async function DashboardHome() {
   const countdowns: Countdown[] = countdownsRes.data ?? [];
 
   const stats = [
-    {
-      label: "Due Today",
-      value: dueCount,
-      icon: CalendarClock,
-      accent: "border-t-warning/70",
-    },
-    {
-      label: "Done This Week",
-      value: completedCount,
-      icon: CheckCircle2,
-      accent: "border-t-success/70",
-    },
-    {
-      label: "Cards to Review",
-      value: cardsCount,
-      icon: Brain,
-      accent: "border-t-accent/70",
-    },
-    {
-      label: "Reminders Today",
-      value: remindersTodayCount,
-      icon: Bell,
-      accent: "border-t-blue-500/70",
-    },
+    { label: "Due Today", value: dueCount, icon: CalendarClock },
+    { label: "Done This Week", value: completedCount, icon: CheckCircle2 },
+    { label: "Cards to Review", value: cardsCount, icon: Brain },
+    { label: "Reminders Today", value: remindersTodayCount, icon: Bell },
   ];
 
   return (
     <div>
-      {/* Hero: greeting anchors the page; the quote is its quiet subtext */}
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+      {/* Hero: the greeting anchors the page */}
+      <header className="pt-2">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
           {greetingForHour(hour)},{" "}
-          <span className="font-bold text-accent">{displayName}</span>
+          <span className="text-accent">{displayName}</span>
         </h1>
-        <QuoteCard />
       </header>
 
       {/* Daily mood check-in */}
@@ -131,21 +109,18 @@ export default async function DashboardHome() {
 
       {/* Stats */}
       <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {stats.map(({ label, value, icon: Icon, accent }) => (
+        {stats.map(({ label, value, icon: Icon }) => (
           <div
             key={label}
-            className={cn(
-              "rounded-xl border border-[#1F1F1F] border-t-2 bg-[#111111] p-4 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/20 active:scale-[0.98] lg:p-6",
-              accent
-            )}
+            className="cursor-default rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/30"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+              <span className="truncate text-xs font-medium uppercase tracking-widest text-muted-foreground">
                 {label}
               </span>
-              <Icon className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground/40" />
             </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-white lg:text-3xl">
+            <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-white">
               {value}
             </p>
           </div>
@@ -154,16 +129,20 @@ export default async function DashboardHome() {
 
       {/* Due Today */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2.5 border-l-2 border-accent pl-3">
+        <div className="mb-3 flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className="h-5 w-0.5 self-center rounded-full bg-accent"
+          />
           <h2 className="text-base font-semibold text-foreground">Due Today</h2>
           {dueCount > 0 && (
-            <span className="rounded-full border border-border bg-surface-raised px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+            <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
               {dueCount}
             </span>
           )}
           <Link
             href="/dashboard/tasks"
-            className="ml-auto text-xs font-medium text-accent hover:text-accent-hover"
+            className="ml-auto text-sm font-medium text-accent hover:text-accent-hover"
           >
             View all →
           </Link>
@@ -198,75 +177,81 @@ export default async function DashboardHome() {
           </div>
         ) : (
           <ul className="space-y-2">
-              {dueTasks.map((task) => (
-                <li key={task.id}>
-                  <Link
-                    href={`/dashboard/tasks/${task.id}`}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition hover:border-[#2A2A2A] hover:bg-surface-raised/60"
-                  >
-                    <span
-                      className={cn(
-                        "truncate text-sm font-medium text-foreground",
-                        task.status === "done" &&
-                          "text-muted-foreground line-through"
-                      )}
+              {dueTasks.map((task) => {
+                const due = formatDueDate(task.due_date);
+                return (
+                  <li key={task.id}>
+                    <Link
+                      href={`/dashboard/tasks/${task.id}`}
+                      className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
                     >
-                      {task.title}
-                    </span>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span
-                        className={cn(
-                          "rounded-md px-2 py-0.5 text-xs font-medium capitalize",
-                          priorityStyles[task.priority]
-                        )}
-                      >
-                        {task.priority}
-                      </span>
-                      <span
-                        className={cn(
-                          "rounded-full px-2 py-0.5 text-xs font-medium",
-                          statusStyles[task.status]
-                        )}
-                      >
-                        {statusLabel[task.status]}
-                      </span>
-                    </div>
-                  </Link>
-                </li>
-              ))}
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={cn(
+                            "min-w-0 truncate text-sm font-medium text-foreground",
+                            task.status === "done" &&
+                              "text-muted-foreground line-through"
+                          )}
+                        >
+                          {task.title}
+                        </span>
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize",
+                            priorityStyles[task.priority]
+                          )}
+                        >
+                          {task.priority}
+                        </span>
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
+                            statusStyles[task.status]
+                          )}
+                        >
+                          {statusLabel[task.status]}
+                        </span>
+                      </div>
+                      {due && (
+                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                          {due.label}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
           </ul>
         )}
       </section>
 
       {/* Upcoming countdowns */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2.5 border-l-2 border-accent pl-3">
+        <div className="mb-3 flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className="h-5 w-0.5 self-center rounded-full bg-accent"
+          />
           <h2 className="text-base font-semibold text-foreground">Upcoming</h2>
           <Link
             href="/dashboard/reminders"
-            className="ml-auto text-xs font-medium text-accent hover:text-accent-hover"
+            className="ml-auto text-sm font-medium text-accent hover:text-accent-hover"
           >
             + Add countdown
           </Link>
         </div>
 
         {countdowns.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-raised">
-              <CalendarDays className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="mt-3 text-sm font-medium text-foreground">
-              Nothing coming up
+          <div className="rounded-xl border border-border bg-surface p-4">
+            <p className="text-sm text-muted-foreground">
+              Nothing coming up ·{" "}
+              <Link
+                href="/dashboard/reminders"
+                className="text-accent underline underline-offset-2"
+              >
+                Add countdown
+              </Link>
             </p>
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              Count down to exams, trips, launches, birthdays.
-            </p>
-            <Link
-              href="/dashboard/reminders"
-              className="mt-3 text-xs font-medium text-accent hover:text-accent-hover"
-            >
-              + Add countdown
-            </Link>
           </div>
         ) : (
           <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">

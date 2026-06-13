@@ -44,20 +44,19 @@ export function MoodWidget() {
   if (today && !editing) {
     const opt = moodOption(today.mood);
     return (
-      <div className="mt-5 flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3">
+      <div className="mt-5 flex items-center gap-3 rounded-xl border border-border bg-surface p-4">
         <span
           aria-hidden
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface-raised text-xl"
+          className="w-12 shrink-0 self-center text-center text-4xl leading-none"
         >
           {opt.emoji}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             Daily check-in
           </p>
-          <p className="truncate text-sm text-foreground">
-            Feeling{" "}
-            <span className={cn("font-semibold", opt.color)}>{opt.label}</span>
+          <p className="mt-0.5 truncate text-base font-medium text-foreground">
+            Feeling <span className="text-accent">{opt.label}</span>
             {today.note && (
               <span className="text-muted-foreground"> · {today.note}</span>
             )}
@@ -66,7 +65,7 @@ export function MoodWidget() {
         <button
           type="button"
           onClick={startEdit}
-          className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+          className="shrink-0 self-center text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
         >
           Edit
         </button>
