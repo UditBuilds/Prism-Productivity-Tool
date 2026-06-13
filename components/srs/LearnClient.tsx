@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Plus, Upload, Brain, Layers, Flame, CalendarClock, AlertCircle } from "lucide-react";
@@ -18,6 +19,7 @@ import { EmptyCards } from "@/components/shared/EmptyStates";
 import { DeckCard } from "@/components/srs/DeckCard";
 import { CardForm } from "@/components/srs/CardForm";
 import { ManageDeckModal } from "@/components/srs/ManageDeckModal";
+import { YoutubeAnalyzer } from "@/components/learn/YoutubeAnalyzer";
 import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
 
 // Lazy-load the analytics panel so recharts only ships when the Analytics tab
@@ -46,6 +48,7 @@ const AnalyticsPanel = dynamic(
 );
 
 export function LearnClient({ streak }: { streak: number }) {
+  const qc = useQueryClient();
   const openCreateCard = useUIStore((s) => s.openCreateCard);
   const openPdfModal = useUIStore((s) => s.openPdfModal);
   const { data: cards, isLoading, isError, refetch } = useAllCards();
@@ -139,6 +142,15 @@ export function LearnClient({ streak }: { streak: number }) {
           </Button>
         </Link>
       )}
+
+      {/* Generate from a YouTube video */}
+      <div className="mt-8">
+        <YoutubeAnalyzer
+          onSuccess={() =>
+            qc.invalidateQueries({ queryKey: ["srs-cards"] })
+          }
+        />
+      </div>
 
       {/* Deck list */}
       <div className="mt-8">
