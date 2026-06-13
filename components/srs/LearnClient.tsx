@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { EmptyCards } from "@/components/shared/EmptyStates";
 import { DeckCard } from "@/components/srs/DeckCard";
 import { CardForm } from "@/components/srs/CardForm";
+import { ManageDeckModal } from "@/components/srs/ManageDeckModal";
 import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
 
 // Lazy-load the analytics panel so recharts only ships when the Analytics tab
@@ -198,6 +199,7 @@ export function LearnClient({ streak }: { streak: number }) {
       </Tabs>
 
       <CardForm />
+      <ManageDeckModal />
       <PDFUploadModal />
     </div>
   );

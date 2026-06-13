@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { FileText, Layers, Play } from "lucide-react";
+import { FileText, Layers, Play, Settings2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { DeckStat } from "@/hooks/useSRS";
+import { useUIStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
 
 export function DeckCard({
@@ -15,6 +16,7 @@ export function DeckCard({
   deck: DeckStat;
   sourceNoteTitle?: string;
 }) {
+  const openManageDeck = useUIStore((s) => s.openManageDeck);
   const learned = deck.total - deck.dueCount;
   const pct = deck.total === 0 ? 0 : Math.round((learned / deck.total) * 100);
   const lastReviewed = deck.lastReviewed
@@ -34,6 +36,15 @@ export function DeckCard({
             {deck.deckName}
           </h3>
         </div>
+        <button
+          type="button"
+          aria-label="Manage cards"
+          title="Manage cards"
+          onClick={() => openManageDeck(deck.deckName)}
+          className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-muted-foreground hover:bg-surface-raised hover:text-foreground active:scale-95"
+        >
+          <Settings2 className="h-4 w-4" />
+        </button>
       </div>
 
       {sourceNoteTitle && (

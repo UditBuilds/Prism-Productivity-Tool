@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
-import { CheckCircle2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDueDate, type DueTone } from "@/lib/date";
@@ -164,7 +164,23 @@ export function TaskCard({ task }: { task: Task }) {
                 <MoreHorizontal className="h-4 w-4" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-36">
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() =>
+                  updateTask.mutate({
+                    id: task.id,
+                    status: isDone ? "todo" : "done",
+                  })
+                }
+              >
+                {isDone ? (
+                  <Circle className="mr-2 h-4 w-4" />
+                ) : (
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                )}
+                {isDone ? "Mark as todo" : "Mark as done"}
+              </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer"
                 onClick={() => openEditTask(task)}

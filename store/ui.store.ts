@@ -43,6 +43,11 @@ interface UIState {
   openEditCard: (card: SrsCard) => void;
   closeCardDialog: () => void;
 
+  /** "Manage cards in a deck" modal. `manageDeckName === null` = closed. */
+  manageDeckName: string | null;
+  openManageDeck: (deckName: string) => void;
+  closeManageDeck: () => void;
+
   /** SRS review session (a snapshot of due cards being worked through). */
   sessionCards: SrsCard[];
   currentIndex: number;
@@ -99,6 +104,10 @@ export const useUIStore = create<UIState>((set) => ({
   openCreateCard: () => set({ cardDialogOpen: true, editingCard: null }),
   openEditCard: (card) => set({ cardDialogOpen: true, editingCard: card }),
   closeCardDialog: () => set({ cardDialogOpen: false, editingCard: null }),
+
+  manageDeckName: null,
+  openManageDeck: (deckName) => set({ manageDeckName: deckName }),
+  closeManageDeck: () => set({ manageDeckName: null }),
 
   sessionCards: [],
   currentIndex: 0,
