@@ -228,7 +228,13 @@ export function useDeleteCard() {
       toast.error(err instanceof Error ? err.message : "Failed to delete card");
     },
     onSuccess: () => toast.success("Card deleted"),
-    onSettled: () => qc.invalidateQueries({ queryKey: CARDS_KEY }),
+    // Deleting a card cascades its srs_reviews (FK on delete cascade), so the
+    // review-derived read models (productivity / weekly review / srs-analytics)
+    // can change too.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: CARDS_KEY });
+      invalidateDerivedCaches(qc, "srs-review");
+    },
   });
 }
 
