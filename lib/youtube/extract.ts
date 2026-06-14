@@ -1,9 +1,10 @@
 // YouTube transcript + metadata helpers.
 //
-// extractVideoId / processTranscript / chunkTranscript are PURE (no network,
-// no youtube-transcript import) so this module is safe to import from a client
-// component for URL validation. fetchTranscript lazily imports the
-// youtube-transcript package so the package never lands in the client bundle.
+// extractVideoId / processTranscript / chunkTranscript are PURE (no network),
+// so this module is safe to import from a client component for URL validation.
+// fetchTranscript calls the Supadata HTTP API (server-side; reads
+// SUPADATA_API_KEY) — chosen because scraping YouTube directly is IP-blocked
+// from datacenter IPs like Vercel's.
 
 import type {
   YoutubeErrorCode,
@@ -72,77 +73,109 @@ export async function fetchVideoTitle(videoId: string): Promise<string> {
   }
 }
 
+// Supadata's YouTube transcript endpoint — works from datacenter IPs (Vercel),
+// unlike scraping YouTube directly. Returns synchronously (no async job).
+const SUPADATA_TRANSCRIPT_URL =
+  "https://api.supadata.ai/v1/youtube/transcript";
+
 /**
- * Fetch the transcript, preferring English then falling back to any available
- * language. Maps youtube-transcript's typed errors to a YoutubeExtractError.
+ * Fetch the transcript via the Supadata API. Requests segmented output
+ * (text=false) so timing data is preserved, and maps Supadata's status codes
+ * to a YoutubeExtractError. Supadata names the start time "offset" (ms); we
+ * map it to our segment's "start".
  */
 export async function fetchTranscript(
   videoId: string
 ): Promise<YoutubeTranscriptSegment[]> {
-  // Lazy import keeps youtube-transcript out of the client bundle.
-  const {
-    YoutubeTranscript,
-    YoutubeTranscriptDisabledError,
-    YoutubeTranscriptNotAvailableError,
-    YoutubeTranscriptNotAvailableLanguageError,
-    YoutubeTranscriptVideoUnavailableError,
-    YoutubeTranscriptTooManyRequestError,
-  } = await import("youtube-transcript");
-
-  try {
-    let rows: { text: string; duration: number; offset: number }[];
-    try {
-      rows = await YoutubeTranscript.fetchTranscript(videoId, { lang: "en" });
-    } catch (err) {
-      // English specifically unavailable → retry with the default track.
-      if (err instanceof YoutubeTranscriptNotAvailableLanguageError) {
-        rows = await YoutubeTranscript.fetchTranscript(videoId);
-      } else {
-        throw err;
-      }
-    }
-
-    if (!rows || rows.length === 0) {
-      throw new YoutubeExtractError(
-        "NO_TRANSCRIPT",
-        "No transcript segments were returned"
-      );
-    }
-    // youtube-transcript reports the timestamp as `offset`; our segment uses `start`.
-    return rows.map((r) => ({
-      text: r.text,
-      start: r.offset,
-      duration: r.duration,
-    }));
-  } catch (err) {
-    if (err instanceof YoutubeExtractError) throw err;
-    if (
-      err instanceof YoutubeTranscriptDisabledError ||
-      err instanceof YoutubeTranscriptNotAvailableError ||
-      err instanceof YoutubeTranscriptNotAvailableLanguageError
-    ) {
-      throw new YoutubeExtractError(
-        "NO_TRANSCRIPT",
-        "This video has no captions available"
-      );
-    }
-    if (err instanceof YoutubeTranscriptVideoUnavailableError) {
-      throw new YoutubeExtractError(
-        "PRIVATE_VIDEO",
-        "This video is private or unavailable"
-      );
-    }
-    if (err instanceof YoutubeTranscriptTooManyRequestError) {
-      throw new YoutubeExtractError(
-        "NETWORK_ERROR",
-        "YouTube rate-limited the request — try again shortly"
-      );
-    }
+  const apiKey = process.env.SUPADATA_API_KEY;
+  if (!apiKey) {
     throw new YoutubeExtractError(
       "NETWORK_ERROR",
-      "Could not reach YouTube for this video"
+      "SUPADATA_API_KEY environment variable is not set"
     );
   }
+
+  let res: Response;
+  try {
+    const url = `${SUPADATA_TRANSCRIPT_URL}?videoId=${encodeURIComponent(
+      videoId
+    )}&text=false`;
+    res = await fetch(url, { headers: { "x-api-key": apiKey } });
+  } catch {
+    throw new YoutubeExtractError(
+      "NETWORK_ERROR",
+      "Could not reach the transcript service"
+    );
+  }
+
+  // Supadata signals "no transcript available" with 206 Partial Content.
+  if (res.status === 206) {
+    throw new YoutubeExtractError(
+      "NO_TRANSCRIPT",
+      "This video has no captions available"
+    );
+  }
+  if (res.status === 404) {
+    throw new YoutubeExtractError(
+      "PRIVATE_VIDEO",
+      "This video is private or unavailable"
+    );
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new YoutubeExtractError(
+      "NETWORK_ERROR",
+      "The transcript service rejected the API key"
+    );
+  }
+  if (!res.ok) {
+    throw new YoutubeExtractError(
+      "NETWORK_ERROR",
+      `Transcript service error (${res.status})`
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await res.json();
+  } catch {
+    throw new YoutubeExtractError(
+      "NETWORK_ERROR",
+      "Transcript service returned an unreadable response"
+    );
+  }
+
+  const content =
+    typeof payload === "object" && payload !== null
+      ? (payload as Record<string, unknown>).content
+      : undefined;
+  if (!Array.isArray(content) || content.length === 0) {
+    throw new YoutubeExtractError(
+      "NO_TRANSCRIPT",
+      "No transcript segments were returned"
+    );
+  }
+
+  const segments: YoutubeTranscriptSegment[] = [];
+  for (const raw of content) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const seg = raw as Record<string, unknown>;
+    if (typeof seg.text !== "string") continue;
+    segments.push({
+      text: seg.text,
+      // Supadata's "offset" (ms) is our "start".
+      start: typeof seg.offset === "number" ? seg.offset : 0,
+      duration: typeof seg.duration === "number" ? seg.duration : 0,
+    });
+  }
+
+  if (segments.length === 0) {
+    throw new YoutubeExtractError(
+      "NO_TRANSCRIPT",
+      "No usable transcript segments were returned"
+    );
+  }
+
+  return segments;
 }
 
 // Caption noise tokens: [Music], [Applause], ♪ … — stripped before generation.
