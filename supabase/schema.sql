@@ -174,3 +174,29 @@ alter table push_subscriptions enable row level security;
 
 create policy "own_push_subscriptions"
   on push_subscriptions for all using (auth.uid() = user_id);
+
+-- STREAK FREEZE PROTECTION (auto-applied, 3 per IST week)
+-- Extra columns on profiles track the weekly freeze budget. streak_freezes is
+-- replenished to 3 at the start of each IST week (Monday); freeze_week_start
+-- records the Monday the current budget belongs to. Both are written by
+-- /api/srs/analytics, which auto-consumes at most one freeze per calculation
+-- to cover a single-day gap in the SRS review streak.
+alter table profiles
+  add column if not exists streak_freezes int not null default 3,
+  add column if not exists freeze_week_start date not null default current_date;
+
+-- One row per IST date a freeze covered. The unique (user_id, frozen_date)
+-- constraint backs the INSERT … ON CONFLICT DO NOTHING idempotency in the
+-- analytics route, so re-calling it never double-logs or double-spends.
+create table if not exists streak_freeze_logs (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  frozen_date date not null,
+  created_at timestamptz default now(),
+  unique(user_id, frozen_date)
+);
+
+alter table streak_freeze_logs enable row level security;
+
+create policy "own_streak_freeze_logs"
+  on streak_freeze_logs for all using (auth.uid() = user_id);

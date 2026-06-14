@@ -26,6 +26,8 @@ export interface Database {
           timezone: string;
           created_at: string;
           updated_at: string;
+          streak_freezes: number;
+          freeze_week_start: string;
         };
         Insert: {
           id: string;
@@ -34,6 +36,8 @@ export interface Database {
           timezone?: string;
           created_at?: string;
           updated_at?: string;
+          streak_freezes?: number;
+          freeze_week_start?: string;
         };
         Update: {
           id?: string;
@@ -42,6 +46,8 @@ export interface Database {
           timezone?: string;
           created_at?: string;
           updated_at?: string;
+          streak_freezes?: number;
+          freeze_week_start?: string;
         };
         Relationships: [];
       };
@@ -375,6 +381,27 @@ export interface Database {
         };
         Relationships: [];
       };
+      streak_freeze_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          frozen_date: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          frozen_date: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          frozen_date?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -385,6 +412,13 @@ export interface Database {
 
 // Convenience row aliases
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+
+export interface StreakFreezeLog {
+  id: string;
+  user_id: string;
+  frozen_date: string; // DATE as ISO string (YYYY-MM-DD)
+  created_at: string;
+}
 export type Plan = Database["public"]["Tables"]["plans"]["Row"];
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type Note = Database["public"]["Tables"]["notes"]["Row"];

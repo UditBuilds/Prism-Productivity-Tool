@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import toast from "react-hot-toast";
 import { Plus, Upload, Brain, Layers, Flame, CalendarClock, AlertCircle } from "lucide-react";
 
 import { istDayContext } from "@/lib/date";
-import { useAllCards, useDeckStats } from "@/hooks/useSRS";
+import { useAllCards, useDeckStats, useAnalytics } from "@/hooks/useSRS";
 import { useNotesQuery } from "@/hooks/useNotes";
 import { useUIStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
@@ -75,10 +76,39 @@ export function LearnClient({ streak }: { streak: number }) {
     return { total: list.length, dueToday: dueTodayCount, dueNow: dueNowCount };
   }, [cards]);
 
+  // The analytics route is the freeze-aware source of truth for the streak +
+  // remaining freezes; the server prop is the no-flash fallback until it loads.
+  const { data: analytics } = useAnalytics();
+  const streakValue = analytics?.streak ?? streak;
+  const streakFreezes = analytics?.streak_freezes;
+
+  // "Streak protected" toast — fire once per page load when a freeze was used.
+  const freezeToastShown = useRef(false);
+  useEffect(() => {
+    if (analytics?.freeze_applied && !freezeToastShown.current) {
+      freezeToastShown.current = true;
+      const remaining = analytics.streak_freezes;
+      toast(
+        <div className="text-sm">
+          <p className="font-semibold text-foreground">Streak protected 🛡️</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Yesterday&apos;s gap was covered by a freeze. {remaining} freeze
+            {remaining === 1 ? "" : "s"} remaining this week.
+          </p>
+        </div>,
+        { duration: 6000 }
+      );
+    }
+  }, [analytics?.freeze_applied, analytics?.streak_freezes]);
+
   const stats = [
     { label: "Total Cards", value: total, icon: Layers },
     { label: "Due Today", value: dueToday, icon: CalendarClock },
-    { label: "Streak", value: streak === 1 ? "1 day" : `${streak} days`, icon: Flame },
+    {
+      label: "Streak",
+      value: streakValue === 1 ? "1 day" : `${streakValue} days`,
+      icon: Flame,
+    },
   ];
 
   return (
@@ -129,6 +159,22 @@ export function LearnClient({ streak }: { streak: number }) {
             <p className="mt-2 text-2xl font-semibold text-foreground">
               {value}
             </p>
+            {label === "Streak" &&
+              streakFreezes !== undefined &&
+              streakFreezes < 3 && (
+                <p
+                  className={`mt-1 text-xs ${
+                    streakFreezes === 0
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  🛡️{" "}
+                  {streakFreezes === 0
+                    ? "0 freezes"
+                    : `${streakFreezes} freeze left`}
+                </p>
+              )}
           </div>
         ))}
       </section>
@@ -206,7 +252,7 @@ export function LearnClient({ streak }: { streak: number }) {
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-5">
-          <AnalyticsPanel streak={streak} />
+          <AnalyticsPanel streak={streakValue} />
         </TabsContent>
       </Tabs>
 
