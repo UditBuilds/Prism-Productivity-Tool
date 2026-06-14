@@ -86,3 +86,86 @@ JSON array:`;
 
   return cards;
 }
+
+/**
+ * Flashcards from a video transcript excerpt. SERVER-ONLY (touches
+ * GROQ_API_KEY). Uses a transcript-specific system prompt so cards never
+ * reference "the video"/"the speaker" and stay self-contained. Same model,
+ * parse, and error handling as generateFlashcardsFromNote.
+ */
+export async function generateFlashcardsFromTranscript(
+  videoTitle: string,
+  transcriptChunk: string,
+  count: number
+): Promise<{ front: string; back: string }[]> {
+  if (transcriptChunk.trim().length < 100) {
+    throw new Error("Transcript is too short to generate cards from.");
+  }
+
+  const systemPrompt = `You are an expert at creating flashcards from educational video transcripts. Generate exactly ${count} flashcards from the provided transcript excerpt.
+
+Rules:
+- Never reference 'the video', 'the speaker', 'the presenter', 'as mentioned', or 'discussed in this video'
+- No meta-questions about the video's structure or topics covered
+- Every card must be self-contained: answerable without having watched the video
+- Focus on concrete facts, formulas, definitions, and cause-effect relationships
+- Questions must test understanding, not recall of phrasing
+- Answers: 1–3 sentences maximum, no padding
+
+Return ONLY a JSON array:
+[{"front": "...", "back": "..."}]
+No preamble. No markdown fences.`;
+
+  const userContent = `Video title: ${videoTitle}\n\nTranscript excerpt:\n${transcriptChunk}`;
+
+  let text: string;
+  try {
+    const completion = await groq.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+      temperature: 0.7,
+    });
+    text = (completion.choices[0]?.message?.content ?? "").trim();
+  } catch (err) {
+    console.error("Groq generate error (transcript):", err);
+    throw err;
+  }
+
+  // Parse: try direct, then extract a JSON array from the response.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error("AI returned invalid format.");
+    parsed = JSON.parse(match[0]);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("AI returned unexpected format.");
+  }
+
+  const cards = (parsed as unknown[])
+    .filter(
+      (c): c is { front: string; back: string } =>
+        typeof c === "object" &&
+        c !== null &&
+        typeof (c as Record<string, unknown>).front === "string" &&
+        typeof (c as Record<string, unknown>).back === "string" &&
+        ((c as Record<string, unknown>).front as string).trim().length > 0 &&
+        ((c as Record<string, unknown>).back as string).trim().length > 0
+    )
+    .map((c) => ({
+      front: c.front.trim(),
+      back: c.back.trim(),
+    }));
+
+  if (cards.length === 0) {
+    throw new Error("No valid cards generated. Try again.");
+  }
+
+  return cards;
+}

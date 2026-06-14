@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { generateFlashcardsFromNote } from "@/lib/ai/client";
+import { generateFlashcardsFromTranscript } from "@/lib/ai/client";
 import { mergeCards } from "@/lib/pdf/merge-cards";
 import type { GeneratedCard } from "@/lib/pdf/types";
 import {
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     for (const chunk of chunks) {
       try {
         // Sequential on purpose: bounded Groq rate-limit pressure.
-        const cards = await generateFlashcardsFromNote(
+        const cards = await generateFlashcardsFromTranscript(
           videoTitle,
           chunk,
           perChunkTarget

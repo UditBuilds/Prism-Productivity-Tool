@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Layers, Pencil, Trash2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Layers, Loader2, Pencil, Trash2 } from "lucide-react";
 
 import { useUIStore } from "@/store/ui.store";
 import { useAllCards, useDeleteCard } from "@/hooks/useSRS";
+import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import type { SrsCard } from "@/types/database";
 import {
   Dialog,
@@ -27,7 +29,11 @@ export function ManageDeckModal() {
   const openEditCard = useUIStore((s) => s.openEditCard);
   const { data: cards } = useAllCards();
   const deleteCard = useDeleteCard();
+  const qc = useQueryClient();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deckConfirm, setDeckConfirm] = useState(false);
+  const [deletingDeck, setDeletingDeck] = useState(false);
+  const [deckError, setDeckError] = useState<string | null>(null);
 
   const open = manageDeckName !== null;
   const deckCards = (cards ?? []).filter(
@@ -36,7 +42,38 @@ export function ManageDeckModal() {
 
   function handleClose() {
     setConfirmingId(null);
+    setDeckConfirm(false);
+    setDeckError(null);
     closeManageDeck();
+  }
+
+  // Delete every card in this deck in one server call, then refresh the SRS
+  // cache and the review-derived read models (deleted cards cascade their
+  // srs_reviews). Keeps the modal open on failure so the error stays visible.
+  async function handleDeleteDeck() {
+    if (!manageDeckName) return;
+    setDeletingDeck(true);
+    setDeckError(null);
+    try {
+      const res = await fetch(
+        `/api/srs/decks?deckName=${encodeURIComponent(manageDeckName)}`,
+        { method: "DELETE" }
+      );
+      const json = (await res.json()) as {
+        data: { deleted: number } | null;
+        error: string | null;
+      };
+      if (!res.ok || json.error || json.data === null) {
+        throw new Error(json.error ?? `Delete failed (${res.status})`);
+      }
+      qc.invalidateQueries({ queryKey: ["srs-cards"] });
+      invalidateDerivedCaches(qc, "srs-review");
+      handleClose();
+    } catch (e) {
+      setDeckError(e instanceof Error ? e.message : "Failed to delete deck");
+    } finally {
+      setDeletingDeck(false);
+    }
   }
 
   // Editing reuses the shared CardForm dialog; close this one first so the two
@@ -55,10 +92,58 @@ export function ManageDeckModal() {
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Layers className="h-4 w-4 text-muted-foreground" />
-            <span className="truncate">{manageDeckName}</span>
-          </DialogTitle>
+          <div className="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle className="flex min-w-0 items-center gap-2">
+              <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{manageDeckName}</span>
+            </DialogTitle>
+
+            {deckCards.length > 0 &&
+              (deckConfirm ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    Delete all {deckCards.length} card
+                    {deckCards.length === 1 ? "" : "s"}?
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={deletingDeck}
+                    onClick={() => setDeckConfirm(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={deletingDeck}
+                    onClick={handleDeleteDeck}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    {deletingDeck && (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    )}
+                    Delete deck
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Delete deck"
+                  title="Delete deck"
+                  onClick={() => {
+                    setDeckError(null);
+                    setDeckConfirm(true);
+                  }}
+                  className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-surface hover:text-danger active:scale-95"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ))}
+          </div>
+          {deckError && (
+            <p className="mt-2 text-xs text-destructive">{deckError}</p>
+          )}
         </DialogHeader>
 
         {deckCards.length === 0 ? (
@@ -94,7 +179,7 @@ export function ManageDeckModal() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate font-mono text-sm text-foreground">
+                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                       {card.front}
                     </span>
                     <button
