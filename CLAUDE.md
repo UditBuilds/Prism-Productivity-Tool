@@ -226,9 +226,8 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - /api/analytics/productivity (NOT under /api/srs — spans focus+tasks+reviews): 30-IST-day
   window, zero-filled daily series, IST Monday week boundaries via istDayContext. Hook
   useProductivityAnalytics (key ["productivity-analytics"], 5-min stale).
-- "Completed task" = status='done' bucketed by updated_at — same semantics as the dashboard
-  Completed stat and tiny-wins. updated_at moves on ANY edit, so daily task counts are an
-  approximation (no completed_at column by design).
+- "Completed task" = status='done' bucketed by completed_at (set when marked done,
+  preserved on edits, cleared when un-done) — see the Session G/completed_at note below.
 - Focus buckets by started_at; only completed=true sessions count toward minutes/categories/
   insights. Insights (peak hour via lib/date istHour, best weekday via Intl Asia/Kolkata)
   return null under 3 completed sessions — UI hides the chips.
@@ -246,7 +245,7 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - Day score (ranking only, NOT gamification): min(focus,180)/10 + tasks*2 + reviews*0.5.
   bestDay = top-scoring active day; worstDay ("Quietest day" in UI) only with >= 2 active
   days; both null otherwise. Insights are deterministic strings (2-4, data-only).
-- Task completion semantics same as dashboard/productivity: status='done' by updated_at.
+- Task completion semantics same as dashboard/productivity: status='done' by completed_at.
 - The page intentionally uses NO recharts (bar rows + Mon-Sun strip) — keep it light;
   don't add charts here, the analytics tab owns charts.
 - Nav: "Review" in sidebar after Learn; EXCLUDED from mobile bottom bar (stays at 5);
@@ -274,11 +273,12 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
   own key. If a NEW derived/analytics query is added, register its key there — don't
   scatter ad-hoc invalidations. Focus invalidates only on session END (analytics count
   completed=true sessions only); session start changes nothing derived.
-- DOCUMENTED tradeoff (accepted, do not "fix" without a completed_at column + SQL-first
-  sign-off): "completed task" = status='done' bucketed by updated_at, app-wide
-  (dashboard Done This Week, productivity, weekly review, tiny-wins). Editing an old
-  done task (title fix, etc.) re-dates its completion to today on all those surfaces.
-  Consistency over precision until the schema grows a real completed_at.
+- Task completion tracked via completed_at (TIMESTAMPTZ, nullable). Set when status
+  → 'done', preserved on edits, cleared when un-done (PATCH /api/tasks owns this).
+  Dashboard "Done This Week", productivity, and weekly review bucket completions by
+  completed_at; TaskCard hides the overdue/due label for done tasks. NOTE: the Calendar
+  still groups tasks by due_date (it's a schedule view, not a completion history), and
+  the tiny-wins push still uses updated_at — both outside the completed_at migration.
 - TopBar date chip + clock are IST via Intl (Asia/Kolkata), NOT date-fns local time.
   Local time would render yesterday's date during SSR on UTC Vercel between 00:00–05:30
   IST and hydration-mismatch the client. The date label recomputes on the minute tick,

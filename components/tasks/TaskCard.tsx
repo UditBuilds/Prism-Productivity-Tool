@@ -226,23 +226,29 @@ export function TaskCard({ task }: { task: Task }) {
             {statusLabel[task.status]}
           </button>
 
-          {due && (
-            <span
-              className={cn(
-                "ml-auto flex items-center gap-1.5 text-xs",
-                dueToneClass[due.tone],
-                due.bold && "font-semibold"
-              )}
-            >
-              {due.tone === "danger" && (
+          {isDone
+            ? task.completed_at && (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  Completed
+                </span>
+              )
+            : due && (
                 <span
-                  aria-hidden
-                  className="h-1.5 w-1.5 animate-pulse rounded-full bg-danger"
-                />
+                  className={cn(
+                    "ml-auto flex items-center gap-1.5 text-xs",
+                    dueToneClass[due.tone],
+                    due.bold && "font-semibold"
+                  )}
+                >
+                  {due.tone === "danger" && (
+                    <span
+                      aria-hidden
+                      className="h-1.5 w-1.5 animate-pulse rounded-full bg-danger"
+                    />
+                  )}
+                  {due.label}
+                </span>
               )}
-              {due.label}
-            </span>
-          )}
         </div>
       </div>
     </div>

@@ -68,8 +68,8 @@ export async function GET() {
     startOfTodayMs - (WINDOW_DAYS - 1) * DAY_MS
   ).toISOString();
 
-  // Completed-task timestamps use updated_at + status='done' — the same
-  // semantics as the dashboard "Completed" stat and the tiny-wins push.
+  // Completed tasks are bucketed by completed_at (status='done', completed_at
+  // not null) — set when a task is marked done, preserved across later edits.
   const [focusRes, tasksRes, reviewsRes] = await Promise.all([
     supabase
       .from("focus_sessions")
@@ -77,9 +77,10 @@ export async function GET() {
       .gte("started_at", windowStartIso),
     supabase
       .from("tasks")
-      .select("updated_at")
+      .select("completed_at")
       .eq("status", "done")
-      .gte("updated_at", windowStartIso),
+      .not("completed_at", "is", null)
+      .gte("completed_at", windowStartIso),
     supabase
       .from("srs_reviews")
       .select("reviewed_at")
@@ -102,7 +103,8 @@ export async function GET() {
   }
   const tasksByDay = new Map<number, number>();
   for (const t of doneTasks) {
-    const idx = istDayNumber(Date.parse(t.updated_at));
+    if (!t.completed_at) continue;
+    const idx = istDayNumber(Date.parse(t.completed_at));
     tasksByDay.set(idx, (tasksByDay.get(idx) ?? 0) + 1);
   }
   const reviewsByDay = new Map<number, number>();

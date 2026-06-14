@@ -90,6 +90,7 @@ export interface Database {
           plan_id: string | null;
           created_at: string;
           updated_at: string;
+          completed_at: string | null;
         };
         Insert: {
           id?: string;
@@ -102,6 +103,7 @@ export interface Database {
           plan_id?: string | null;
           created_at?: string;
           updated_at?: string;
+          completed_at?: string | null;
         };
         Update: {
           id?: string;
@@ -114,6 +116,7 @@ export interface Database {
           plan_id?: string | null;
           created_at?: string;
           updated_at?: string;
+          completed_at?: string | null;
         };
         Relationships: [];
       };

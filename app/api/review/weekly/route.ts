@@ -115,10 +115,11 @@ export async function GET(request: Request) {
       .lt("started_at", endIso),
     supabase
       .from("tasks")
-      .select("updated_at")
+      .select("completed_at")
       .eq("status", "done")
-      .gte("updated_at", startIso)
-      .lt("updated_at", endIso),
+      .not("completed_at", "is", null)
+      .gte("completed_at", startIso)
+      .lt("completed_at", endIso),
     supabase
       .from("srs_reviews")
       .select("reviewed_at")
@@ -151,7 +152,8 @@ export async function GET(request: Request) {
     if (o >= 0 && o < 7) focusByDay[o] += s.duration_minutes;
   }
   for (const t of tasksRes.data ?? []) {
-    const o = offsetOf(Date.parse(t.updated_at));
+    if (!t.completed_at) continue;
+    const o = offsetOf(Date.parse(t.completed_at));
     if (o >= 0 && o < 7) tasksByDay[o] += 1;
   }
   for (const r of reviewsRes.data ?? []) {

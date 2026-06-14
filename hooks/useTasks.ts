@@ -76,6 +76,7 @@ export function useCreateTask() {
         plan_id: input.plan_id ?? null,
         created_at: now,
         updated_at: now,
+        completed_at: (input.status ?? "todo") === "done" ? now : null,
       };
       qc.setQueryData<Task[]>(TASKS_KEY, [optimistic, ...previous]);
       return { previous };

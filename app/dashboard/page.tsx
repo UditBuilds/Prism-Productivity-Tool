@@ -56,7 +56,8 @@ export default async function DashboardHome() {
         .from("tasks")
         .select("*", { count: "exact", head: true })
         .eq("status", "done")
-        .gte("updated_at", startOfWeek),
+        .not("completed_at", "is", null)
+        .gte("completed_at", startOfWeek),
       supabase
         .from("srs_cards")
         .select("*", { count: "exact", head: true })

@@ -82,6 +82,12 @@ export async function POST(request: Request) {
       priority: isPriority(body.priority) ? body.priority : "medium",
       due_date: typeof body.due_date === "string" ? body.due_date : null,
       plan_id: typeof body.plan_id === "string" ? body.plan_id : null,
+      // Stamp completion if a task is created directly as done (the PATCH
+      // path owns the done/un-done transitions for existing tasks).
+      completed_at:
+        (isStatus(body.status) ? body.status : "todo") === "done"
+          ? new Date().toISOString()
+          : null,
     })
     .select()
     .single();
@@ -124,6 +130,21 @@ export async function PATCH(request: Request) {
     if (!isStatus(body.status))
       return json({ data: null, error: "Invalid status" }, 400);
     updates.status = body.status;
+
+    if (body.status === "done") {
+      // Stamp completed_at only the first time a task becomes done — preserve
+      // any existing value so editing a done task doesn't re-date completion.
+      const { data: existing } = await supabase
+        .from("tasks")
+        .select("completed_at")
+        .eq("id", id)
+        .single();
+      updates.completed_at =
+        existing?.completed_at ?? new Date().toISOString();
+    } else {
+      // Re-opening a task (todo / in_progress) clears its completion stamp.
+      updates.completed_at = null;
+    }
   }
   if (body.priority !== undefined) {
     if (!isPriority(body.priority))
