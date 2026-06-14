@@ -24,5 +24,6 @@ export function useWeeklyReview(week: ReviewWeek) {
     queryKey: ["weekly-review", week],
     queryFn: () => fetchWeeklyReview(week),
     staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 }

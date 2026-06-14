@@ -47,11 +47,16 @@ async function request<T>(method: string, body?: unknown): Promise<T> {
   return json.data;
 }
 
+// Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+export const remindersQueryOptions = {
+  queryKey: REMINDERS_KEY,
+  queryFn: () => request<Reminder[]>("GET"),
+  staleTime: 3 * 60 * 1000,
+  gcTime: 6 * 60 * 1000,
+};
+
 export function useRemindersQuery() {
-  return useQuery<Reminder[]>({
-    queryKey: REMINDERS_KEY,
-    queryFn: () => request<Reminder[]>("GET"),
-  });
+  return useQuery(remindersQueryOptions);
 }
 
 /**
@@ -60,8 +65,7 @@ export function useRemindersQuery() {
  */
 export function useUpcomingReminders() {
   return useQuery<Reminder[], Error, Reminder[]>({
-    queryKey: REMINDERS_KEY,
-    queryFn: () => request<Reminder[]>("GET"),
+    ...remindersQueryOptions,
     select: (reminders) => {
       const now = Date.now();
       const horizon = now + SEVEN_DAYS_MS;

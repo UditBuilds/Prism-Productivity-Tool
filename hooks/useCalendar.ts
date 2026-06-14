@@ -22,5 +22,6 @@ export function useCalendarMonth(month: string) {
     queryKey: ["calendar", month],
     queryFn: () => fetchCalendarMonth(month),
     staleTime: 60_000, // tasks/reminders change more often than analytics
+    gcTime: 120_000, // 2× staleTime — keep prior months around briefly
   });
 }

@@ -31,6 +31,8 @@ export function useCountdownsQuery() {
   return useQuery<Countdown[]>({
     queryKey: COUNTDOWNS_KEY,
     queryFn: () => request<Countdown[]>("GET"),
+    staleTime: 15 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
 }
 

@@ -31,19 +31,23 @@ async function request<T>(method: string, body?: unknown): Promise<T> {
 
 const fetchHistory = () => request<MoodLog[]>("GET");
 
+// Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+export const moodQueryOptions = {
+  queryKey: MOOD_KEY,
+  queryFn: fetchHistory,
+  staleTime: 10 * 60 * 1000,
+  gcTime: 20 * 60 * 1000,
+};
+
 /** Last 30 mood logs, newest first. */
 export function useMoodHistory() {
-  return useQuery<MoodLog[]>({
-    queryKey: MOOD_KEY,
-    queryFn: fetchHistory,
-  });
+  return useQuery(moodQueryOptions);
 }
 
 /** Today's (IST) log, or null. Derived from the shared cache. */
 export function useTodaysMood() {
   return useQuery<MoodLog[], Error, MoodLog | null>({
-    queryKey: MOOD_KEY,
-    queryFn: fetchHistory,
+    ...moodQueryOptions,
     select: (logs) =>
       logs.find((l) => l.logged_date === istDateString()) ?? null,
   });

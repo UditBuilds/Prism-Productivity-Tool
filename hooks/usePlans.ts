@@ -42,11 +42,16 @@ async function request<T>(method: string, body?: unknown): Promise<T> {
   return json.data;
 }
 
+// Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+export const plansQueryOptions = {
+  queryKey: PLANS_KEY,
+  queryFn: () => request<Plan[]>("GET"),
+  staleTime: 15 * 60 * 1000,
+  gcTime: 30 * 60 * 1000,
+};
+
 export function usePlansQuery() {
-  return useQuery<Plan[]>({
-    queryKey: PLANS_KEY,
-    queryFn: () => request<Plan[]>("GET"),
-  });
+  return useQuery(plansQueryOptions);
 }
 
 export function useCreatePlan() {

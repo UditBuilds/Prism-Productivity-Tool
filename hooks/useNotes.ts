@@ -40,11 +40,16 @@ async function request<T>(method: string, body?: unknown): Promise<T> {
   return json.data;
 }
 
+// Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+export const notesQueryOptions = {
+  queryKey: NOTES_KEY,
+  queryFn: () => request<Note[]>("GET"),
+  staleTime: 10 * 60 * 1000,
+  gcTime: 20 * 60 * 1000,
+};
+
 export function useNotesQuery() {
-  return useQuery<Note[]>({
-    queryKey: NOTES_KEY,
-    queryFn: () => request<Note[]>("GET"),
-  });
+  return useQuery(notesQueryOptions);
 }
 
 export function useCreateNote() {

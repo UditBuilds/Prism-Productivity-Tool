@@ -28,12 +28,17 @@ async function request<T>(method: string, body?: unknown): Promise<T> {
   return json.data;
 }
 
+// Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+export const focusQueryOptions = {
+  queryKey: FOCUS_KEY,
+  queryFn: () => request<FocusSession[]>("GET"),
+  staleTime: 5 * 60 * 1000,
+  gcTime: 10 * 60 * 1000,
+};
+
 /** Last 5 focus sessions, newest first. */
 export function useRecentFocusSessions() {
-  return useQuery<FocusSession[]>({
-    queryKey: FOCUS_KEY,
-    queryFn: () => request<FocusSession[]>("GET"),
-  });
+  return useQuery(focusQueryOptions);
 }
 
 /** Create a session row when the timer starts; returns the row (for its id). */

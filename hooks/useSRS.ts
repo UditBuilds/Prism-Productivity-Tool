@@ -63,19 +63,23 @@ function isDue(card: SrsCard, now: number): boolean {
   return new Date(card.next_review).getTime() <= now;
 }
 
+// Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+export const srsCardsQueryOptions = {
+  queryKey: CARDS_KEY,
+  queryFn: fetchAllCards,
+  staleTime: 15 * 60 * 1000,
+  gcTime: 30 * 60 * 1000,
+};
+
 /** All cards for the user (the single source of truth for the SRS cache). */
 export function useAllCards() {
-  return useQuery<SrsCard[]>({
-    queryKey: CARDS_KEY,
-    queryFn: fetchAllCards,
-  });
+  return useQuery(srsCardsQueryOptions);
 }
 
 /** Due cards (next_review <= now), optionally filtered to one deck. */
 export function useDueCards(deck?: string) {
   return useQuery<SrsCard[], Error, SrsCard[]>({
-    queryKey: CARDS_KEY,
-    queryFn: fetchAllCards,
+    ...srsCardsQueryOptions,
     select: (cards) => {
       const now = Date.now();
       return cards.filter(
@@ -88,8 +92,7 @@ export function useDueCards(deck?: string) {
 /** Per-deck stats grouped by deck_name. Default deck sorts first. */
 export function useDeckStats() {
   return useQuery<SrsCard[], Error, DeckStat[]>({
-    queryKey: CARDS_KEY,
-    queryFn: fetchAllCards,
+    ...srsCardsQueryOptions,
     select: (cards) => {
       const now = Date.now();
       const byDeck = new Map<string, DeckStat>();
@@ -298,12 +301,16 @@ export interface SaveGeneratedCardsInput {
 }
 
 /** Learning-curve analytics (5-min stale). Read-only, its own cache key. */
+// Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+export const srsAnalyticsQueryOptions = {
+  queryKey: ANALYTICS_KEY,
+  queryFn: () => request<AnalyticsData>("/api/srs/analytics", "GET"),
+  staleTime: 10 * 60 * 1000,
+  gcTime: 20 * 60 * 1000,
+};
+
 export function useAnalytics() {
-  return useQuery<AnalyticsData>({
-    queryKey: ANALYTICS_KEY,
-    queryFn: () => request<AnalyticsData>("/api/srs/analytics", "GET"),
-    staleTime: 5 * 60 * 1000,
-  });
+  return useQuery(srsAnalyticsQueryOptions);
 }
 
 /** Bulk-save reviewed cards (array POST), then refresh the cards cache. */

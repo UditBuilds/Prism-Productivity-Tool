@@ -50,11 +50,16 @@ async function request<T>(
   return json.data;
 }
 
+// Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+export const tasksQueryOptions = {
+  queryKey: TASKS_KEY,
+  queryFn: () => request<Task[]>("GET"),
+  staleTime: 3 * 60 * 1000,
+  gcTime: 6 * 60 * 1000,
+};
+
 export function useTasksQuery() {
-  return useQuery<Task[]>({
-    queryKey: TASKS_KEY,
-    queryFn: () => request<Task[]>("GET"),
-  });
+  return useQuery(tasksQueryOptions);
 }
 
 export function useCreateTask() {

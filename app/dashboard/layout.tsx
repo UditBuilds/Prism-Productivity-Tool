@@ -7,6 +7,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { NotificationChecker } from "@/components/reminders/NotificationChecker";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { FloatingTimer } from "@/components/focus/FloatingTimer";
+import { DataPrefetcher } from "@/components/layout/DataPrefetcher";
 
 export default async function DashboardLayout({
   children,
@@ -44,6 +45,7 @@ export default async function DashboardLayout({
       <InstallPrompt />
       <NotificationChecker />
       <FloatingTimer />
+      <DataPrefetcher />
     </div>
   );
 }
