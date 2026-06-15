@@ -50,6 +50,7 @@ export default async function DashboardHome() {
         .select("*", { count: "exact" })
         .gte("due_date", startOfToday)
         .lt("due_date", endOfToday)
+        .neq("status", "done")
         .order("due_date", { ascending: true })
         .limit(5),
       supabase

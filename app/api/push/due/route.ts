@@ -55,6 +55,7 @@ export async function POST(request: Request) {
       url: "/dashboard/reminders",
     });
 
+    let delivered = false;
     for (const sub of subs ?? []) {
       try {
         await webpush.sendNotification(
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
           },
           payload
         );
+        delivered = true;
       } catch (err) {
         // Expired/invalid subscription → prune it silently.
         if (isExpiredError(err)) {
@@ -75,13 +77,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // Mark sent AFTER attempting delivery, regardless of push outcome, so a
-    // reminder never re-fires on the next cron tick.
-    await supabase
-      .from("reminders")
-      .update({ is_sent: true })
-      .eq("id", reminder.id);
-    sent += 1;
+    // Delete the reminder once it has actually been delivered — sent reminders
+    // have no further value. On failure we leave the row untouched (is_sent
+    // stays false) so the next cron tick retries it.
+    if (delivered) {
+      await supabase.from("reminders").delete().eq("id", reminder.id);
+      sent += 1;
+    }
   }
 
   return json<{ sent: number }>({ data: { sent }, error: null });

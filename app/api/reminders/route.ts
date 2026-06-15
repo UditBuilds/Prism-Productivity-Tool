@@ -26,14 +26,14 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
 
-  // Hide reminders that have already passed AND never fired (the clog), but
-  // keep upcoming ones and any already-sent ones (the page's "Sent" tab +
-  // history). Past-but-not-sent reminders simply drop off once their time passes.
+  // Only upcoming reminders. Fired reminders are deleted by the push cron once
+  // delivered, so there's nothing past worth showing — past rows simply drop
+  // off the list once their time passes.
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("reminders")
     .select("*")
-    .or(`remind_at.gte.${now},is_sent.eq.true`)
+    .gte("remind_at", now)
     .order("remind_at", { ascending: true });
 
   if (error) return json({ data: null, error: error.message }, 500);
