@@ -8,6 +8,7 @@ import { getTagColor } from "@/lib/tag-colors";
 import { useUIStore } from "@/store/ui.store";
 import { useDeleteNote } from "@/hooks/useNotes";
 import type { Note } from "@/types/database";
+import type { NoteMode } from "@/components/notes/NoteModal";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,12 +19,13 @@ import {
 
 export function NoteCard({
   note,
+  onOpen,
   onTagClick,
 }: {
   note: Note;
+  onOpen: (note: Note, mode: NoteMode) => void;
   onTagClick?: (tag: string) => void;
 }) {
-  const openEditNote = useUIStore((s) => s.openEditNote);
   const openGenerateModal = useUIStore((s) => s.openGenerateModal);
   const deleteNote = useDeleteNote();
 
@@ -32,30 +34,47 @@ export function NoteCard({
     addSuffix: true,
   });
 
+  // The whole card opens the note in READ mode; the ··· menu and tag chips
+  // stopPropagation so they keep working independently.
   return (
-    <div className="group flex flex-col rounded-xl border border-border bg-surface p-4 duration-75 hover:-translate-y-0.5 hover:border-muted-foreground/40 active:scale-[0.99] active:opacity-90">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(note, "read")}
+      onKeyDown={(e) => {
+        if (
+          e.target === e.currentTarget &&
+          (e.key === "Enter" || e.key === " ")
+        ) {
+          e.preventDefault();
+          onOpen(note, "read");
+        }
+      }}
+      className="group flex cursor-pointer flex-col rounded-xl border border-border bg-surface p-4 text-left duration-75 hover:-translate-y-0.5 hover:border-muted-foreground/40 active:scale-[0.99] active:opacity-90"
+    >
       <div className="flex items-start justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => openEditNote(note)}
-          className="line-clamp-2 text-left text-sm font-medium text-foreground hover:text-accent"
-        >
+        <h3 className="line-clamp-2 text-sm font-medium text-foreground group-hover:text-accent">
           {note.title}
-        </button>
+        </h3>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               aria-label="Note actions"
+              onClick={(e) => e.stopPropagation()}
               className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-muted-foreground opacity-60 transition hover:bg-surface-raised hover:text-foreground group-hover:opacity-100"
             >
               <MoreHorizontal className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuContent
+            align="end"
+            className="w-48"
+            onClick={(e) => e.stopPropagation()}
+          >
             <DropdownMenuItem
               className="cursor-pointer"
-              onClick={() => openEditNote(note)}
+              onClick={() => onOpen(note, "edit")}
             >
               <Pencil className="mr-2 h-4 w-4" />
               Edit
@@ -97,7 +116,10 @@ export function NoteCard({
               <button
                 key={tag}
                 type="button"
-                onClick={() => onTagClick?.(tag)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTagClick?.(tag);
+                }}
                 className={`${color.bg} ${color.text} ${color.border} rounded-full border px-2 py-0.5 text-[11px] font-medium hover:opacity-80`}
               >
                 #{tag}

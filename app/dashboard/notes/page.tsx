@@ -9,7 +9,7 @@ import type { Note } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NoteList } from "@/components/notes/NoteList";
-import { NoteForm } from "@/components/notes/NoteForm";
+import { NoteModal, type NoteMode } from "@/components/notes/NoteModal";
 import { GenerateCardsModal } from "@/components/srs/GenerateCardsModal";
 import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -29,7 +29,10 @@ function matchesQuery(note: Note, q: string): boolean {
 
 export default function NotesPage() {
   const [query, setQuery] = useState("");
-  const openCreateNote = useUIStore((s) => s.openCreateNote);
+  const [viewer, setViewer] = useState<{
+    note: Note | null;
+    mode: NoteMode;
+  } | null>(null);
   const openPdfModal = useUIStore((s) => s.openPdfModal);
   const generateCardNoteId = useUIStore((s) => s.generateCardNoteId);
   const generateCardNoteTitle = useUIStore((s) => s.generateCardNoteTitle);
@@ -61,7 +64,10 @@ export default function NotesPage() {
               <span className="hidden sm:inline">Upload PDF</span>
               <span className="sm:hidden">PDF</span>
             </Button>
-            <Button onClick={openCreateNote} className="rounded-lg">
+            <Button
+              onClick={() => setViewer({ note: null, mode: "edit" })}
+              className="rounded-lg"
+            >
               <Plus className="mr-1.5 h-4 w-4" />
               New Note
             </Button>
@@ -108,7 +114,10 @@ export default function NotesPage() {
         ) : !hasNotes ? (
           <EmptyNotes
             action={
-              <Button onClick={openCreateNote} className="rounded-lg">
+              <Button
+                onClick={() => setViewer({ note: null, mode: "edit" })}
+                className="rounded-lg"
+              >
                 <Plus className="mr-1.5 h-4 w-4" />
                 New Note
               </Button>
@@ -126,11 +135,20 @@ export default function NotesPage() {
             }
           />
         ) : (
-          <NoteList notes={visible} onTagClick={setQuery} />
+          <NoteList
+            notes={visible}
+            onOpen={(note, mode) => setViewer({ note, mode })}
+            onTagClick={setQuery}
+          />
         )}
       </div>
 
-      <NoteForm />
+      <NoteModal
+        note={viewer?.note ?? null}
+        initialMode={viewer?.mode ?? "read"}
+        open={viewer !== null}
+        onClose={() => setViewer(null)}
+      />
       <GenerateCardsModal
         noteId={generateCardNoteId ?? ""}
         noteTitle={generateCardNoteTitle}
