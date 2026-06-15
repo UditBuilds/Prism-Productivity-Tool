@@ -46,3 +46,7 @@ public/workbox-*.js.map
 # @ducanh2912/next-pwa also emits these hash-named workers
 public/swe-worker-*.js
 public/fallback-*.js
+
+# AI agent working files — kept locally, not part of the published repo
+/CLAUDE.md
+/.claude/

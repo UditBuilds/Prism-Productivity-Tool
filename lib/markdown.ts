@@ -1,5 +1,5 @@
 // Tiny, dependency-free markdown helpers. We deliberately avoid adding a
-// markdown library to respect the pinned stack (see CLAUDE.md). The renderer
+// markdown library to respect the pinned stack (see docs/DEVELOPMENT.md). The renderer
 // escapes HTML *first*, then applies a small set of inline/block transforms, so
 // the resulting HTML is safe to inject for our own private notes.
 
