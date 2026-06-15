@@ -36,3 +36,40 @@ export async function DELETE(request: Request) {
     error: null,
   });
 }
+
+// PATCH /api/srs/decks — rename a deck (bulk deck_name update across cards).
+export async function PATCH(request: Request) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return json({ data: null, error: "Unauthorized" }, 401);
+
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ data: null, error: "Invalid JSON body" }, 400);
+  }
+
+  const oldName = typeof body.oldName === "string" ? body.oldName : "";
+  const newName = typeof body.newName === "string" ? body.newName.trim() : "";
+  if (!oldName) return json({ data: null, error: "oldName is required" }, 400);
+  if (!newName) return json({ data: null, error: "newName is required" }, 400);
+  if (newName === oldName) {
+    return json({ data: null, error: "New name must be different" }, 400);
+  }
+
+  const { data, error } = await supabase
+    .from("srs_cards")
+    .update({ deck_name: newName })
+    .eq("user_id", user.id)
+    .eq("deck_name", oldName)
+    .select("id");
+
+  if (error) return json({ data: null, error: error.message }, 500);
+  return json<{ updated: number }>({
+    data: { updated: (data ?? []).length },
+    error: null,
+  });
+}
