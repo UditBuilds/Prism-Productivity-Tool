@@ -25,16 +25,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>{children}</ThemeProvider>
       <Toaster
-        position="top-right"
+        position="bottom-center"
         toastOptions={{
           style: {
             background: "#1A1A1A",
-            color: "#F5F5F5",
+            color: "#ffffff",
             border: "1px solid #2A2A2A",
+            borderRadius: "12px",
             fontSize: "14px",
+            padding: "12px 16px",
+            maxWidth: "340px",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
           },
-          success: { iconTheme: { primary: "#10B981", secondary: "#1A1A1A" } },
-          error: { iconTheme: { primary: "#EF4444", secondary: "#1A1A1A" } },
+          duration: 4000,
+        }}
+        containerStyle={{
+          bottom: "calc(72px + env(safe-area-inset-bottom, 16px))",
         }}
       />
       {process.env.NODE_ENV === "development" && (
