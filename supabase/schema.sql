@@ -200,3 +200,52 @@ alter table streak_freeze_logs enable row level security;
 
 create policy "own_streak_freeze_logs"
   on streak_freeze_logs for all using (auth.uid() = user_id);
+
+-- FOCUS SESSIONS (focus timer — added in Session 10)
+create table if not exists focus_sessions (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  category text not null default 'Study',
+  duration_minutes integer not null,
+  completed boolean not null default false,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  created_at timestamptz default now()
+);
+
+alter table focus_sessions enable row level security;
+
+create policy "own_focus_sessions"
+  on focus_sessions for all using (auth.uid() = user_id);
+
+-- COUNTDOWNS (event countdowns — added in Session 10)
+create table if not exists countdowns (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  title text not null,
+  target_date date not null,
+  emoji text not null default '🎯',
+  created_at timestamptz default now()
+);
+
+alter table countdowns enable row level security;
+
+create policy "own_countdowns"
+  on countdowns for all using (auth.uid() = user_id);
+
+-- MOOD LOGS (daily mood check-in — added in Session 11)
+-- One row per user per IST day; the app upserts on (user_id, logged_date).
+create table if not exists mood_logs (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  mood text not null,
+  note text,
+  logged_date date not null default current_date,
+  created_at timestamptz default now(),
+  unique(user_id, logged_date)
+);
+
+alter table mood_logs enable row level security;
+
+create policy "own_mood_logs"
+  on mood_logs for all using (auth.uid() = user_id);

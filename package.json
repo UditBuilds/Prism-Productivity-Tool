@@ -2,11 +2,32 @@
   "name": "prism",
   "version": "0.1.0",
   "private": true,
+  "description": "AI-native personal productivity & spaced-repetition learning app — turns notes, PDFs, and YouTube videos into flashcards. Next.js 14, Supabase (RLS), Groq/LLaMA 3.3, PWA with web push.",
+  "keywords": [
+    "nextjs",
+    "typescript",
+    "supabase",
+    "row-level-security",
+    "spaced-repetition",
+    "sm-2",
+    "flashcards",
+    "ai",
+    "groq",
+    "llama",
+    "productivity",
+    "pwa",
+    "web-push",
+    "react-query",
+    "zustand",
+    "tailwindcss"
+  ],
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",

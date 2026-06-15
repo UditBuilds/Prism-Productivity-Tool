@@ -24,7 +24,7 @@ Two users (you + a collaborator). Everything private by default.
 - Session 9: PDF → flashcards (pdf-parse + Groq) ✅ COMPLETE
 - Session 10: Focus timer, countdowns, quote of day, mobile UX ✅ COMPLETE
 - Session 11: Mood check-in, tiny wins push, theme accents ✅ COMPLETE
-- 🎉 Shipped. See DEPLOYMENT.md for deploy + cron setup.
+- 🎉 Shipped. See docs/DEPLOYMENT.md for deploy + cron setup.
 
 ## Design Rules
 - Dark mode default, accent color #7C3AED (violet)
@@ -130,7 +130,7 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
 - ReactQueryDevtools is gated behind NODE_ENV === "development" in app/providers.tsx.
 - recharts Tooltip formatter: don't annotate the value param as number (type is ValueType|undefined)
   — stringify it instead.
-- Deploy steps live in DEPLOYMENT.md. CRITICAL post-deploy step: set Supabase Auth Site URL +
+- Deploy steps live in docs/DEPLOYMENT.md. CRITICAL post-deploy step: set Supabase Auth Site URL +
   Redirect URLs (`<vercel-url>/**`) or auth redirects fail on the live domain.
 
 ## Conventions & Gotchas (Session 7 — PWA)
@@ -152,7 +152,7 @@ Full schema committed at supabase/schema.sql. Email confirmation is OFF
   compiles it separately with webworker lib).
 - /api/push/due is cron-triggered (x-cron-secret header), uses the SERVICE-ROLE admin client
   (lib/supabase/admin.ts) to read all users' due reminders, sends via web-push, marks is_sent,
-  and prunes subscriptions on 404/410. Schedule it via pg_cron→pg_net (see DEPLOYMENT.md).
+  and prunes subscriptions on 404/410. Schedule it via pg_cron→pg_net (see docs/DEPLOYMENT.md).
 - iOS: Notification.requestPermission() ONLY works on a user gesture — never auto-request on
   mount. NotificationChecker just subscribes if already granted; the Settings "Enable
   Notifications" button is the gesture entry point. iOS push needs the INSTALLED PWA (16.4+).
