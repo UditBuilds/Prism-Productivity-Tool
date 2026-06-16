@@ -260,3 +260,147 @@ body {
 .btn-primary-shimmer:focus-visible {
   box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.25);
 }
+
+/* ── Rendered markdown (notes read view, edit preview, flashcards) ────────
+   Accent uses the themeable rgb(var(--accent-rgb)) token; the app's `--accent`
+   is HSL components, not a usable color, so a literal var(--accent) would be
+   invalid CSS. */
+.prose-preview {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: inherit;
+}
+
+.prose-preview h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose-preview h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: white;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.prose-preview h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  margin-top: 1.25rem;
+  margin-bottom: 0.375rem;
+}
+
+.prose-preview p {
+  margin-bottom: 1rem;
+}
+
+.prose-preview ul {
+  list-style-type: disc;
+  padding-left: 1.375rem;
+  margin-bottom: 1rem;
+}
+
+.prose-preview ol {
+  list-style-type: decimal;
+  padding-left: 1.375rem;
+  margin-bottom: 1rem;
+}
+
+.prose-preview li {
+  margin-bottom: 0.375rem;
+  line-height: 1.65;
+}
+
+.prose-preview li > ul,
+.prose-preview li > ol {
+  margin-top: 0.375rem;
+  margin-bottom: 0;
+}
+
+.prose-preview strong {
+  font-weight: 600;
+  color: white;
+}
+
+.prose-preview em {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.prose-preview code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+  background-color: #1a1a1a;
+  color: rgb(var(--accent-rgb));
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  border: 1px solid #1f1f1f;
+}
+
+.prose-preview pre {
+  background-color: #1a1a1a;
+  border: 1px solid #1f1f1f;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.prose-preview pre code {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+}
+
+.prose-preview blockquote {
+  border-left: 2px solid rgb(var(--accent-rgb));
+  padding-left: 1rem;
+  font-style: italic;
+  opacity: 0.75;
+  margin: 1rem 0;
+}
+
+.prose-preview a {
+  color: rgb(var(--accent-rgb));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.prose-preview th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  padding: 0.5rem;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.prose-preview td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #111111;
+}
+
+.prose-preview hr {
+  border: none;
+  border-top: 1px solid #1f1f1f;
+  margin: 1.5rem 0;
+}

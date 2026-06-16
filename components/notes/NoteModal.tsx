@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { X } from "lucide-react";
+import { Check, Loader2, Sparkles, X } from "lucide-react";
 
 import { renderMarkdown } from "@/lib/markdown";
 import { getTagColor } from "@/lib/tag-colors";
@@ -58,11 +59,18 @@ export function NoteModal({
   const [content, setContent] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [titleError, setTitleError] = useState(false);
+  const [reformatState, setReformatState] = useState<
+    "idle" | "loading" | "success"
+  >("idle");
+  const [reformatError, setReformatError] = useState<string | null>(null);
+  const qc = useQueryClient();
 
   // Hydrate whenever the modal opens. New notes can only be edited.
   useEffect(() => {
     if (!open) return;
     setTitleError(false);
+    setReformatState("idle");
+    setReformatError(null);
     setMode(note ? initialMode : "edit");
     if (note) {
       setTitle(note.title);
@@ -102,6 +110,41 @@ export function NoteModal({
     else onClose();
   }
 
+  // AI reformat: sends the raw content to Groq, swaps in the structured
+  // markdown on success, and refreshes the notes cache. The DB is only touched
+  // when formatting succeeds (handled server-side).
+  async function handleReformat() {
+    if (!note || reformatState === "loading" || content.trim().length < 20) {
+      return;
+    }
+    setReformatState("loading");
+    setReformatError(null);
+    try {
+      const res = await fetch("/api/notes/reformat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noteId: note.id, content, title }),
+      });
+      const data = (await res.json()) as {
+        data: { content: string } | null;
+        error: string | null;
+      };
+      if (!res.ok || data.error || data.data === null) {
+        throw new Error(data.error ?? `Reformat failed (${res.status})`);
+      }
+      setContent(data.data.content);
+      qc.invalidateQueries({ queryKey: ["notes"] });
+      setReformatState("success");
+      setTimeout(() => setReformatState("idle"), 700);
+    } catch (e) {
+      setReformatState("idle");
+      setReformatError(
+        e instanceof Error ? e.message : "Couldn't reformat the note."
+      );
+      setTimeout(() => setReformatError(null), 3000);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl [&>button]:hidden">
@@ -116,22 +159,52 @@ export function NoteModal({
               >
                 <X className="h-5 w-5" />
               </button>
-              <button
-                type="button"
-                onClick={() => setMode("edit")}
-                className="text-sm font-medium text-accent hover:text-accent-hover"
-              >
-                Edit
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  aria-label="Reformat with AI"
+                  title="Reformat with AI"
+                  onClick={handleReformat}
+                  disabled={
+                    content.trim().length < 20 || reformatState === "loading"
+                  }
+                  className="text-muted-foreground transition-colors hover:text-foreground active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+                >
+                  {reformatState === "loading" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : reformatState === "success" ? (
+                    <Check className="h-4 w-4 text-accent" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("edit")}
+                  disabled={reformatState === "loading"}
+                  className="text-sm font-medium text-accent hover:text-accent-hover disabled:pointer-events-none disabled:opacity-40"
+                >
+                  Edit
+                </button>
+              </div>
             </DialogHeader>
 
             <div>
-              <DialogTitle className="mb-2 text-xl font-bold text-foreground">
+              <DialogTitle className="mb-3 text-2xl font-bold text-foreground">
                 {title.trim() || "Untitled note"}
               </DialogTitle>
 
+              {reformatState === "loading" && (
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Reformatting…
+                </p>
+              )}
+              {reformatError && (
+                <p className="mb-3 text-xs text-destructive">{reformatError}</p>
+              )}
+
               {tags.length > 0 && (
-                <div className="mb-4 flex flex-wrap gap-1.5">
+                <div className="mb-3 flex flex-wrap gap-1.5">
                   {tags.map((tag) => {
                     const color = getTagColor(tag);
                     return (
@@ -148,7 +221,7 @@ export function NoteModal({
 
               {content.trim() ? (
                 <div
-                  className="prose-preview space-y-2 text-sm text-foreground"
+                  className="prose-preview pb-4 text-foreground"
                   dangerouslySetInnerHTML={{ __html: html }}
                 />
               ) : (
@@ -158,7 +231,7 @@ export function NoteModal({
               )}
 
               {note?.updated_at && (
-                <p className="mt-4 text-xs text-muted-foreground">
+                <p className="mt-6 text-xs text-muted-foreground">
                   Updated{" "}
                   {formatDistanceToNow(new Date(note.updated_at), {
                     addSuffix: true,
