@@ -106,8 +106,8 @@ html.theme-cyan {
 }
 .card-3d {
   transform-style: preserve-3d;
-  /* Spring easing gives the flip a subtle bounce. */
-  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Refined spring — a hint of settle, not a toy bounce. */
+  transition: transform 0.5s cubic-bezier(0.33, 1.1, 0.68, 1);
   position: relative;
 }
 .card-3d.flipped {

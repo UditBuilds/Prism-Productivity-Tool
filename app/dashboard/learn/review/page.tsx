@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
@@ -60,13 +60,38 @@ function ReviewSession() {
     };
   }, [resetSession]);
 
-  function handleRate(quality: number) {
-    const card = sessionCards[currentIndex];
-    if (!card) return;
-    recordRating(card.id, quality);
-    submitReview.mutate({ card_id: card.id, rating: quality });
-    nextCard();
-  }
+  const handleRate = useCallback(
+    (quality: number) => {
+      const card = sessionCards[currentIndex];
+      if (!card) return;
+      recordRating(card.id, quality);
+      submitReview.mutate({ card_id: card.id, rating: quality });
+      nextCard();
+    },
+    [sessionCards, currentIndex, recordRating, submitReview, nextCard]
+  );
+
+  // Keyboard: Space/Enter reveals the answer; 1–4 grade it. Active card only.
+  useEffect(() => {
+    if (sessionCards.length === 0 || currentIndex >= sessionCards.length) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!isFlipped) {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          flipCard();
+        }
+        return;
+      }
+      const idx = ["1", "2", "3", "4"].indexOf(e.key);
+      if (idx >= 0) {
+        e.preventDefault();
+        handleRate(RATING_OPTIONS[idx].quality);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFlipped, currentIndex, sessionCards, flipCard, handleRate]);
 
   function handleReviewAgain() {
     const againCards = sessionCards.filter((c) =>
@@ -89,12 +114,17 @@ function ReviewSession() {
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center">
-        <AlertCircle className="h-10 w-10 text-danger" />
-        <p className="mt-4 text-base font-medium text-foreground">
+      <div className="mx-auto flex max-w-md flex-col items-center justify-center rounded-2xl border border-border bg-surface px-6 py-16 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-danger/30 bg-danger/10">
+          <AlertCircle className="h-6 w-6 text-danger" />
+        </div>
+        <p className="mt-5 text-base font-medium text-foreground">
           Couldn&apos;t load cards
         </p>
-        <div className="mt-4 flex gap-2">
+        <p className="mt-1 text-sm text-muted-foreground">
+          Something went wrong fetching this deck.
+        </p>
+        <div className="mt-6 flex gap-2">
           <Button variant="outline" onClick={() => refetch()}>
             Try again
           </Button>
@@ -107,17 +137,17 @@ function ReviewSession() {
   // --- Nothing due ---
   if (sessionCards.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center">
-        <CheckCircle2 className="h-12 w-12 text-success" />
-        <p className="mt-4 text-lg font-semibold text-foreground">
-          Nothing due!
-        </p>
+      <div className="mx-auto flex max-w-md flex-col items-center justify-center rounded-2xl border border-border bg-surface px-6 py-16 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-success/30 bg-success/10">
+          <CheckCircle2 className="h-6 w-6 text-success" />
+        </div>
+        <p className="mt-5 text-lg font-semibold text-foreground">All caught up</p>
         <p className="mt-1 text-sm text-muted-foreground">
           {deck
-            ? `No cards due in "${deck}" right now.`
-            : "You're all caught up on reviews."}
+            ? `No cards are due in "${deck}" right now.`
+            : "You have no reviews due. Check back later."}
         </p>
-        <BackToLearn className="mt-5" />
+        <BackToLearn className="mt-6" />
       </div>
     );
   }
@@ -134,31 +164,43 @@ function ReviewSession() {
     ).length;
 
     return (
-      <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
-        <CheckCircle2 className="h-14 w-14 text-success" />
-        <h1 className="mt-4 text-2xl font-semibold text-foreground">
-          Session complete!
+      <div className="mx-auto flex max-w-md flex-col items-center px-4 py-16 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-accent/30 bg-accent/10">
+          <CheckCircle2 className="h-6 w-6 text-accent" />
+        </div>
+        <h1 className="mt-5 text-xl font-semibold tracking-tight text-foreground">
+          Session complete
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {ratingsGiven.length} card{ratingsGiven.length === 1 ? "" : "s"}{" "}
-          reviewed
+          {ratingsGiven.length} card{ratingsGiven.length === 1 ? "" : "s"} reviewed
         </p>
 
-        <div className="mt-6 grid w-full max-w-md grid-cols-4 gap-2">
-          {counts.map(({ label, quality, count }) => (
-            <div
-              key={quality}
-              className="rounded-lg border border-border bg-surface p-3"
-            >
-              <p className="text-lg font-semibold text-foreground tabular-nums">
-                {count}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
-            </div>
-          ))}
+        <div className="mt-7 grid w-full grid-cols-4 gap-2">
+          {counts.map(({ label, quality, count }) => {
+            const dot = RATING_OPTIONS.find(
+              (o) => o.quality === quality
+            )?.dotClassName;
+            return (
+              <div
+                key={quality}
+                className="rounded-xl border border-border bg-surface-raised p-3"
+              >
+                <p className="text-lg font-semibold tabular-nums text-foreground">
+                  {count}
+                </p>
+                <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    aria-hidden
+                    className={cn("h-1.5 w-1.5 rounded-full", dot)}
+                  />
+                  {label}
+                </p>
+              </div>
+            );
+          })}
         </div>
 
-        <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
           <BackToLearn />
           {lapses > 0 && (
             <Button className="rounded-lg" onClick={handleReviewAgain}>
@@ -178,15 +220,20 @@ function ReviewSession() {
     <div className="mx-auto flex max-w-2xl flex-col">
       {/* Progress */}
       <div>
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Card {currentIndex + 1} of {sessionCards.length}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium tabular-nums text-foreground">
+            {currentIndex + 1}
+            <span className="text-muted-foreground"> / {sessionCards.length}</span>
           </span>
-          {deck && <span className="truncate">{deck}</span>}
+          {deck && (
+            <span className="max-w-[55%] truncate rounded-full border border-border bg-surface-raised px-2.5 py-0.5 text-xs text-muted-foreground">
+              {deck}
+            </span>
+          )}
         </div>
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-accent transition-all"
+            className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
             style={{ width: `${progressPct}%` }}
           />
         </div>
@@ -207,8 +254,8 @@ function ReviewSession() {
         {isFlipped ? (
           <RatingButtons card={card} onRate={handleRate} />
         ) : (
-          <p className="text-center text-sm text-muted-foreground">
-            Tap card to reveal answer
+          <p className="flex min-h-[3.5rem] items-center justify-center text-center text-sm text-muted-foreground/70">
+            Reveal the answer to grade your recall
           </p>
         )}
       </div>

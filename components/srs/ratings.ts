@@ -8,44 +8,57 @@ export interface RatingOption {
   label: string;
   /** Descriptive helper (title / a11y). */
   description: string;
-  /** Tailwind classes for the button surface. */
+  /** Restrained button surface — neutral, with a tone-tinted hover. */
   className: string;
+  /** Semantic status dot (color carries the meaning, not a full fill). */
+  dotClassName: string;
+  /** Keyboard shortcut shown as a subtle hint and bound in the review page. */
+  keyHint: string;
   /** Whether this rating re-queues the card later in the same session. */
   requeues: boolean;
 }
 
-// Order matches how the four buttons are laid out, easiest-forgotten → easiest.
+// Order matches how the four buttons are laid out, easiest-forgotten → easiest,
+// and maps directly to keyboard keys 1–4.
 export const RATING_OPTIONS: RatingOption[] = [
   {
     quality: 0,
     label: "Again",
     description: "Forgot it",
     className:
-      "border border-red-800/40 bg-red-950/50 text-red-400 hover:bg-red-900/50 hover:shadow-red-900/20",
+      "border-border bg-surface-raised hover:border-red-500/40 hover:bg-red-500/[0.08]",
+    dotClassName: "bg-red-400",
+    keyHint: "1",
     requeues: true,
   },
   {
     quality: 2,
     label: "Hard",
-    description: "Hard",
+    description: "Recalled with effort",
     className:
-      "border border-amber-800/40 bg-amber-950/50 text-amber-400 hover:bg-amber-900/50 hover:shadow-amber-900/20",
+      "border-border bg-surface-raised hover:border-amber-500/40 hover:bg-amber-500/[0.08]",
+    dotClassName: "bg-amber-400",
+    keyHint: "2",
     requeues: true,
   },
   {
     quality: 4,
     label: "Good",
-    description: "Got it",
+    description: "Recalled correctly",
     className:
-      "border border-blue-800/40 bg-blue-950/50 text-blue-400 hover:bg-blue-900/50 hover:shadow-blue-900/20",
+      "border-border bg-surface-raised hover:border-blue-500/40 hover:bg-blue-500/[0.08]",
+    dotClassName: "bg-blue-400",
+    keyHint: "3",
     requeues: false,
   },
   {
     quality: 5,
     label: "Easy",
-    description: "Easy",
+    description: "Effortless",
     className:
-      "border border-green-800/40 bg-green-950/50 text-green-400 hover:bg-green-900/50 hover:shadow-green-900/20",
+      "border-border bg-surface-raised hover:border-emerald-500/40 hover:bg-emerald-500/[0.08]",
+    dotClassName: "bg-emerald-400",
+    keyHint: "4",
     requeues: false,
   },
 ];
