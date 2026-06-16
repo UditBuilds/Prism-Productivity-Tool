@@ -168,15 +168,16 @@ export function NoteModal({
                   disabled={
                     content.trim().length < 20 || reformatState === "loading"
                   }
-                  className="text-muted-foreground transition-colors hover:text-foreground active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+                  className="flex items-center gap-1 text-accent transition-colors hover:text-accent-hover active:scale-95 disabled:pointer-events-none disabled:opacity-40"
                 >
                   {reformatState === "loading" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 size={14} className="animate-spin" />
                   ) : reformatState === "success" ? (
-                    <Check className="h-4 w-4 text-accent" />
+                    <Check size={14} />
                   ) : (
-                    <Sparkles className="h-4 w-4" />
+                    <Sparkles size={14} />
                   )}
+                  <span className="text-xs">AI</span>
                 </button>
                 <button
                   type="button"

@@ -24,10 +24,60 @@ function renderInline(text: string): string {
     );
 }
 
+/** Split a "| a | b |" row into trimmed cell strings. */
+function splitTableRow(row: string): string[] {
+  return row
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((c) => c.trim());
+}
+
+/** A "|---|:--:|" delimiter row — every cell is only dashes/colons. */
+function isTableSeparator(row: string): boolean {
+  const cells = splitTableRow(row);
+  return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
+}
+
+/**
+ * Render a run of "|…|" lines as an HTML table: first row → <thead>/<th>, an
+ * optional "|---|" separator is skipped, the rest → <tbody>/<td>. Wrapped in a
+ * horizontally-scrollable div for mobile. Cells are escaped + inline-rendered.
+ */
+function renderTable(rows: string[]): string {
+  if (rows.length === 0) return "";
+  const header = splitTableRow(rows[0]);
+  const bodyStart = rows.length > 1 && isTableSeparator(rows[1]) ? 2 : 1;
+
+  const thead =
+    "<thead><tr>" +
+    header.map((c) => `<th>${renderInline(escapeHtml(c))}</th>`).join("") +
+    "</tr></thead>";
+
+  const body = rows.slice(bodyStart);
+  const tbody = body.length
+    ? "<tbody>" +
+      body
+        .map(
+          (r) =>
+            "<tr>" +
+            splitTableRow(r)
+              .map((c) => `<td>${renderInline(escapeHtml(c))}</td>`)
+              .join("") +
+            "</tr>"
+        )
+        .join("") +
+      "</tbody>"
+    : "";
+
+  return `<div class="overflow-x-auto"><table>${thead}${tbody}</table></div>`;
+}
+
 /**
  * Render a (small) markdown string to an HTML string. Supports: headings,
- * unordered/ordered lists, blockquotes, fenced code blocks, horizontal rules,
- * and the inline spans above. Good enough for note previews.
+ * unordered/ordered lists, blockquotes, fenced code blocks, tables, horizontal
+ * rules, and the inline spans above. Good enough for note previews.
  */
 export function renderMarkdown(md: string): string {
   const lines = md.replace(/\r\n/g, "\n").split("\n");
@@ -35,11 +85,18 @@ export function renderMarkdown(md: string): string {
   let listType: "ul" | "ol" | null = null;
   let inCode = false;
   let codeBuffer: string[] = [];
+  let tableBuffer: string[] = [];
 
   const closeList = () => {
     if (listType) {
       out.push(`</${listType}>`);
       listType = null;
+    }
+  };
+  const flushTable = () => {
+    if (tableBuffer.length) {
+      out.push(renderTable(tableBuffer));
+      tableBuffer = [];
     }
   };
 
@@ -54,6 +111,7 @@ export function renderMarkdown(md: string): string {
         codeBuffer = [];
         inCode = false;
       } else {
+        flushTable();
         closeList();
         inCode = true;
       }
@@ -67,8 +125,17 @@ export function renderMarkdown(md: string): string {
     const line = raw.trimEnd();
     if (!line.trim()) {
       closeList();
+      flushTable();
       continue;
     }
+
+    // Table rows accumulate; the table renders on the first non-row line.
+    if (/^\|.+\|$/.test(line.trim())) {
+      if (tableBuffer.length === 0) closeList();
+      tableBuffer.push(line.trim());
+      continue;
+    }
+    flushTable();
 
     // Horizontal rule.
     if (/^(-{3,}|\*{3,})$/.test(line.trim())) {
@@ -138,6 +205,7 @@ export function renderMarkdown(md: string): string {
         .join("\n")}</code></pre>`
     );
   }
+  flushTable();
   closeList();
   return out.join("\n");
 }
