@@ -170,8 +170,10 @@ export function renderMarkdown(md: string): string {
       continue;
     }
 
-    // Unordered list.
-    const ul = /^[-*]\s+(.*)$/.exec(line);
+    // Unordered list. Leading whitespace is tolerated so indented / nested
+    // bullet lines group into the list too (flattened) instead of falling
+    // through to <p>. Flush-left bullets already matched the old anchor.
+    const ul = /^\s*[-*]\s+(.*)$/.exec(line);
     if (ul) {
       if (listType !== "ul") {
         closeList();
