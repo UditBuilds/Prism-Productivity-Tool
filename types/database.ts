@@ -329,6 +329,33 @@ export interface Database {
         };
         Relationships: [];
       };
+      focus_categories: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          color: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          color: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          color?: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       countdowns: {
         Row: {
           id: string;
@@ -463,5 +490,7 @@ export type PushSubscriptionRow =
   Database["public"]["Tables"]["push_subscriptions"]["Row"];
 export type FocusSession =
   Database["public"]["Tables"]["focus_sessions"]["Row"];
+export type FocusCategory =
+  Database["public"]["Tables"]["focus_categories"]["Row"];
 export type Countdown = Database["public"]["Tables"]["countdowns"]["Row"];
 export type MoodLog = Database["public"]["Tables"]["mood_logs"]["Row"];

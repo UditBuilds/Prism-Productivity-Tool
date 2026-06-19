@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
+import type { FocusCategory } from "@/types/database";
 
 type ApiResponse<T> = { data: T | null; error: string | null };
 
@@ -9,67 +9,12 @@ function json<T>(body: ApiResponse<T>, status = 200) {
   return NextResponse.json(body, { status });
 }
 
-// `focus_categories` exists in the database but is not yet part of the shared
-// `Database` type (types/database.ts is out of scope this session). Describe the
-// slice this route needs locally so the client stays fully typed — no `any`.
-// NOTE: a `type` (not `interface`) — supabase-js's GenericTable requires
-// `Row extends Record<string, unknown>`, which interfaces don't satisfy (no
-// implicit index signature), making the table resolve to `never`.
-type FocusCategoryRow = {
-  id: string;
-  user_id: string;
-  name: string;
-  color: string;
-  sort_order: number;
-  created_at: string;
-};
-
-// Self-contained schema with just the table this route touches. Intersecting
-// the full Database tables type leaves a purely-added table resolving to `never`
-// for inserts/projections; a minimal standalone schema resolves cleanly, and
-// this route never queries any other table.
-type FocusSchema = {
-  public: {
-    Tables: {
-      focus_categories: {
-        Row: FocusCategoryRow;
-        Insert: {
-          id?: string;
-          user_id: string;
-          name: string;
-          color: string;
-          sort_order?: number;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          name?: string;
-          color?: string;
-          sort_order?: number;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
-    };
-    Views: Record<string, never>;
-    Functions: Record<string, never>;
-    Enums: Record<string, never>;
-    CompositeTypes: Record<string, never>;
-  };
-};
-
-// Service client recast to the schema that includes focus_categories.
-function db(): SupabaseClient<FocusSchema> {
-  return createClient() as unknown as SupabaseClient<FocusSchema>;
-}
-
 // #abc or #aabbcc
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 // GET /api/focus/categories — the user's categories, ordered by sort_order asc.
 export async function GET() {
-  const supabase = db();
+  const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -82,12 +27,12 @@ export async function GET() {
     .order("sort_order", { ascending: true });
 
   if (error) return json({ data: null, error: error.message }, 500);
-  return json<FocusCategoryRow[]>({ data: data ?? [], error: null });
+  return json<FocusCategory[]>({ data: data ?? [], error: null });
 }
 
 // POST /api/focus/categories — create one; sort_order = current max + 1.
 export async function POST(request: Request) {
-  const supabase = db();
+  const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -125,12 +70,12 @@ export async function POST(request: Request) {
     .single();
 
   if (error) return json({ data: null, error: error.message }, 500);
-  return json<FocusCategoryRow>({ data, error: null }, 201);
+  return json<FocusCategory>({ data, error: null }, 201);
 }
 
 // PATCH /api/focus/categories — update name and/or color (scoped to the user).
 export async function PATCH(request: Request) {
-  const supabase = db();
+  const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -176,13 +121,13 @@ export async function PATCH(request: Request) {
 
   if (error) return json({ data: null, error: error.message }, 500);
   if (!data) return json({ data: null, error: "Category not found" }, 404);
-  return json<FocusCategoryRow>({ data, error: null });
+  return json<FocusCategory>({ data, error: null });
 }
 
 // DELETE /api/focus/categories?id=… — delete one (scoped to the user). Existing
 // focus_sessions rows keep their free-text category field, unaffected.
 export async function DELETE(request: Request) {
-  const supabase = db();
+  const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
