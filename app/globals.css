@@ -125,12 +125,15 @@ html.theme-cyan {
 
 /* ── Global polish ─────────────────────────────────────────────── */
 
-/* Smooth transitions on all interactive elements */
+/* Smooth transitions on all interactive elements. box-shadow is intentionally
+   excluded — it repaints every frame, so elements that animate a shadow opt in
+   explicitly (e.g. TaskCard via `transition`). transform/opacity are
+   compositor-cheap and stay here so existing hovers/presses keep animating. */
 *,
 *::before,
 *::after {
-  transition-property: background-color, border-color, color, box-shadow,
-    transform, opacity;
+  transition-property: background-color, border-color, color, transform,
+    opacity;
   transition-duration: 150ms;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }

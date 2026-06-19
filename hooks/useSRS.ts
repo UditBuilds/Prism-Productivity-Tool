@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import {
   useMutation,
   useQuery,
@@ -78,14 +79,20 @@ export function useAllCards() {
 
 /** Due cards (next_review <= now), optionally filtered to one deck. */
 export function useDueCards(deck?: string) {
-  return useQuery<SrsCard[], Error, SrsCard[]>({
-    ...srsCardsQueryOptions,
-    select: (cards) => {
+  // Stable per `deck` so React Query memoizes the selected result and doesn't
+  // re-run / re-render consumers (e.g. the nav badges) on unrelated cache touches.
+  const select = useCallback(
+    (cards: SrsCard[]): SrsCard[] => {
       const now = Date.now();
       return cards.filter(
         (c) => isDue(c, now) && (!deck || c.deck_name === deck)
       );
     },
+    [deck]
+  );
+  return useQuery<SrsCard[], Error, SrsCard[]>({
+    ...srsCardsQueryOptions,
+    select,
   });
 }
 

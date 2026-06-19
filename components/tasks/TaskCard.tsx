@@ -139,7 +139,7 @@ export function TaskCard({ task }: { task: Task }) {
           touchAction: "pan-y",
         }}
         className={cn(
-          "group cursor-default rounded-l-none rounded-r-xl border border-l-2 border-[#1F1F1F] bg-[#111111] p-4 duration-75 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/30 active:scale-[0.99] active:opacity-90",
+          "group cursor-default rounded-l-none rounded-r-xl border border-l-2 border-[#1F1F1F] bg-[#111111] p-4 transition duration-75 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/30 active:scale-[0.99] active:opacity-90",
           dragging && "no-transition",
           priorityBorder[task.priority]
         )}
