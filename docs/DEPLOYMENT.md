@@ -61,6 +61,33 @@ calls the cron endpoint every minute. In the Supabase SQL editor, use
 table (in `supabase/schema.sql`) must exist first, and users must enable
 notifications from **Settings** (iOS requires the installed PWA).
 
+## 4a. Schedule recurring-task spawning
+
+`/api/cron/recurring-tasks` materialises today's task from each active
+`recurring_tasks` template (idempotent — one task per template per IST day).
+Schedule it for **00:05 IST daily** with the same `pg_cron` + `pg_net` pattern.
+`pg_cron` runs in **UTC**, so 00:05 IST = **18:35 UTC** (`35 18 * * *`):
+
+```sql
+select cron.schedule(
+  'prism-recurring-tasks',
+  '35 18 * * *',                       -- 00:05 IST daily (pg_cron is UTC; IST = UTC+5:30)
+  $$
+  select net.http_post(
+    url     := 'https://<your-app>/api/cron/recurring-tasks',
+    headers := jsonb_build_object(
+      'Content-Type',  'application/json',
+      'x-cron-secret', '<your CRON_SECRET>'
+    )
+  );
+  $$
+);
+```
+
+The `recurring_tasks` table and the `tasks.recurring_task_id` column must exist
+first. Verify the job with `select * from cron.job;` and inspect runs via
+`select * from cron.job_run_details order by start_time desc;`.
+
 ## 5. Invite your collaborator
 
 PRISM is built for two users. Share the URL; they sign up at `/signup` (email
