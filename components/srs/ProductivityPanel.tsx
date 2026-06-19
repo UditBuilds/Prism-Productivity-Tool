@@ -26,8 +26,8 @@ import {
 
 import { cn } from "@/lib/utils";
 import { useProductivityAnalytics } from "@/hooks/useProductivity";
+import { useFocusCategories } from "@/hooks/useFocusCategories";
 import type { WeekStats } from "@/app/api/analytics/productivity/route";
-import { categoryChartColor } from "@/components/focus/categories";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -118,6 +118,7 @@ function CompareTile({
 
 export function ProductivityPanel() {
   const { data, isLoading, isError, refetch } = useProductivityAnalytics();
+  const { categoryChartColor } = useFocusCategories();
 
   if (isLoading) {
     return (

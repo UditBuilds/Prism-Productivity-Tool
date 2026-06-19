@@ -12,11 +12,11 @@ import {
 
 import { cn } from "@/lib/utils";
 import { useWeeklyReview, type ReviewWeek } from "@/hooks/useWeeklyReview";
+import { useFocusCategories } from "@/hooks/useFocusCategories";
 import type {
   ReviewDayHighlight,
   WeeklyReviewData,
 } from "@/app/api/review/weekly/route";
-import { categoryChartColor } from "@/components/focus/categories";
 import { moodOption } from "@/components/dashboard/moods";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -126,6 +126,7 @@ function ReviewContent({
 }) {
   const { summary, days, bestDay, worstDay, categoryBreakdown, insights } =
     data;
+  const { categoryChartColor } = useFocusCategories();
 
   const noActivity =
     summary.focusMinutes === 0 &&

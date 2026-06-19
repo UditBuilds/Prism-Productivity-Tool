@@ -18,7 +18,8 @@ import {
   useCreateFocusSession,
   useEndFocusSession,
 } from "@/hooks/useFocus";
-import { CATEGORIES, DURATIONS } from "@/components/focus/categories";
+import { DURATIONS } from "@/components/focus/categories";
+import { useFocusCategories } from "@/hooks/useFocusCategories";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,7 @@ function IdleView() {
   const setSessionId = useFocusStore((s) => s.setSessionId);
   const createSession = useCreateFocusSession();
   const { data: recent, isLoading } = useRecentFocusSessions();
+  const { categories } = useFocusCategories();
 
   const minutes = isCustom
     ? Math.min(600, Math.max(1, parseInt(customMinutes, 10) || 0))
@@ -83,7 +85,7 @@ function IdleView() {
         Category
       </p>
       <div className="scrollbar-none -mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
-        {CATEGORIES.map((c) => (
+        {categories.map((c) => (
           <button
             key={c.label}
             type="button"
@@ -181,7 +183,7 @@ function IdleView() {
         ) : (
           <ul className="space-y-2">
             {recent?.map((s) => {
-              const cat = CATEGORIES.find((c) => c.label === s.category);
+              const cat = categories.find((c) => c.label === s.category);
               return (
                 <li
                   key={s.id}
@@ -224,9 +226,10 @@ function RunningView() {
   const resumeTimer = useFocusStore((s) => s.resumeTimer);
   const endSession = useFocusStore((s) => s.endSession);
   const endFocusSession = useEndFocusSession();
+  const { categories } = useFocusCategories();
 
   const isBreak = mode === "break";
-  const cat = CATEGORIES.find((c) => c.label === category);
+  const cat = categories.find((c) => c.label === category);
   const progress =
     totalDuration > 0 ? (totalDuration - timeLeft) / totalDuration : 0;
 
