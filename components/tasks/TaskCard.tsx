@@ -3,7 +3,14 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
-import { CheckCircle2, Circle, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  Circle,
+  MoreHorizontal,
+  Pencil,
+  Repeat,
+  Trash2,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDueDate, type DueTone } from "@/lib/date";
@@ -145,15 +152,23 @@ export function TaskCard({ task }: { task: Task }) {
         )}
       >
         <div className="flex items-start justify-between gap-2">
-          <Link
-            href={`/dashboard/tasks/${task.id}`}
-            className={cn(
-              "line-clamp-2 text-sm font-medium text-foreground hover:text-accent",
-              isDone && "text-muted-foreground line-through"
+          <div className="flex min-w-0 items-start gap-1.5">
+            <Link
+              href={`/dashboard/tasks/${task.id}`}
+              className={cn(
+                "line-clamp-2 text-sm font-medium text-foreground hover:text-accent",
+                isDone && "text-muted-foreground line-through"
+              )}
+            >
+              {task.title}
+            </Link>
+            {task.recurring_task_id && (
+              <Repeat
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                aria-label="Repeats daily"
+              />
             )}
-          >
-            {task.title}
-          </Link>
+          </div>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -188,6 +203,24 @@ export function TaskCard({ task }: { task: Task }) {
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </DropdownMenuItem>
+              {task.recurring_task_id && (
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => {
+                    // stop_recurring rides on the PATCH body (assigned to a var
+                    // so it stays assignable to UpdateTaskInput). The API flips
+                    // the template's is_active; today's/past instances remain.
+                    const stopPayload = { id: task.id, stop_recurring: true };
+                    updateTask.mutate(stopPayload, {
+                      onSuccess: () =>
+                        toast.success("Won't repeat after today"),
+                    });
+                  }}
+                >
+                  <Repeat className="mr-2 h-4 w-4" />
+                  Stop repeating
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 className="cursor-pointer text-danger focus:text-danger"
                 onClick={() => deleteTask.mutate(task.id)}

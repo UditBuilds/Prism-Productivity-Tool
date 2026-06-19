@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { istDateString } from "@/lib/date";
 import type {
   Database,
   Task,
@@ -69,25 +70,80 @@ export async function POST(request: Request) {
     return json({ data: null, error: "Invalid priority" }, 400);
   }
 
+  const description =
+    typeof body.description === "string" && body.description.trim()
+      ? body.description.trim()
+      : null;
+  const status: TaskStatus = isStatus(body.status) ? body.status : "todo";
+  const priority: TaskPriority = isPriority(body.priority)
+    ? body.priority
+    : "medium";
+  const planId = typeof body.plan_id === "string" ? body.plan_id : null;
+  // Stamp completion if a task is created directly as done (the PATCH path
+  // owns the done/un-done transitions for existing tasks).
+  const completedAt = status === "done" ? new Date().toISOString() : null;
+
+  // "Repeat daily": create a recurring template, then spawn today's instance
+  // (IST) linked to it; the cron (/api/cron/recurring-tasks) handles every day
+  // after. Supabase JS has no multi-statement transaction, so we insert
+  // sequentially (template first) and roll the template back if the instance
+  // insert fails — no orphan template left to spawn tomorrow.
+  if (body.repeat_daily === true) {
+    const { data: recurring, error: recurringError } = await supabase
+      .from("recurring_tasks")
+      .insert({ user_id: user.id, title, priority, is_active: true })
+      .select("id")
+      .single();
+
+    if (recurringError || !recurring) {
+      return json(
+        {
+          data: null,
+          error: recurringError?.message ?? "Failed to create recurring task",
+        },
+        500
+      );
+    }
+
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert({
+        user_id: user.id,
+        title,
+        description,
+        status,
+        priority,
+        // Today (IST) — matches the cron's (recurring_task_id, due_date) key.
+        due_date: istDateString(),
+        plan_id: planId,
+        recurring_task_id: recurring.id,
+        completed_at: completedAt,
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
+      await supabase.from("recurring_tasks").delete().eq("id", recurring.id);
+      return json(
+        { data: null, error: error?.message ?? "Failed to create task" },
+        500
+      );
+    }
+
+    return json<Task>({ data, error: null }, 201);
+  }
+
   const { data, error } = await supabase
     .from("tasks")
     .insert({
       user_id: user.id,
       title,
-      description:
-        typeof body.description === "string" && body.description.trim()
-          ? body.description.trim()
-          : null,
-      status: isStatus(body.status) ? body.status : "todo",
-      priority: isPriority(body.priority) ? body.priority : "medium",
+      description,
+      status,
+      priority,
       due_date: typeof body.due_date === "string" ? body.due_date : null,
-      plan_id: typeof body.plan_id === "string" ? body.plan_id : null,
-      // Stamp completion if a task is created directly as done (the PATCH
-      // path owns the done/un-done transitions for existing tasks).
-      completed_at:
-        (isStatus(body.status) ? body.status : "todo") === "done"
-          ? new Date().toISOString()
-          : null,
+      plan_id: planId,
+      completed_at: completedAt,
     })
     .select()
     .single();
@@ -113,6 +169,29 @@ export async function PATCH(request: Request) {
 
   const id = typeof body.id === "string" ? body.id : "";
   if (!id) return json({ data: null, error: "Task id is required" }, 400);
+
+  // "Stop repeating": deactivate the task's recurring template so the cron stops
+  // spawning future instances. Existing (today/past) instances are left intact.
+  if (body.stop_recurring === true) {
+    const { data: task, error: taskError } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (taskError || !task) {
+      return json({ data: null, error: "Task not found" }, 404);
+    }
+    if (task.recurring_task_id) {
+      const { error: stopError } = await supabase
+        .from("recurring_tasks")
+        .update({ is_active: false })
+        .eq("id", task.recurring_task_id);
+      if (stopError) {
+        return json({ data: null, error: stopError.message }, 500);
+      }
+    }
+    return json<Task>({ data: task, error: null });
+  }
 
   const updates: TaskUpdate = {};
   if (body.title !== undefined) {

@@ -97,6 +97,9 @@ export interface Database {
           created_at: string;
           updated_at: string;
           completed_at: string | null;
+          // Nullable FK to recurring_tasks. Optional here so optimistic Task
+          // literals (e.g. hooks/useTasks.ts) need not set it.
+          recurring_task_id?: string | null;
         };
         Insert: {
           id?: string;
@@ -110,6 +113,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           completed_at?: string | null;
+          recurring_task_id?: string | null;
         };
         Update: {
           id?: string;
@@ -123,6 +127,34 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           completed_at?: string | null;
+          recurring_task_id?: string | null;
+        };
+        Relationships: [];
+      };
+      recurring_tasks: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          priority: TaskPriority;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          priority?: TaskPriority;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          priority?: TaskPriority;
+          is_active?: boolean;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -421,6 +453,8 @@ export interface StreakFreezeLog {
 }
 export type Plan = Database["public"]["Tables"]["plans"]["Row"];
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
+export type RecurringTask =
+  Database["public"]["Tables"]["recurring_tasks"]["Row"];
 export type Note = Database["public"]["Tables"]["notes"]["Row"];
 export type Reminder = Database["public"]["Tables"]["reminders"]["Row"];
 export type SrsCard = Database["public"]["Tables"]["srs_cards"]["Row"];

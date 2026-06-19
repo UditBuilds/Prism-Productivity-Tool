@@ -249,3 +249,41 @@ alter table mood_logs enable row level security;
 
 create policy "own_mood_logs"
   on mood_logs for all using (auth.uid() = user_id);
+
+-- RECURRING TASKS (daily task templates — Session: recurring tasks)
+-- A template that /api/cron/recurring-tasks materialises into a real `tasks`
+-- row once per IST day (the New Task form also spawns today's instance up front).
+-- Stopping repetition flips is_active = false; past/today's instances are kept.
+-- priority is TEXT mirroring tasks.priority's allowed values.
+create table if not exists recurring_tasks (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  title text not null,
+  priority text not null default 'medium',
+  is_active boolean not null default true,
+  created_at timestamptz default now()
+);
+
+alter table recurring_tasks enable row level security;
+
+-- Own-rows access, split into the four commands (auth.uid() = user_id).
+create policy "recurring_tasks_select_own"
+  on recurring_tasks for select using (auth.uid() = user_id);
+create policy "recurring_tasks_insert_own"
+  on recurring_tasks for insert with check (auth.uid() = user_id);
+create policy "recurring_tasks_update_own"
+  on recurring_tasks for update
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "recurring_tasks_delete_own"
+  on recurring_tasks for delete using (auth.uid() = user_id);
+
+-- Link each spawned task back to its template (null for one-off tasks).
+alter table tasks
+  add column if not exists recurring_task_id uuid
+    references recurring_tasks(id) on delete set null;
+
+-- One spawned task per template per day — backs the cron's idempotent spawn
+-- and the form's immediate "today's instance" insert.
+create unique index if not exists idx_tasks_recurring_unique_per_day
+  on tasks (recurring_task_id, due_date)
+  where recurring_task_id is not null;

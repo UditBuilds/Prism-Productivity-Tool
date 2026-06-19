@@ -6,6 +6,7 @@ import {
   Bell,
   Coffee,
   AlertCircle,
+  Repeat,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
@@ -197,6 +198,12 @@ export default async function DashboardHome() {
                         >
                           {task.title}
                         </span>
+                        {task.recurring_task_id && (
+                          <Repeat
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                            aria-label="Repeats daily"
+                          />
+                        )}
                         <span
                           className={cn(
                             "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize",

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { CalendarIcon, X } from "lucide-react";
+import { CalendarIcon, Repeat, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui.store";
@@ -49,12 +49,14 @@ export function TaskForm() {
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [planId, setPlanId] = useState<string | null>(null);
+  const [repeatDaily, setRepeatDaily] = useState(false);
   const [titleError, setTitleError] = useState(false);
 
   // Hydrate the form whenever the dialog opens (create vs edit).
   useEffect(() => {
     if (!taskDialogOpen) return;
     setTitleError(false);
+    setRepeatDaily(false); // create-only toggle; never carried into edit
     if (editingTask) {
       setTitle(editingTask.title);
       setDescription(editingTask.description ?? "");
@@ -94,7 +96,11 @@ export function TaskForm() {
     if (editingTask) {
       updateTask.mutate({ id: editingTask.id, ...payload });
     } else {
-      createTask.mutate(payload);
+      // repeat_daily rides along on the POST body; the API creates the
+      // recurring template + today's instance. (Assigned to a var first so it's
+      // structurally assignable to CreateTaskInput without an excess-prop error.)
+      const createPayload = { ...payload, repeat_daily: repeatDaily };
+      createTask.mutate(createPayload);
     }
     closeTaskDialog();
   }
@@ -238,6 +244,47 @@ export function TaskForm() {
                 </SelectContent>
               </Select>
             </div>
+          )}
+
+          {!editingTask ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={repeatDaily}
+              onClick={() => setRepeatDaily((v) => !v)}
+              className={cn(
+                "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 transition",
+                repeatDaily
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-border bg-surface hover:bg-surface-raised"
+              )}
+            >
+              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Repeat className="h-4 w-4 text-muted-foreground" />
+                Repeat daily
+              </span>
+              <span
+                aria-hidden
+                className={cn(
+                  "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+                  repeatDaily ? "bg-accent" : "bg-muted"
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+                    repeatDaily ? "translate-x-[18px]" : "translate-x-0.5"
+                  )}
+                />
+              </span>
+            </button>
+          ) : (
+            editingTask.recurring_task_id && (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-muted-foreground">
+                <Repeat className="h-4 w-4" />
+                Repeats daily
+              </div>
+            )
           )}
 
           <DialogFooter className="gap-2 sm:gap-2">
