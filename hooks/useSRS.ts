@@ -98,62 +98,65 @@ export function useDueCards(deck?: string) {
 
 /** Per-deck stats grouped by deck_name. Default deck sorts first. */
 export function useDeckStats() {
+  // Stable (no inputs) so React Query memoizes the selected result instead of
+  // re-running on unrelated ["srs-cards"] touches — same pattern as useDueCards.
+  const select = useCallback((cards: SrsCard[]): DeckStat[] => {
+    const now = Date.now();
+    const byDeck = new Map<string, DeckStat>();
+    // Tally note_id occurrences per deck to find each deck's dominant source.
+    const noteCounts = new Map<string, Map<string, number>>();
+
+    for (const card of cards) {
+      const stat = byDeck.get(card.deck_name) ?? {
+        deckName: card.deck_name,
+        total: 0,
+        dueCount: 0,
+        lastReviewed: null,
+        noteId: null,
+      };
+      stat.total += 1;
+      if (isDue(card, now)) stat.dueCount += 1;
+      if (
+        card.last_reviewed &&
+        (!stat.lastReviewed || card.last_reviewed > stat.lastReviewed)
+      ) {
+        stat.lastReviewed = card.last_reviewed;
+      }
+      byDeck.set(card.deck_name, stat);
+
+      if (card.note_id) {
+        const counts =
+          noteCounts.get(card.deck_name) ?? new Map<string, number>();
+        counts.set(card.note_id, (counts.get(card.note_id) ?? 0) + 1);
+        noteCounts.set(card.deck_name, counts);
+      }
+    }
+
+    // A deck's source note = the note_id shared by a majority of its cards.
+    const decks = Array.from(byDeck.values());
+    for (const stat of decks) {
+      const counts = noteCounts.get(stat.deckName);
+      if (!counts) continue;
+      let bestId: string | null = null;
+      let bestCount = 0;
+      for (const [id, count] of Array.from(counts.entries())) {
+        if (count > bestCount) {
+          bestId = id;
+          bestCount = count;
+        }
+      }
+      if (bestId && bestCount * 2 > stat.total) stat.noteId = bestId;
+    }
+
+    return decks.sort((a, b) => {
+      if (a.deckName === "Default") return -1;
+      if (b.deckName === "Default") return 1;
+      return a.deckName.localeCompare(b.deckName);
+    });
+  }, []);
   return useQuery<SrsCard[], Error, DeckStat[]>({
     ...srsCardsQueryOptions,
-    select: (cards) => {
-      const now = Date.now();
-      const byDeck = new Map<string, DeckStat>();
-      // Tally note_id occurrences per deck to find each deck's dominant source.
-      const noteCounts = new Map<string, Map<string, number>>();
-
-      for (const card of cards) {
-        const stat = byDeck.get(card.deck_name) ?? {
-          deckName: card.deck_name,
-          total: 0,
-          dueCount: 0,
-          lastReviewed: null,
-          noteId: null,
-        };
-        stat.total += 1;
-        if (isDue(card, now)) stat.dueCount += 1;
-        if (
-          card.last_reviewed &&
-          (!stat.lastReviewed || card.last_reviewed > stat.lastReviewed)
-        ) {
-          stat.lastReviewed = card.last_reviewed;
-        }
-        byDeck.set(card.deck_name, stat);
-
-        if (card.note_id) {
-          const counts =
-            noteCounts.get(card.deck_name) ?? new Map<string, number>();
-          counts.set(card.note_id, (counts.get(card.note_id) ?? 0) + 1);
-          noteCounts.set(card.deck_name, counts);
-        }
-      }
-
-      // A deck's source note = the note_id shared by a majority of its cards.
-      const decks = Array.from(byDeck.values());
-      for (const stat of decks) {
-        const counts = noteCounts.get(stat.deckName);
-        if (!counts) continue;
-        let bestId: string | null = null;
-        let bestCount = 0;
-        for (const [id, count] of Array.from(counts.entries())) {
-          if (count > bestCount) {
-            bestId = id;
-            bestCount = count;
-          }
-        }
-        if (bestId && bestCount * 2 > stat.total) stat.noteId = bestId;
-      }
-
-      return decks.sort((a, b) => {
-        if (a.deckName === "Default") return -1;
-        if (b.deckName === "Default") return 1;
-        return a.deckName.localeCompare(b.deckName);
-      });
-    },
+    select,
   });
 }
 
