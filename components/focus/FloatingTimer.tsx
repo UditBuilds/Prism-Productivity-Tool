@@ -10,6 +10,49 @@ import { useEndFocusSession } from "@/hooks/useFocus";
 import { CATEGORIES } from "@/components/focus/categories";
 
 /**
+ * Short completion chime (~0.3s) synthesised with the Web Audio API — no audio
+ * file required. Best-effort: silently no-ops if Web Audio is unavailable or
+ * blocked. The user started the timer with a click, so the page already has the
+ * activation Web Audio needs.
+ */
+function playChime() {
+  try {
+    const w = window as typeof window & {
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const AudioCtor = window.AudioContext ?? w.webkitAudioContext;
+    if (!AudioCtor) return;
+
+    const ctx = new AudioCtor();
+    void ctx.resume();
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, now); // A5
+    osc.frequency.setValueAtTime(1318.5, now + 0.15); // → E6, a soft "ding-dong"
+
+    // Quick attack + smooth exponential decay so the tone doesn't click.
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.32);
+    osc.onended = () => {
+      void ctx.close();
+    };
+  } catch {
+    // Web Audio unsupported or blocked — the completion toast still fires.
+  }
+}
+
+/**
  * Always mounted in the dashboard layout. Owns the 1-second ticker (so the
  * timer survives page navigation) and the completion side effects
  * (notification + DB update). Renders the floating mini-widget only when a
@@ -48,20 +91,33 @@ export function FloatingTimer() {
               completed: true,
             });
           }
+
+          const message = before.category
+            ? `${before.category} session complete 🎉`
+            : "Focus session complete 🎉";
+
+          // Always: chime + toast, so a user watching the page gets clear,
+          // hard-to-miss feedback the moment the countdown hits zero.
+          playChime();
+          toast.success(message);
+
+          // Additionally, when the tab is backgrounded AND notification
+          // permission is already granted, surface a browser Notification.
+          // Check only — never request a new permission prompt here.
           try {
             if (
+              document.hidden &&
               typeof Notification !== "undefined" &&
               Notification.permission === "granted"
             ) {
-              new Notification(
-                `${before.category} session complete! Well done.`,
-                { icon: "/icons/icon-192.png" }
-              );
+              new Notification(message, {
+                body: "Well done — that's real progress.",
+                icon: "/icons/icon-192.png",
+              });
             }
           } catch {
-            // Notifications unsupported — toast below still fires.
+            // Notifications unsupported/blocked — chime + toast already fired.
           }
-          toast.success(`${before.category} session complete! 🎉`);
         } else {
           toast(`Break over — back to it.`, { icon: "⏰" });
         }
