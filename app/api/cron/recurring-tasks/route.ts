@@ -23,6 +23,8 @@ type RecurringTaskRow = {
   priority: TaskPriority;
   is_active: boolean;
   created_at: string;
+  // IST weekday numbers (0=Sun … 6=Sat) this template spawns on.
+  days_of_week: number[];
 };
 
 type TasksTable = Database["public"]["Tables"]["tasks"];
@@ -65,10 +67,14 @@ export async function POST(request: Request) {
   const supabase = createAdminClient() as unknown as SupabaseClient<RecurringSchema>;
 
   const today = istDateString(); // IST civil date "YYYY-MM-DD"
+  // IST weekday number (0=Sun … 6=Sat), matching istDayContext's convention
+  // (getUTCDay on the IST civil date). lib/date.ts exposes no weekday helper, so
+  // we derive it from the same istDateString above — not a second IST-offset calc.
+  const todayWeekday = new Date(`${today}T00:00:00Z`).getUTCDay();
 
   const { data: templates, error: templatesError } = await supabase
     .from("recurring_tasks")
-    .select("id, user_id, title, priority")
+    .select("id, user_id, title, priority, days_of_week")
     .eq("is_active", true);
 
   if (templatesError) {
@@ -78,6 +84,10 @@ export async function POST(request: Request) {
   let spawned = 0;
 
   for (const template of templates ?? []) {
+    // Weekday filter: only spawn on the template's selected IST weekdays.
+    // Skips this template for today only (rows default to all 7 days).
+    if (!template.days_of_week.includes(todayWeekday)) continue;
+
     // Already spawned today? Skip (keeps re-runs idempotent).
     const { data: existing, error: existingError } = await supabase
       .from("tasks")

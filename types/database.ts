@@ -139,6 +139,8 @@ export interface Database {
           priority: TaskPriority;
           is_active: boolean;
           created_at: string;
+          // IST weekday numbers (0=Sun … 6=Sat) the template spawns on.
+          days_of_week: number[];
         };
         Insert: {
           id?: string;
@@ -147,6 +149,7 @@ export interface Database {
           priority?: TaskPriority;
           is_active?: boolean;
           created_at?: string;
+          days_of_week?: number[];
         };
         Update: {
           id?: string;
@@ -155,6 +158,7 @@ export interface Database {
           priority?: TaskPriority;
           is_active?: boolean;
           created_at?: string;
+          days_of_week?: number[];
         };
         Relationships: [];
       };
