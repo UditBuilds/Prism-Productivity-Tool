@@ -16,10 +16,11 @@ import {
   greetingForHour,
   formatDueDate,
   formatCountdown,
+  formatReminderTime,
   countdownProgressPct,
 } from "@/lib/date";
 import { cn } from "@/lib/utils";
-import type { Countdown, Task } from "@/types/database";
+import type { Countdown, Reminder, Task } from "@/types/database";
 import {
   priorityStyles,
   statusStyles,
@@ -39,8 +40,15 @@ export default async function DashboardHome() {
   const { startOfToday, endOfToday, startOfWeek, hour } = istDayContext();
   const nowIso = new Date().toISOString();
 
-  const [profileRes, dueRes, completedRes, cardsRes, remindersRes, countdownsRes] =
-    await Promise.all([
+  const [
+    profileRes,
+    dueRes,
+    completedRes,
+    cardsRes,
+    remindersRes,
+    countdownsRes,
+    upcomingRemindersRes,
+  ] = await Promise.all([
       supabase
         .from("profiles")
         .select("display_name")
@@ -79,6 +87,15 @@ export default async function DashboardHome() {
         .gte("target_date", istDateString())
         .order("target_date", { ascending: true })
         .limit(3),
+      // Upcoming reminders (pending, now or later) — merged into "Upcoming"
+      // alongside countdowns. Read-only here; created on the Reminders page.
+      supabase
+        .from("reminders")
+        .select("*")
+        .eq("is_sent", false)
+        .gte("remind_at", nowIso)
+        .order("remind_at", { ascending: true })
+        .limit(3),
     ]);
 
   const displayName = profileRes.data?.display_name ?? "there";
@@ -89,6 +106,32 @@ export default async function DashboardHome() {
   const cardsCount = cardsRes.count ?? 0;
   const remindersTodayCount = remindersRes.count ?? 0;
   const countdowns: Countdown[] = countdownsRes.data ?? [];
+  const upcomingReminders: Reminder[] = upcomingRemindersRes.data ?? [];
+
+  // Merge countdowns + reminders into one chronological list (soonest first),
+  // capped at the same 3 the countdown query uses. Countdown dates are civil
+  // (IST midnight); reminders are instants — both reduced to a ms sortKey.
+  type UpcomingItem =
+    | { kind: "countdown"; sortKey: number; countdown: Countdown }
+    | { kind: "reminder"; sortKey: number; reminder: Reminder };
+  const upcomingItems: UpcomingItem[] = [
+    ...countdowns.map(
+      (c): UpcomingItem => ({
+        kind: "countdown",
+        sortKey: Date.parse(`${c.target_date}T00:00:00.000+05:30`),
+        countdown: c,
+      })
+    ),
+    ...upcomingReminders.map(
+      (r): UpcomingItem => ({
+        kind: "reminder",
+        sortKey: new Date(r.remind_at).getTime(),
+        reminder: r,
+      })
+    ),
+  ]
+    .sort((a, b) => a.sortKey - b.sortKey)
+    .slice(0, 3);
 
   const stats = [
     { label: "Due Today", value: dueCount, icon: CalendarClock },
@@ -250,7 +293,7 @@ export default async function DashboardHome() {
           </Link>
         </div>
 
-        {countdowns.length === 0 ? (
+        {upcomingItems.length === 0 ? (
           <div className="rounded-xl border border-border bg-surface p-4">
             <p className="text-sm text-muted-foreground">
               Nothing coming up ·{" "}
@@ -264,43 +307,76 @@ export default async function DashboardHome() {
           </div>
         ) : (
           <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
-              {countdowns.map((c) => {
-                const display = formatCountdown(c.target_date);
+              {upcomingItems.map((item) => {
+                if (item.kind === "countdown") {
+                  const c = item.countdown;
+                  const display = formatCountdown(c.target_date);
+                  const toneClass =
+                    display.tone === "accent"
+                      ? "text-accent font-semibold"
+                      : display.tone === "warning"
+                        ? "text-amber-400 font-medium"
+                        : display.tone === "dimmed"
+                          ? "text-muted-foreground/50"
+                          : "text-muted-foreground";
+                  return (
+                    <li
+                      key={`countdown-${c.id}`}
+                      className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
+                    >
+                      <span aria-hidden className="text-2xl">
+                        {c.emoji}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {c.title}
+                        </p>
+                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-accent"
+                            style={{
+                              width: `${countdownProgressPct(
+                                c.created_at,
+                                c.target_date
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <span className={cn("shrink-0 text-xs", toneClass)}>
+                        {display.label}
+                      </span>
+                    </li>
+                  );
+                }
+
+                const r = item.reminder;
+                const display = formatReminderTime(r.remind_at);
                 const toneClass =
-                  display.tone === "accent"
-                    ? "text-accent font-semibold"
+                  display.tone === "danger"
+                    ? "text-danger font-medium"
                     : display.tone === "warning"
                       ? "text-amber-400 font-medium"
-                      : display.tone === "dimmed"
-                        ? "text-muted-foreground/50"
-                        : "text-muted-foreground";
+                      : "text-muted-foreground";
                 return (
                   <li
-                    key={c.id}
+                    key={`reminder-${r.id}`}
                     className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
                   >
-                    <span aria-hidden className="text-2xl">
-                      {c.emoji}
+                    <span
+                      aria-hidden
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-raised"
+                    >
+                      <Bell className="h-4 w-4 text-accent" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-foreground">
-                        {c.title}
+                        {r.title}
                       </p>
-                      <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-accent"
-                          style={{
-                            width: `${countdownProgressPct(
-                              c.created_at,
-                              c.target_date
-                            )}%`,
-                          }}
-                        />
-                      </div>
+                      <p className={cn("mt-0.5 truncate text-xs", toneClass)}>
+                        {display.label}
+                      </p>
                     </div>
-                    <span className={cn("shrink-0 text-xs", toneClass)}>
-                      {display.label}
-                    </span>
                   </li>
                 );
               })}
