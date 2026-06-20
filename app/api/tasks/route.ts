@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { istDateString } from "@/lib/date";
+import { istDateString, istWeekday } from "@/lib/date";
 import type {
   Database,
   Task,
@@ -25,6 +25,24 @@ function isStatus(v: unknown): v is TaskStatus {
 }
 function isPriority(v: unknown): v is TaskPriority {
   return typeof v === "string" && PRIORITIES.includes(v as TaskPriority);
+}
+
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+
+/** Normalise a submitted days_of_week to unique, sorted weekday numbers 0–6.
+ *  Falls back to every day for missing/empty/invalid input (defensive — the
+ *  form disables submit on an empty custom selection). */
+function parseDaysOfWeek(v: unknown): number[] {
+  if (!Array.isArray(v)) return ALL_DAYS;
+  const days = Array.from(
+    new Set(
+      v.filter(
+        (d): d is number =>
+          typeof d === "number" && Number.isInteger(d) && d >= 0 && d <= 6
+      )
+    )
+  ).sort((a, b) => a - b);
+  return days.length > 0 ? days : ALL_DAYS;
 }
 
 // GET /api/tasks — all tasks for the authed user
@@ -89,9 +107,17 @@ export async function POST(request: Request) {
   // sequentially (template first) and roll the template back if the instance
   // insert fails — no orphan template left to spawn tomorrow.
   if (body.repeat_daily === true) {
+    const daysOfWeek = parseDaysOfWeek(body.days_of_week);
+
     const { data: recurring, error: recurringError } = await supabase
       .from("recurring_tasks")
-      .insert({ user_id: user.id, title, priority, is_active: true })
+      .insert({
+        user_id: user.id,
+        title,
+        priority,
+        is_active: true,
+        days_of_week: daysOfWeek,
+      })
       .select("id")
       .single();
 
@@ -105,32 +131,45 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data, error } = await supabase
-      .from("tasks")
-      .insert({
-        user_id: user.id,
-        title,
-        description,
-        status,
-        priority,
-        // Today (IST) — matches the cron's (recurring_task_id, due_date) key.
-        due_date: istDateString(),
-        plan_id: planId,
-        recurring_task_id: recurring.id,
-        completed_at: completedAt,
-      })
-      .select()
-      .single();
+    // Only spawn today's instance if today (IST) is one of the selected days —
+    // this is the authoritative check (the form's caption is a local-time
+    // preview only). On a non-matching day the cron spawns the first instance
+    // on the next matching day.
+    if (daysOfWeek.includes(istWeekday())) {
+      const { data, error } = await supabase
+        .from("tasks")
+        .insert({
+          user_id: user.id,
+          title,
+          description,
+          status,
+          priority,
+          // Today (IST) — matches the cron's (recurring_task_id, due_date) key.
+          due_date: istDateString(),
+          plan_id: planId,
+          recurring_task_id: recurring.id,
+          completed_at: completedAt,
+        })
+        .select()
+        .single();
 
-    if (error || !data) {
-      await supabase.from("recurring_tasks").delete().eq("id", recurring.id);
-      return json(
-        { data: null, error: error?.message ?? "Failed to create task" },
-        500
-      );
+      if (error || !data) {
+        await supabase.from("recurring_tasks").delete().eq("id", recurring.id);
+        return json(
+          { data: null, error: error?.message ?? "Failed to create task" },
+          500
+        );
+      }
+
+      return json<Task>({ data, error: null }, 201);
     }
 
-    return json<Task>({ data, error: null }, 201);
+    // Template created, no instance today. Return the template id (non-null) so
+    // the client's success check passes; the tasks list refetches on settle.
+    return json<{ id: string }>(
+      { data: { id: recurring.id }, error: null },
+      201
+    );
   }
 
   const { data, error } = await supabase

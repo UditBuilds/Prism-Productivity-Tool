@@ -20,7 +20,7 @@ export function istDayContext(now: Date = new Date()): IstDayContext {
   const y = ist.getUTCFullYear();
   const m = ist.getUTCMonth();
   const d = ist.getUTCDate();
-  const dow = ist.getUTCDay(); // 0=Sun … 6=Sat (in IST)
+  const dow = istWeekday(now.getTime()); // 0=Sun … 6=Sat (in IST)
   const daysSinceMonday = (dow + 6) % 7;
 
   const istMidnightToUtc = (yy: number, mm: number, dd: number): string =>
@@ -32,6 +32,11 @@ export function istDayContext(now: Date = new Date()): IstDayContext {
     endOfToday: istMidnightToUtc(y, m, d + 1),
     startOfWeek: istMidnightToUtc(y, m, d - daysSinceMonday),
   };
+}
+
+/** IST weekday for an instant: 0 = Sunday … 6 = Saturday. Defaults to now. */
+export function istWeekday(ms: number = Date.now()): number {
+  return new Date(ms + IST_OFFSET_MS).getUTCDay();
 }
 
 export function greetingForHour(hour: number): string {

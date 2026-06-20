@@ -37,6 +37,31 @@ function pickedDateToIso(d: Date): string {
   ).toISOString();
 }
 
+type RepeatPattern = "everyday" | "weekdays" | "weekends" | "custom";
+
+const REPEAT_PATTERNS: { value: RepeatPattern; label: string }[] = [
+  { value: "everyday", label: "Every day" },
+  { value: "weekdays", label: "Weekdays" },
+  { value: "weekends", label: "Weekends" },
+  { value: "custom", label: "Custom" },
+];
+
+// Weekday numbers: 0 = Sun … 6 = Sat (matches istWeekday + browser getDay()).
+const PATTERN_DAYS: Record<Exclude<RepeatPattern, "custom">, number[]> = {
+  everyday: [0, 1, 2, 3, 4, 5, 6],
+  weekdays: [1, 2, 3, 4, 5],
+  weekends: [0, 6],
+};
+
+const PATTERN_CAPTION: Record<RepeatPattern, string> = {
+  everyday: "every day",
+  weekdays: "weekdays",
+  weekends: "weekends",
+  custom: "selected days",
+};
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 export function TaskForm() {
   const { taskDialogOpen, editingTask, closeTaskDialog } = useUIStore();
   const createTask = useCreateTask();
@@ -50,6 +75,8 @@ export function TaskForm() {
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [planId, setPlanId] = useState<string | null>(null);
   const [repeatDaily, setRepeatDaily] = useState(false);
+  const [repeatPattern, setRepeatPattern] = useState<RepeatPattern>("everyday");
+  const [customDays, setCustomDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [titleError, setTitleError] = useState(false);
 
   // Hydrate the form whenever the dialog opens (create vs edit).
@@ -57,6 +84,8 @@ export function TaskForm() {
     if (!taskDialogOpen) return;
     setTitleError(false);
     setRepeatDaily(false); // create-only toggle; never carried into edit
+    setRepeatPattern("everyday");
+    setCustomDays([0, 1, 2, 3, 4, 5, 6]);
     if (editingTask) {
       setTitle(editingTask.title);
       setDescription(editingTask.description ?? "");
@@ -75,6 +104,28 @@ export function TaskForm() {
       setPlanId(null);
     }
   }, [taskDialogOpen, editingTask]);
+
+  const selectedDays =
+    repeatPattern === "custom" ? customDays : PATTERN_DAYS[repeatPattern];
+  const createDisabled =
+    !editingTask &&
+    repeatDaily &&
+    repeatPattern === "custom" &&
+    customDays.length === 0;
+
+  // Preview only — uses the browser's local weekday (no server round-trip).
+  // The authoritative "starts today?" decision happens server-side.
+  const repeatCaption = selectedDays.includes(new Date().getDay())
+    ? `Starts today, repeats on ${PATTERN_CAPTION[repeatPattern]}`
+    : `Repeats on ${PATTERN_CAPTION[repeatPattern]}, starts on the next matching day`;
+
+  function toggleCustomDay(day: number) {
+    setCustomDays((prev) =>
+      prev.includes(day)
+        ? prev.filter((d) => d !== day)
+        : [...prev, day].sort((a, b) => a - b)
+    );
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,7 +150,11 @@ export function TaskForm() {
       // repeat_daily rides along on the POST body; the API creates the
       // recurring template + today's instance. (Assigned to a var first so it's
       // structurally assignable to CreateTaskInput without an excess-prop error.)
-      const createPayload = { ...payload, repeat_daily: repeatDaily };
+      const createPayload = {
+        ...payload,
+        repeat_daily: repeatDaily,
+        days_of_week: selectedDays,
+      };
       createTask.mutate(createPayload);
     }
     closeTaskDialog();
@@ -247,37 +302,94 @@ export function TaskForm() {
           )}
 
           {!editingTask ? (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={repeatDaily}
-              onClick={() => setRepeatDaily((v) => !v)}
-              className={cn(
-                "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 transition",
-                repeatDaily
-                  ? "border-accent/40 bg-accent/10"
-                  : "border-border bg-surface hover:bg-surface-raised"
-              )}
-            >
-              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Repeat className="h-4 w-4 text-muted-foreground" />
-                Repeat daily
-              </span>
-              <span
-                aria-hidden
+            <div className="space-y-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={repeatDaily}
+                onClick={() => setRepeatDaily((v) => !v)}
                 className={cn(
-                  "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-                  repeatDaily ? "bg-accent" : "bg-muted"
+                  "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 transition",
+                  repeatDaily
+                    ? "border-accent/40 bg-accent/10"
+                    : "border-border bg-surface hover:bg-surface-raised"
                 )}
               >
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Repeat className="h-4 w-4 text-muted-foreground" />
+                  Repeat daily
+                </span>
                 <span
+                  aria-hidden
                   className={cn(
-                    "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
-                    repeatDaily ? "translate-x-[18px]" : "translate-x-0.5"
+                    "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+                    repeatDaily ? "bg-accent" : "bg-muted"
                   )}
-                />
-              </span>
-            </button>
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+                      repeatDaily ? "translate-x-[18px]" : "translate-x-0.5"
+                    )}
+                  />
+                </span>
+              </button>
+
+              {repeatDaily && (
+                <div className="space-y-3 rounded-lg border border-border bg-surface-raised/40 p-3">
+                  <div className="flex flex-wrap gap-2">
+                    {REPEAT_PATTERNS.map((p) => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        aria-pressed={repeatPattern === p.value}
+                        onClick={() => setRepeatPattern(p.value)}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-medium transition",
+                          repeatPattern === p.value
+                            ? "border-accent bg-accent/15 text-accent"
+                            : "border-border text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {repeatPattern === "custom" && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {DAY_LABELS.map((label, dayNum) => {
+                        const active = customDays.includes(dayNum);
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => toggleCustomDay(dayNum)}
+                            className={cn(
+                              "h-8 w-10 rounded-md border text-xs font-medium transition",
+                              active
+                                ? "border-accent bg-accent/15 text-accent"
+                                : "border-border text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {repeatPattern === "custom" && customDays.length === 0 ? (
+                    <p className="text-xs text-danger">Pick at least one day.</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {repeatCaption}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           ) : (
             editingTask.recurring_task_id && (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-muted-foreground">
@@ -295,7 +407,9 @@ export function TaskForm() {
             >
               Cancel
             </Button>
-            <Button type="submit">Save</Button>
+            <Button type="submit" disabled={createDisabled}>
+              Save
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

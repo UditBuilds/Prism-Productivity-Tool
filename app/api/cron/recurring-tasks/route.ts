@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { istDateString } from "@/lib/date";
+import { istDateString, istWeekday } from "@/lib/date";
 import type { Database, TaskPriority } from "@/types/database";
 
 type ApiResponse<T> = { data: T | null; error: string | null };
@@ -67,10 +67,8 @@ export async function POST(request: Request) {
   const supabase = createAdminClient() as unknown as SupabaseClient<RecurringSchema>;
 
   const today = istDateString(); // IST civil date "YYYY-MM-DD"
-  // IST weekday number (0=Sun … 6=Sat), matching istDayContext's convention
-  // (getUTCDay on the IST civil date). lib/date.ts exposes no weekday helper, so
-  // we derive it from the same istDateString above — not a second IST-offset calc.
-  const todayWeekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  // IST weekday number (0=Sun … 6=Sat) via the shared lib/date helper.
+  const todayWeekday = istWeekday();
 
   const { data: templates, error: templatesError } = await supabase
     .from("recurring_tasks")
