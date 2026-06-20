@@ -14,6 +14,8 @@ interface FocusStore {
   totalDuration: number; // seconds for current mode
   category: string;
   sessionId: string | null;
+  /** Seconds actually elapsed (advances only while running & not paused). */
+  elapsedSeconds: number;
   /** True right after a focus session naturally hits 0 — drives celebration. */
   justCompleted: boolean;
 
@@ -35,6 +37,7 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
   totalDuration: 0,
   category: "Study",
   sessionId: null,
+  elapsedSeconds: 0,
   justCompleted: false,
 
   startSession: (category, durationMinutes) =>
@@ -46,6 +49,7 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
       timeLeft: durationMinutes * 60,
       totalDuration: durationMinutes * 60,
       sessionId: null,
+      elapsedSeconds: 0,
       justCompleted: false,
     }),
 
@@ -57,6 +61,7 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
       timeLeft: minutes * 60,
       totalDuration: minutes * 60,
       sessionId: null,
+      elapsedSeconds: 0,
       justCompleted: false,
     }),
 
@@ -72,21 +77,25 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
       timeLeft: 0,
       totalDuration: 0,
       sessionId: null,
+      elapsedSeconds: 0,
       justCompleted: false,
     }),
 
   tick: () => {
-    const { isRunning, isPaused, timeLeft, mode } = get();
+    const { isRunning, isPaused, timeLeft, mode, elapsedSeconds } = get();
     if (!isRunning || isPaused) return;
+    // Same pause-gated path as the timeLeft decrement: one real second elapsed.
+    const nextElapsed = elapsedSeconds + 1;
     if (timeLeft <= 1) {
       set({
         timeLeft: 0,
         isRunning: false,
         isPaused: false,
         justCompleted: mode === "focus",
+        elapsedSeconds: nextElapsed,
       });
     } else {
-      set({ timeLeft: timeLeft - 1 });
+      set({ timeLeft: timeLeft - 1, elapsedSeconds: nextElapsed });
     }
   },
 

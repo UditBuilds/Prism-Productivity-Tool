@@ -83,14 +83,40 @@ export function FloatingTimer() {
       before.tick();
       const after = useFocusStore.getState();
 
+      // Heartbeat: persist elapsed every 20s while genuinely running. Piggybacks
+      // on this existing tick — no second interval. Fire-and-forget: a missed
+      // beat must never disrupt the running timer (swallow failures, no UI).
+      if (
+        after.elapsedSeconds % 20 === 0 &&
+        after.isRunning &&
+        !after.isPaused &&
+        after.sessionId
+      ) {
+        void fetch("/api/focus", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: after.sessionId,
+            elapsed_seconds: after.elapsedSeconds,
+          }),
+        }).catch((err) => {
+          console.warn("Focus heartbeat failed:", err);
+        });
+      }
+
       // Natural completion (hit 0)
       if (after.timeLeft === 0 && !after.isRunning) {
         if (before.mode === "focus") {
           if (after.sessionId) {
-            endMutationRef.current.mutate({
+            // elapsed_seconds rides along on the existing completion PATCH
+            // (assigned to a var so the extra field stays assignable to the
+            // mutation's { id, completed } input type).
+            const completionPayload = {
               id: after.sessionId,
               completed: true,
-            });
+              elapsed_seconds: after.elapsedSeconds,
+            };
+            endMutationRef.current.mutate(completionPayload);
           }
 
           const message = before.category
@@ -128,9 +154,16 @@ export function FloatingTimer() {
   }, []);
 
   function handleEnd() {
-    const { sessionId } = useFocusStore.getState();
+    const { sessionId, elapsedSeconds } = useFocusStore.getState();
     if (sessionId) {
-      endMutationRef.current.mutate({ id: sessionId, completed: false });
+      // Var so the extra elapsed_seconds stays assignable to the mutation's
+      // { id, completed } input type (no excess-property error).
+      const stopPayload = {
+        id: sessionId,
+        completed: false,
+        elapsed_seconds: elapsedSeconds,
+      };
+      endMutationRef.current.mutate(stopPayload);
     }
     endSession();
   }

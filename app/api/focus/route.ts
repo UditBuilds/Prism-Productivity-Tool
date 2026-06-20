@@ -85,8 +85,25 @@ export async function PATCH(request: Request) {
   const id = typeof body.id === "string" ? body.id : "";
   if (!id) return json({ data: null, error: "Session id is required" }, 400);
 
-  const updates: FocusUpdate = { ended_at: new Date().toISOString() };
-  if (typeof body.completed === "boolean") updates.completed = body.completed;
+  const updates: FocusUpdate = {};
+  // An end (natural completion or manual stop) sends `completed` → also stamp
+  // ended_at at that moment.
+  if (typeof body.completed === "boolean") {
+    updates.completed = body.completed;
+    updates.ended_at = new Date().toISOString();
+  }
+  // elapsed_seconds can be updated on its own (the per-20s heartbeat) — no
+  // completed/ended_at required for an elapsed-only update to succeed.
+  if (
+    typeof body.elapsed_seconds === "number" &&
+    Number.isFinite(body.elapsed_seconds)
+  ) {
+    updates.elapsed_seconds = Math.max(0, Math.round(body.elapsed_seconds));
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return json({ data: null, error: "No fields to update" }, 400);
+  }
 
   const { data, error } = await supabase
     .from("focus_sessions")

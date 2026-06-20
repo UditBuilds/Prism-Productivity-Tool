@@ -306,6 +306,7 @@ export interface Database {
           started_at: string;
           ended_at: string | null;
           created_at: string;
+          elapsed_seconds: number | null;
         };
         Insert: {
           id?: string;
@@ -316,6 +317,7 @@ export interface Database {
           started_at?: string;
           ended_at?: string | null;
           created_at?: string;
+          elapsed_seconds?: number | null;
         };
         Update: {
           id?: string;
@@ -326,6 +328,7 @@ export interface Database {
           started_at?: string;
           ended_at?: string | null;
           created_at?: string;
+          elapsed_seconds?: number | null;
         };
         Relationships: [];
       };
