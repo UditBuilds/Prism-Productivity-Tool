@@ -26,6 +26,7 @@ import { DURATIONS } from "@/components/focus/categories";
 import { CATEGORY_COLORS } from "@/components/focus/category-colors";
 import { useFocusCategories } from "@/hooks/useFocusCategories";
 import { ManageCategoriesModal } from "@/components/focus/ManageCategoriesModal";
+import { fireFocusCompletionFeedback } from "@/components/focus/FloatingTimer";
 import type { FocusCategory } from "@/types/database";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ function IdleView() {
   const [duration, setDuration] = useState<number>(25);
   const [isCustom, setIsCustom] = useState(false);
   const [customMinutes, setCustomMinutes] = useState("30");
+  const [timerType, setTimerType] = useState<"preset" | "stopwatch">("preset");
 
   const startSession = useFocusStore((s) => s.startSession);
   const setSessionId = useFocusStore((s) => s.setSessionId);
@@ -69,16 +71,20 @@ function IdleView() {
   const minutes = isCustom
     ? Math.min(600, Math.max(1, parseInt(customMinutes, 10) || 0))
     : duration;
-  const canStart = minutes >= 1 && !createSession.isPending;
+  const canStart =
+    timerType === "stopwatch"
+      ? !createSession.isPending
+      : minutes >= 1 && !createSession.isPending;
 
   async function handleStart() {
     if (!canStart) return;
-    // Start the timer immediately (snappy), then attach the DB row id.
-    startSession(category, minutes);
+    // Stopwatch starts open-ended (duration 0 sentinel); preset uses minutes.
+    const isStopwatch = timerType === "stopwatch";
+    startSession(category, isStopwatch ? 0 : minutes, timerType);
     try {
       const session = await createSession.mutateAsync({
         category,
-        duration_minutes: minutes,
+        duration_minutes: isStopwatch ? 0 : minutes,
       });
       setSessionId(session.id);
     } catch {
@@ -249,53 +255,85 @@ function IdleView() {
         </div>
       )}
 
-      {/* Duration selector */}
+      {/* Mode toggle */}
       <p className="mb-2.5 mt-6 text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
-        Duration
+        Mode
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        {DURATIONS.map((d) => (
+      <div className="flex gap-2">
+        {(
+          [
+            { value: "preset", label: "Pomodoro" },
+            { value: "stopwatch", label: "Stopwatch" },
+          ] as { value: "preset" | "stopwatch"; label: string }[]
+        ).map((opt) => (
           <button
-            key={d}
+            key={opt.value}
             type="button"
-            onClick={() => {
-              setDuration(d);
-              setIsCustom(false);
-            }}
+            onClick={() => setTimerType(opt.value)}
+            aria-pressed={timerType === opt.value}
             className={cn(
-              "min-w-[3.5rem] rounded-lg px-3 py-1.5 text-sm font-medium tabular-nums",
-              !isCustom && duration === d
+              "flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition",
+              timerType === opt.value
                 ? "bg-accent text-accent-foreground"
                 : "border border-border bg-surface-raised text-muted-foreground hover:text-foreground"
             )}
           >
-            {d}m
+            {opt.label}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={() => setIsCustom(true)}
-          className={cn(
-            "rounded-lg px-3 py-1.5 text-sm font-medium",
-            isCustom
-              ? "bg-accent text-accent-foreground"
-              : "border border-border bg-surface-raised text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Custom
-        </button>
-        {isCustom && (
-          <Input
-            type="number"
-            min={1}
-            max={600}
-            value={customMinutes}
-            onChange={(e) => setCustomMinutes(e.target.value)}
-            className="h-9 w-24 rounded-lg"
-            aria-label="Custom minutes"
-          />
-        )}
       </div>
+
+      {/* Duration selector — only for Pomodoro (stopwatch is open-ended) */}
+      {timerType === "preset" && (
+        <>
+          <p className="mb-2.5 mt-6 text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
+            Duration
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {DURATIONS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => {
+                  setDuration(d);
+                  setIsCustom(false);
+                }}
+                className={cn(
+                  "min-w-[3.5rem] rounded-lg px-3 py-1.5 text-sm font-medium tabular-nums",
+                  !isCustom && duration === d
+                    ? "bg-accent text-accent-foreground"
+                    : "border border-border bg-surface-raised text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {d}m
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setIsCustom(true)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-sm font-medium",
+                isCustom
+                  ? "bg-accent text-accent-foreground"
+                  : "border border-border bg-surface-raised text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Custom
+            </button>
+            {isCustom && (
+              <Input
+                type="number"
+                min={1}
+                max={600}
+                value={customMinutes}
+                onChange={(e) => setCustomMinutes(e.target.value)}
+                className="h-9 w-24 rounded-lg"
+                aria-label="Custom minutes"
+              />
+            )}
+          </div>
+        </>
+      )}
 
       {/* Start */}
       <div className="mt-7">
@@ -306,7 +344,9 @@ function IdleView() {
           className="w-full rounded-xl"
         >
           <Play className="mr-2 h-4 w-4" />
-          Start {category} Session ({minutes}m)
+          {timerType === "stopwatch"
+            ? `Start ${category} Stopwatch`
+            : `Start ${category} Session (${minutes}m)`}
         </Button>
       </div>
       </div>
@@ -367,22 +407,43 @@ function IdleView() {
 function RunningView() {
   const isPaused = useFocusStore((s) => s.isPaused);
   const mode = useFocusStore((s) => s.mode);
+  const timerType = useFocusStore((s) => s.timerType);
   const timeLeft = useFocusStore((s) => s.timeLeft);
+  const elapsedSeconds = useFocusStore((s) => s.elapsedSeconds);
   const totalDuration = useFocusStore((s) => s.totalDuration);
   const category = useFocusStore((s) => s.category);
   const pauseTimer = useFocusStore((s) => s.pauseTimer);
   const resumeTimer = useFocusStore((s) => s.resumeTimer);
   const endSession = useFocusStore((s) => s.endSession);
+  const completeSession = useFocusStore((s) => s.completeSession);
   const endFocusSession = useEndFocusSession();
   const { categories } = useFocusCategories();
 
   const isBreak = mode === "break";
+  const isStopwatch = timerType === "stopwatch";
   const cat = categories.find((c) => c.label === category);
   const progress =
     totalDuration > 0 ? (totalDuration - timeLeft) / totalDuration : 0;
 
   function handleEnd() {
-    const { sessionId } = useFocusStore.getState();
+    const { sessionId, elapsedSeconds: finalElapsed } =
+      useFocusStore.getState();
+    if (isStopwatch) {
+      // Manual stop is the natural end for a stopwatch: complete it, save the
+      // real elapsed as elapsed_seconds + duration_minutes, celebrate.
+      if (sessionId) {
+        const donePayload = {
+          id: sessionId,
+          completed: true,
+          elapsed_seconds: finalElapsed,
+          duration_minutes: Math.round(finalElapsed / 60),
+        };
+        endFocusSession.mutate(donePayload);
+      }
+      fireFocusCompletionFeedback(category);
+      completeSession();
+      return;
+    }
     if (sessionId) {
       endFocusSession.mutate({ id: sessionId, completed: false });
     }
@@ -402,49 +463,79 @@ function RunningView() {
         {isPaused && <span className="ml-2 text-warning">· Paused</span>}
       </p>
 
-      {/* Ring + time */}
-      <div className="relative mt-6 flex items-center justify-center">
-        <svg
-          width={300}
-          height={300}
-          viewBox="0 0 300 300"
-          className="-rotate-90"
-          aria-hidden
-        >
-          <defs>
-            <linearGradient id="ringGradient" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" style={{ stopColor: "rgb(var(--accent-rgb))" }} />
-              <stop offset="100%" style={{ stopColor: "rgb(var(--accent-hover-rgb))" }} />
-            </linearGradient>
-          </defs>
-          <circle
-            cx="150"
-            cy="150"
-            r={RING_RADIUS}
-            fill="none"
-            stroke="#1A1A1A"
-            strokeWidth="8"
+      {/* Count-up (stopwatch) — no fake progress ring, just a live pulse */}
+      {isStopwatch ? (
+        <div className="relative mt-6 flex h-[300px] w-[300px] items-center justify-center">
+          <span
+            aria-hidden
+            className={cn(
+              "absolute h-[252px] w-[252px] rounded-full border-2 border-accent/30",
+              !isPaused && "animate-pulse"
+            )}
           />
-          <circle
-            cx="150"
-            cy="150"
-            r={RING_RADIUS}
-            fill="none"
-            stroke="url(#ringGradient)"
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={RING_CIRCUMFERENCE}
-            strokeDashoffset={RING_CIRCUMFERENCE * (1 - progress)}
-            style={{ transition: "stroke-dashoffset 1s linear" }}
-          />
-        </svg>
-        <span
-          className="absolute text-7xl font-bold tabular-nums tracking-tight text-white"
-          style={{ textShadow: "0 0 32px rgb(var(--accent-rgb) / 0.45)" }}
-        >
-          {formatClock(timeLeft)}
-        </span>
-      </div>
+          <div className="flex flex-col items-center">
+            <span
+              className="text-7xl font-bold tabular-nums tracking-tight text-white"
+              style={{ textShadow: "0 0 32px rgb(var(--accent-rgb) / 0.45)" }}
+            >
+              {formatClock(elapsedSeconds)}
+            </span>
+            <span className="mt-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full bg-accent",
+                  !isPaused && "animate-pulse"
+                )}
+              />
+              Stopwatch
+            </span>
+          </div>
+        </div>
+      ) : (
+        /* Ring + countdown (preset) */
+        <div className="relative mt-6 flex items-center justify-center">
+          <svg
+            width={300}
+            height={300}
+            viewBox="0 0 300 300"
+            className="-rotate-90"
+            aria-hidden
+          >
+            <defs>
+              <linearGradient id="ringGradient" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" style={{ stopColor: "rgb(var(--accent-rgb))" }} />
+                <stop offset="100%" style={{ stopColor: "rgb(var(--accent-hover-rgb))" }} />
+              </linearGradient>
+            </defs>
+            <circle
+              cx="150"
+              cy="150"
+              r={RING_RADIUS}
+              fill="none"
+              stroke="#1A1A1A"
+              strokeWidth="8"
+            />
+            <circle
+              cx="150"
+              cy="150"
+              r={RING_RADIUS}
+              fill="none"
+              stroke="url(#ringGradient)"
+              strokeWidth="8"
+              strokeLinecap="round"
+              strokeDasharray={RING_CIRCUMFERENCE}
+              strokeDashoffset={RING_CIRCUMFERENCE * (1 - progress)}
+              style={{ transition: "stroke-dashoffset 1s linear" }}
+            />
+          </svg>
+          <span
+            className="absolute text-7xl font-bold tabular-nums tracking-tight text-white"
+            style={{ textShadow: "0 0 32px rgb(var(--accent-rgb) / 0.45)" }}
+          >
+            {formatClock(timeLeft)}
+          </span>
+        </div>
+      )}
 
       {/* Controls */}
       <div className="mt-8 flex items-center gap-3">
@@ -466,7 +557,7 @@ function RunningView() {
           className="rounded-lg text-danger hover:bg-danger/10 hover:text-danger"
         >
           <Square className="mr-1.5 h-3.5 w-3.5 fill-current" />
-          End Session
+          {isStopwatch ? "Finish" : "End Session"}
         </Button>
       </div>
     </div>

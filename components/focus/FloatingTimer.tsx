@@ -53,6 +53,36 @@ function playChime() {
 }
 
 /**
+ * Completion feedback for a finished focus session — shared by preset
+ * zero-completion AND stopwatch manual stop: chime + toast, plus a browser
+ * notification only when the tab is hidden and permission is already granted
+ * (checked, never requested).
+ */
+export function fireFocusCompletionFeedback(category: string) {
+  const message = category
+    ? `${category} session complete 🎉`
+    : "Focus session complete 🎉";
+
+  playChime();
+  toast.success(message);
+
+  try {
+    if (
+      document.hidden &&
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted"
+    ) {
+      new Notification(message, {
+        body: "Well done — that's real progress.",
+        icon: "/icons/icon-192.png",
+      });
+    }
+  } catch {
+    // Notifications unsupported/blocked — chime + toast already fired.
+  }
+}
+
+/**
  * Always mounted in the dashboard layout. Owns the 1-second ticker (so the
  * timer survives page navigation) and the completion side effects
  * (notification + DB update). Renders the floating mini-widget only when a
@@ -67,6 +97,8 @@ export function FloatingTimer() {
   const isRunning = useFocusStore((s) => s.isRunning);
   const isPaused = useFocusStore((s) => s.isPaused);
   const timeLeft = useFocusStore((s) => s.timeLeft);
+  const elapsedSeconds = useFocusStore((s) => s.elapsedSeconds);
+  const timerType = useFocusStore((s) => s.timerType);
   const mode = useFocusStore((s) => s.mode);
   const category = useFocusStore((s) => s.category);
   const endSession = useFocusStore((s) => s.endSession);
@@ -104,7 +136,8 @@ export function FloatingTimer() {
         });
       }
 
-      // Natural completion (hit 0)
+      // Natural completion (hit 0) — preset countdowns only. Stopwatch never
+      // reaches here: its timeLeft stays 0 while isRunning stays true.
       if (after.timeLeft === 0 && !after.isRunning) {
         if (before.mode === "focus") {
           if (after.sessionId) {
@@ -118,33 +151,7 @@ export function FloatingTimer() {
             };
             endMutationRef.current.mutate(completionPayload);
           }
-
-          const message = before.category
-            ? `${before.category} session complete 🎉`
-            : "Focus session complete 🎉";
-
-          // Always: chime + toast, so a user watching the page gets clear,
-          // hard-to-miss feedback the moment the countdown hits zero.
-          playChime();
-          toast.success(message);
-
-          // Additionally, when the tab is backgrounded AND notification
-          // permission is already granted, surface a browser Notification.
-          // Check only — never request a new permission prompt here.
-          try {
-            if (
-              document.hidden &&
-              typeof Notification !== "undefined" &&
-              Notification.permission === "granted"
-            ) {
-              new Notification(message, {
-                body: "Well done — that's real progress.",
-                icon: "/icons/icon-192.png",
-              });
-            }
-          } catch {
-            // Notifications unsupported/blocked — chime + toast already fired.
-          }
+          fireFocusCompletionFeedback(before.category);
         } else {
           toast(`Break over — back to it.`, { icon: "⏰" });
         }
@@ -154,14 +161,38 @@ export function FloatingTimer() {
   }, []);
 
   function handleEnd() {
-    const { sessionId, elapsedSeconds } = useFocusStore.getState();
+    const state = useFocusStore.getState();
+    const {
+      sessionId,
+      elapsedSeconds: finalElapsed,
+      category: cat,
+      timerType: type,
+    } = state;
+
+    if (type === "stopwatch") {
+      // Stopwatch: manual stop IS the natural end → mark complete, persist the
+      // final elapsed as elapsed_seconds + a sensible duration_minutes, and fire
+      // the same completion feedback as a preset zero-completion.
+      if (sessionId) {
+        const donePayload = {
+          id: sessionId,
+          completed: true,
+          elapsed_seconds: finalElapsed,
+          duration_minutes: Math.round(finalElapsed / 60),
+        };
+        endMutationRef.current.mutate(donePayload);
+      }
+      fireFocusCompletionFeedback(cat);
+      state.completeSession();
+      return;
+    }
+
+    // Preset: early stop stays an incomplete stop (unchanged behaviour).
     if (sessionId) {
-      // Var so the extra elapsed_seconds stays assignable to the mutation's
-      // { id, completed } input type (no excess-property error).
       const stopPayload = {
         id: sessionId,
         completed: false,
-        elapsed_seconds: elapsedSeconds,
+        elapsed_seconds: finalElapsed,
       };
       endMutationRef.current.mutate(stopPayload);
     }
@@ -190,7 +221,7 @@ export function FloatingTimer() {
             isPaused ? "text-muted-foreground" : "text-accent"
           }`}
         >
-          {formatClock(timeLeft)}
+          {formatClock(timerType === "stopwatch" ? elapsedSeconds : timeLeft)}
         </span>
       </button>
       <button

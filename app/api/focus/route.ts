@@ -46,7 +46,9 @@ export async function POST(request: Request) {
 
   const durationMinutes =
     typeof body.duration_minutes === "number" ? body.duration_minutes : NaN;
-  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+  // 0 is allowed — the stopwatch mode creates the row with duration 0 and fills
+  // a real duration on stop. Reject only missing/negative values.
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 0) {
     return json({ data: null, error: "duration_minutes is required" }, 400);
   }
 
@@ -99,6 +101,14 @@ export async function PATCH(request: Request) {
     Number.isFinite(body.elapsed_seconds)
   ) {
     updates.elapsed_seconds = Math.max(0, Math.round(body.elapsed_seconds));
+  }
+  // Stopwatch stop sends a final duration_minutes derived from elapsed time;
+  // update it only when provided (same partial-update discipline).
+  if (
+    typeof body.duration_minutes === "number" &&
+    Number.isFinite(body.duration_minutes)
+  ) {
+    updates.duration_minutes = Math.max(0, Math.round(body.duration_minutes));
   }
 
   if (Object.keys(updates).length === 0) {
