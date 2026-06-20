@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
+import toast from "react-hot-toast";
 import { CalendarIcon, Repeat, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -61,6 +62,23 @@ const PATTERN_CAPTION: Record<RepeatPattern, string> = {
 };
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * Name of the next upcoming day (local time) whose weekday is in `days`.
+ * Informational copy only — uses browser-local time, not IST. Called only when
+ * today isn't a matching day, so the search starts one day ahead.
+ */
+function nextMatchingDayName(days: number[]): string {
+  const now = new Date();
+  for (let offset = 1; offset <= 7; offset++) {
+    if (days.includes((now.getDay() + offset) % 7)) {
+      const future = new Date(now);
+      future.setDate(now.getDate() + offset);
+      return future.toLocaleDateString(undefined, { weekday: "long" });
+    }
+  }
+  return "the next matching day";
+}
 
 export function TaskForm() {
   const { taskDialogOpen, editingTask, closeTaskDialog } = useUIStore();
@@ -155,7 +173,24 @@ export function TaskForm() {
         repeat_daily: repeatDaily,
         days_of_week: selectedDays,
       };
-      createTask.mutate(createPayload);
+      createTask.mutate(createPayload, {
+        onSuccess: (data) => {
+          const instanceCreatedToday = (
+            data as { instanceCreatedToday?: boolean }
+          ).instanceCreatedToday;
+          // A recurring task whose first instance is deferred to a later day:
+          // replace the hook's generic "Task created" (which fires first) with a
+          // message that explains why no task shows up today.
+          if (instanceCreatedToday === false) {
+            toast.dismiss();
+            toast.success(
+              `Recurring task created — first task on ${nextMatchingDayName(
+                selectedDays
+              )}`
+            );
+          }
+        },
+      });
     }
     closeTaskDialog();
   }

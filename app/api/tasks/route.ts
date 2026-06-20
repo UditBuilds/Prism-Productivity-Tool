@@ -161,13 +161,17 @@ export async function POST(request: Request) {
         );
       }
 
-      return json<Task>({ data, error: null }, 201);
+      return json<Task & { instanceCreatedToday: boolean }>(
+        { data: { ...data, instanceCreatedToday: true }, error: null },
+        201
+      );
     }
 
     // Template created, no instance today. Return the template id (non-null) so
     // the client's success check passes; the tasks list refetches on settle.
-    return json<{ id: string }>(
-      { data: { id: recurring.id }, error: null },
+    // instanceCreatedToday lets the form explain the deferred first instance.
+    return json<{ id: string; instanceCreatedToday: boolean }>(
+      { data: { id: recurring.id, instanceCreatedToday: false }, error: null },
       201
     );
   }
