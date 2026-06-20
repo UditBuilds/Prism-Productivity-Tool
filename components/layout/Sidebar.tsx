@@ -1,13 +1,55 @@
 "use client";
 
+import { memo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, type LucideIcon } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { cn, getInitials } from "@/lib/utils";
 import { navItems, isNavActive } from "./nav-config";
 import { NavBadge, useNavBadgeCounts } from "./NavBadges";
+
+/**
+ * One sidebar nav row, memoized. Props are primitives (the specific badge
+ * count — never the whole badges object, whose reference changes every render),
+ * so React.memo's shallow compare bails out for the items whose `active`/`badge`
+ * didn't actually change. A pathname change or badge-cache touch then re-renders
+ * only the 1–2 affected rows, not all 10.
+ */
+const NavItem = memo(function NavItem({
+  href,
+  icon: Icon,
+  label,
+  active,
+  badge,
+  badgeColor,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  active: boolean;
+  badge?: number;
+  badgeColor?: "violet" | "amber";
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "relative flex items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2 text-[13px] font-medium hover:translate-x-0.5",
+        active
+          ? "border-accent bg-[linear-gradient(to_right,rgb(var(--accent-rgb)/0.12),transparent)] text-accent"
+          : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+      )}
+    >
+      <Icon
+        className={cn("h-[18px] w-[18px] shrink-0", !active && "opacity-80")}
+      />
+      {label}
+      {badgeColor && <NavBadge count={badge ?? 0} color={badgeColor} />}
+    </Link>
+  );
+});
 
 export function Sidebar({ displayName }: { displayName: string }) {
   const pathname = usePathname();
@@ -38,33 +80,26 @@ export function Sidebar({ displayName }: { displayName: string }) {
 
       <nav className="flex-1 space-y-0.5 px-3 py-3">
         {navItems.map((item) => {
-          const active = isNavActive(pathname, item.href);
-          const Icon = item.icon;
+          const isLearn = item.href === "/dashboard/learn";
+          const isReminders = item.href === "/dashboard/reminders";
+          // Pass the specific primitive count (not the badges object, whose
+          // reference changes every render) so memo can bail out per item.
           return (
-            <Link
+            <NavItem
               key={item.href}
               href={item.href}
-              className={cn(
-                "relative flex items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2 text-[13px] font-medium hover:translate-x-0.5",
-                active
-                  ? "border-accent bg-[linear-gradient(to_right,rgb(var(--accent-rgb)/0.12),transparent)] text-accent"
-                  : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
-              )}
-            >
-              <Icon
-                className={cn(
-                  "h-[18px] w-[18px] shrink-0",
-                  !active && "opacity-80"
-                )}
-              />
-              {item.label}
-              {item.href === "/dashboard/learn" && (
-                <NavBadge count={badges.learn} color="violet" />
-              )}
-              {item.href === "/dashboard/reminders" && (
-                <NavBadge count={badges.reminders} color="amber" />
-              )}
-            </Link>
+              icon={item.icon}
+              label={item.label}
+              active={isNavActive(pathname, item.href)}
+              badge={
+                isLearn
+                  ? badges.learn
+                  : isReminders
+                    ? badges.reminders
+                    : undefined
+              }
+              badgeColor={isLearn ? "violet" : isReminders ? "amber" : undefined}
+            />
           );
         })}
       </nav>
