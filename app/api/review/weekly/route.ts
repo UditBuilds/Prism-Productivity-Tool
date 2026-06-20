@@ -49,6 +49,21 @@ function json<T>(body: ApiResponse<T>, status = 200) {
   return NextResponse.json(body, { status });
 }
 
+/**
+ * Minutes to credit toward "time spent" stats: real elapsed time when tracked,
+ * else the target for naturally-completed sessions, else 0 (untracked AND never
+ * completed — unrecoverable, not a regression).
+ */
+function creditedMinutes(s: {
+  elapsed_seconds: number | null;
+  completed: boolean;
+  duration_minutes: number;
+}): number {
+  if (s.elapsed_seconds !== null) return s.elapsed_seconds / 60;
+  if (s.completed) return s.duration_minutes;
+  return 0;
+}
+
 const WEEKDAYS = [
   "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
 ];
@@ -110,7 +125,7 @@ export async function GET(request: Request) {
   const [focusRes, tasksRes, reviewsRes, moodRes] = await Promise.all([
     supabase
       .from("focus_sessions")
-      .select("started_at, duration_minutes, category, completed")
+      .select("started_at, duration_minutes, category, completed, elapsed_seconds")
       .gte("started_at", startIso)
       .lt("started_at", endIso),
     supabase
@@ -136,7 +151,7 @@ export async function GET(request: Request) {
     focusRes.error ?? tasksRes.error ?? reviewsRes.error ?? moodRes.error;
   if (firstError) return json({ data: null, error: firstError.message }, 500);
 
-  const completedSessions = (focusRes.data ?? []).filter((s) => s.completed);
+  const sessions = focusRes.data ?? [];
 
   // --- Per-day buckets (offset 0–6 within the week) -----------------------
   const focusByDay = new Array<number>(7).fill(0);
@@ -147,10 +162,14 @@ export async function GET(request: Request) {
   );
 
   const offsetOf = (ms: number) => istDayNumber(ms) - weekStartIdx;
-  for (const s of completedSessions) {
+  // Minutes credit real elapsed time for EVERY session (completed or not).
+  for (const s of sessions) {
+    const mins = creditedMinutes(s);
+    if (mins <= 0) continue;
     const o = offsetOf(Date.parse(s.started_at));
-    if (o >= 0 && o < 7) focusByDay[o] += s.duration_minutes;
+    if (o >= 0 && o < 7) focusByDay[o] += mins;
   }
+  for (let i = 0; i < 7; i++) focusByDay[i] = Math.round(focusByDay[i]);
   for (const t of tasksRes.data ?? []) {
     if (!t.completed_at) continue;
     const o = offsetOf(Date.parse(t.completed_at));
@@ -209,16 +228,15 @@ export async function GET(request: Request) {
 
   // --- Category breakdown ----------------------------------------------------
   const byCategory = new Map<string, number>();
-  for (const s of completedSessions) {
-    byCategory.set(
-      s.category,
-      (byCategory.get(s.category) ?? 0) + s.duration_minutes
-    );
+  for (const s of sessions) {
+    const mins = creditedMinutes(s);
+    if (mins <= 0) continue;
+    byCategory.set(s.category, (byCategory.get(s.category) ?? 0) + mins);
   }
   const categoryBreakdown = Array.from(byCategory.entries())
     .map(([category, minutes]) => ({
       category,
-      minutes,
+      minutes: Math.round(minutes),
       percentage:
         summary.focusMinutes > 0
           ? Math.round((minutes / summary.focusMinutes) * 100)

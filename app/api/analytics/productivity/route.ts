@@ -47,6 +47,21 @@ function json<T>(body: ApiResponse<T>, status = 200) {
   return NextResponse.json(body, { status });
 }
 
+/**
+ * Minutes to credit toward "time spent" stats: real elapsed time when tracked,
+ * else the target for naturally-completed sessions, else 0 (untracked AND never
+ * completed — unrecoverable, not a regression).
+ */
+function creditedMinutes(s: {
+  elapsed_seconds: number | null;
+  completed: boolean;
+  duration_minutes: number;
+}): number {
+  if (s.elapsed_seconds !== null) return s.elapsed_seconds / 60;
+  if (s.completed) return s.duration_minutes;
+  return 0;
+}
+
 const weekdayName = new Intl.DateTimeFormat("en-US", {
   weekday: "long",
   timeZone: "Asia/Kolkata",
@@ -73,7 +88,7 @@ export async function GET() {
   const [focusRes, tasksRes, reviewsRes] = await Promise.all([
     supabase
       .from("focus_sessions")
-      .select("started_at, duration_minutes, category, completed")
+      .select("started_at, duration_minutes, category, completed, elapsed_seconds")
       .gte("started_at", windowStartIso),
     supabase
       .from("tasks")
@@ -96,10 +111,17 @@ export async function GET() {
   const reviews = reviewsRes.data ?? [];
 
   // --- Daily buckets (IST day index) -------------------------------------
+  // Minutes credit real elapsed time for EVERY session (completed or not);
+  // session COUNTS below still use completedSessions.
   const focusByDay = new Map<number, number>();
-  for (const s of completedSessions) {
+  for (const s of sessions) {
+    const mins = creditedMinutes(s);
+    if (mins <= 0) continue;
     const idx = istDayNumber(Date.parse(s.started_at));
-    focusByDay.set(idx, (focusByDay.get(idx) ?? 0) + s.duration_minutes);
+    focusByDay.set(idx, (focusByDay.get(idx) ?? 0) + mins);
+  }
+  for (const [idx, mins] of Array.from(focusByDay.entries())) {
+    focusByDay.set(idx, Math.round(mins));
   }
   const tasksByDay = new Map<number, number>();
   for (const t of doneTasks) {
@@ -151,20 +173,23 @@ export async function GET() {
   const thisWeek = weekStats(thisWeekStartIdx, todayIdx);
   const lastWeek = weekStats(thisWeekStartIdx - 7, thisWeekStartIdx - 1);
 
-  // --- Focus by category (completed sessions, 30-day window) -------------
+  // --- Focus by category (minutes credit ALL sessions; `sessions` stays a
+  //     completed-only count) ----------------------------------------------
   const byCategory = new Map<string, { totalMinutes: number; sessions: number }>();
   let totalFocusMinutes = 0;
-  for (const s of completedSessions) {
+  for (const s of sessions) {
+    const mins = creditedMinutes(s);
+    if (mins <= 0 && !s.completed) continue;
     const agg = byCategory.get(s.category) ?? { totalMinutes: 0, sessions: 0 };
-    agg.totalMinutes += s.duration_minutes;
-    agg.sessions += 1;
+    agg.totalMinutes += mins;
+    if (s.completed) agg.sessions += 1;
     byCategory.set(s.category, agg);
-    totalFocusMinutes += s.duration_minutes;
+    totalFocusMinutes += mins;
   }
   const categoryBreakdown: CategorySlice[] = Array.from(byCategory.entries())
     .map(([category, agg]) => ({
       category,
-      totalMinutes: agg.totalMinutes,
+      totalMinutes: Math.round(agg.totalMinutes),
       sessions: agg.sessions,
       percentage:
         totalFocusMinutes > 0
@@ -179,12 +204,14 @@ export async function GET() {
   if (completedSessions.length >= MIN_SESSIONS_FOR_INSIGHTS) {
     const byHour = new Map<number, number>();
     const byWeekday = new Map<string, number>();
-    for (const s of completedSessions) {
+    for (const s of sessions) {
+      const mins = creditedMinutes(s);
+      if (mins <= 0) continue;
       const ms = Date.parse(s.started_at);
       const hour = istHour(ms);
-      byHour.set(hour, (byHour.get(hour) ?? 0) + s.duration_minutes);
+      byHour.set(hour, (byHour.get(hour) ?? 0) + mins);
       const day = weekdayName.format(new Date(ms));
-      byWeekday.set(day, (byWeekday.get(day) ?? 0) + s.duration_minutes);
+      byWeekday.set(day, (byWeekday.get(day) ?? 0) + mins);
     }
     for (const [hour, minutes] of Array.from(byHour.entries())) {
       if (

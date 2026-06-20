@@ -15,6 +15,21 @@ function isExpiredError(err: unknown): boolean {
   return status === 404 || status === 410;
 }
 
+/**
+ * Minutes to credit toward "time spent" stats: real elapsed time when tracked,
+ * else the target for naturally-completed sessions, else 0 (untracked AND never
+ * completed — unrecoverable, not a regression).
+ */
+function creditedMinutes(s: {
+  elapsed_seconds: number | null;
+  completed: boolean;
+  duration_minutes: number;
+}): number {
+  if (s.elapsed_seconds !== null) return s.elapsed_seconds / 60;
+  if (s.completed) return s.duration_minutes;
+  return 0;
+}
+
 interface TinyWinsStats {
   tasks_completed: number;
   focus_minutes: number;
@@ -78,9 +93,8 @@ export async function POST(request: Request) {
         .gte("updated_at", startOfToday),
       supabase
         .from("focus_sessions")
-        .select("duration_minutes")
+        .select("duration_minutes, completed, elapsed_seconds")
         .eq("user_id", userId)
-        .eq("completed", true)
         .gte("ended_at", startOfToday),
       supabase
         .from("srs_reviews")
@@ -91,9 +105,8 @@ export async function POST(request: Request) {
 
     const stats: TinyWinsStats = {
       tasks_completed: tasksRes.count ?? 0,
-      focus_minutes: (focusRes.data ?? []).reduce(
-        (sum, s) => sum + s.duration_minutes,
-        0
+      focus_minutes: Math.round(
+        (focusRes.data ?? []).reduce((sum, s) => sum + creditedMinutes(s), 0)
       ),
       cards_reviewed: reviewsRes.count ?? 0,
     };
