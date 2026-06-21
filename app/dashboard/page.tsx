@@ -7,6 +7,7 @@ import {
   Coffee,
   AlertCircle,
   Repeat,
+  type LucideIcon,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
@@ -28,6 +29,26 @@ import {
 } from "@/components/tasks/task-styles";
 import { MoodWidget } from "@/components/dashboard/MoodWidget";
 
+/**
+ * SVG polyline points for a small sparkline (values oldest→newest). The 100×24
+ * viewBox stretches to the container (preserveAspectRatio="none"); the caller's
+ * vector-effect keeps the stroke undistorted. All-zero values → flat baseline.
+ */
+function sparklinePoints(values: number[]): string {
+  const W = 100;
+  const H = 24;
+  const PAD = 3; // keeps the line off the top/bottom edges
+  const max = Math.max(...values, 1); // avoid /0; a flat-zero week sits on the baseline
+  const stepX = values.length > 1 ? W / (values.length - 1) : 0;
+  return values
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = H - PAD - (v / max) * (H - 2 * PAD);
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
 export const metadata = { title: "Dashboard | Prism" };
 
 export default async function DashboardHome() {
@@ -39,6 +60,11 @@ export default async function DashboardHome() {
 
   const { startOfToday, endOfToday, startOfWeek, hour } = istDayContext();
   const nowIso = new Date().toISOString();
+  const DAY_MS = 86_400_000;
+  // Sparkline window: IST midnight 6 days ago → covers today + 6 days back.
+  const sparkWindowStartIso = new Date(
+    Date.parse(startOfToday) - 6 * DAY_MS
+  ).toISOString();
 
   const [
     profileRes,
@@ -48,6 +74,7 @@ export default async function DashboardHome() {
     remindersRes,
     countdownsRes,
     upcomingRemindersRes,
+    weekDoneRes,
   ] = await Promise.all([
       supabase
         .from("profiles")
@@ -96,6 +123,14 @@ export default async function DashboardHome() {
         .gte("remind_at", nowIso)
         .order("remind_at", { ascending: true })
         .limit(3),
+      // Tasks completed in the last 7 IST days → the "Done This Week" sparkline.
+      supabase
+        .from("tasks")
+        .select("completed_at")
+        .eq("status", "done")
+        .not("completed_at", "is", null)
+        .gte("completed_at", sparkWindowStartIso)
+        .lte("completed_at", nowIso),
     ]);
 
   const displayName = profileRes.data?.display_name ?? "there";
@@ -133,9 +168,33 @@ export default async function DashboardHome() {
     .sort((a, b) => a.sortKey - b.sortKey)
     .slice(0, 3);
 
-  const stats = [
+  // 7 IST-day completion buckets (oldest first, today last) via istDateString —
+  // same IST-day approach used by the productivity analytics route.
+  const dayKeys: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    dayKeys.push(istDateString(Date.now() - i * DAY_MS));
+  }
+  const doneByDay = new Map<string, number>();
+  for (const row of weekDoneRes.data ?? []) {
+    if (!row.completed_at) continue;
+    const key = istDateString(Date.parse(row.completed_at));
+    doneByDay.set(key, (doneByDay.get(key) ?? 0) + 1);
+  }
+  const doneSparkline = dayKeys.map((k) => doneByDay.get(k) ?? 0);
+
+  const stats: {
+    label: string;
+    value: number;
+    icon: LucideIcon;
+    sparkline?: number[];
+  }[] = [
     { label: "Due Today", value: dueCount, icon: CalendarClock },
-    { label: "Done This Week", value: completedCount, icon: CheckCircle2 },
+    {
+      label: "Done This Week",
+      value: completedCount,
+      icon: CheckCircle2,
+      sparkline: doneSparkline,
+    },
     { label: "Cards to Review", value: cardsCount, icon: Brain },
     { label: "Reminders Today", value: remindersTodayCount, icon: Bell },
   ];
@@ -155,7 +214,7 @@ export default async function DashboardHome() {
 
       {/* Stats */}
       <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {stats.map(({ label, value, icon: Icon }) => (
+        {stats.map(({ label, value, icon: Icon, sparkline }) => (
           <div
             key={label}
             className="cursor-default rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/30"
@@ -169,6 +228,24 @@ export default async function DashboardHome() {
             <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-white">
               {value}
             </p>
+            {sparkline && (
+              <svg
+                viewBox="0 0 100 24"
+                preserveAspectRatio="none"
+                aria-hidden
+                className="mt-2 h-6 w-full text-muted-foreground/50"
+              >
+                <polyline
+                  points={sparklinePoints(sparkline)}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+            )}
           </div>
         ))}
       </section>
