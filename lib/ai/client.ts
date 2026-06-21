@@ -88,6 +88,55 @@ JSON array:`;
 }
 
 /**
+ * A structured Markdown note from a video transcript excerpt. SERVER-ONLY
+ * (touches GROQ_API_KEY). Like generateFlashcardsFromTranscript, the prompt
+ * keeps output self-contained — never referencing "the video"/"the speaker" —
+ * but returns ready-to-store Markdown rather than JSON cards.
+ */
+export async function generateNotesFromTranscript(
+  videoTitle: string,
+  transcriptChunk: string
+): Promise<string> {
+  if (transcriptChunk.trim().length < 100) {
+    throw new Error("Transcript is too short to generate notes from.");
+  }
+
+  const systemPrompt = `You are an expert at turning educational video transcripts into clean, well-organized study notes in Markdown.
+
+Rules:
+- Output GitHub-flavored Markdown only — no preamble, no closing remarks, and do not wrap the whole note in a code fence.
+- Use ## headers for major sections (and ### for sub-sections where helpful).
+- Use bullet points for key facts, steps, and lists; use **bold** for important terms and concepts.
+- Never reference 'the video', 'the speaker', 'the presenter', 'this transcript', 'as mentioned', or similar meta-phrases.
+- Write self-contained notes that read naturally to someone who never saw the source.
+- Preserve concrete facts, definitions, formulas, and cause-and-effect relationships; drop filler, greetings, and sponsor reads.
+- Do not invent information that the transcript does not support.`;
+
+  const userContent = `Title: ${videoTitle}\n\nTranscript excerpt:\n${transcriptChunk}`;
+
+  let text: string;
+  try {
+    const completion = await groq.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+      temperature: 0.5,
+    });
+    text = (completion.choices[0]?.message?.content ?? "").trim();
+  } catch (err) {
+    console.error("Groq generate error (notes from transcript):", err);
+    throw err;
+  }
+
+  if (!text) {
+    throw new Error("No note content was generated.");
+  }
+  return text;
+}
+
+/**
  * Flashcards from a video transcript excerpt. SERVER-ONLY (touches
  * GROQ_API_KEY). Uses a transcript-specific system prompt so cards never
  * reference "the video"/"the speaker" and stay self-contained. Same model,

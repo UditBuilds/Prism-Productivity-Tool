@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Search, FileText, Upload, AlertCircle, X } from "lucide-react";
+import { Plus, Search, FileText, Upload, Play, AlertCircle, X } from "lucide-react";
 
 import { useNotesQuery } from "@/hooks/useNotes";
 import { useUIStore } from "@/store/ui.store";
@@ -12,6 +12,7 @@ import { NoteList } from "@/components/notes/NoteList";
 import { NoteModal, type NoteMode } from "@/components/notes/NoteModal";
 import { GenerateCardsModal } from "@/components/srs/GenerateCardsModal";
 import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
+import { YouTubeImportModal } from "@/components/youtube/YouTubeImportModal";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -33,6 +34,7 @@ export default function NotesPage() {
     note: Note | null;
     mode: NoteMode;
   } | null>(null);
+  const [youtubeOpen, setYoutubeOpen] = useState(false);
   const openPdfModal = useUIStore((s) => s.openPdfModal);
   const generateCardNoteId = useUIStore((s) => s.generateCardNoteId);
   const generateCardNoteTitle = useUIStore((s) => s.generateCardNoteTitle);
@@ -63,6 +65,15 @@ export default function NotesPage() {
               <Upload className="mr-1.5 h-4 w-4" />
               <span className="hidden sm:inline">Upload PDF</span>
               <span className="sm:hidden">PDF</span>
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setYoutubeOpen(true)}
+              className="rounded-lg"
+            >
+              <Play className="mr-1.5 h-4 w-4" />
+              <span className="hidden sm:inline">YouTube</span>
+              <span className="sm:hidden">YT</span>
             </Button>
             <Button
               onClick={() => setViewer({ note: null, mode: "edit" })}
@@ -156,6 +167,10 @@ export default function NotesPage() {
         onClose={closeGenerateModal}
       />
       <PDFUploadModal />
+      <YouTubeImportModal
+        open={youtubeOpen}
+        onClose={() => setYoutubeOpen(false)}
+      />
     </div>
   );
 }
