@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -338,13 +339,10 @@ export function TaskForm() {
 
           {!editingTask ? (
             <div className="space-y-3">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={repeatDaily}
-                onClick={() => setRepeatDaily((v) => !v)}
+              <label
+                htmlFor="repeat-daily"
                 className={cn(
-                  "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 transition",
+                  "flex w-full cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 transition",
                   repeatDaily
                     ? "border-accent/40 bg-accent/10"
                     : "border-border bg-surface hover:bg-surface-raised"
@@ -354,21 +352,12 @@ export function TaskForm() {
                   <Repeat className="h-4 w-4 text-muted-foreground" />
                   Repeat daily
                 </span>
-                <span
-                  aria-hidden
-                  className={cn(
-                    "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-                    repeatDaily ? "bg-accent" : "border border-border bg-muted"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
-                      repeatDaily ? "translate-x-[18px]" : "translate-x-0.5"
-                    )}
-                  />
-                </span>
-              </button>
+                <Switch
+                  id="repeat-daily"
+                  checked={repeatDaily}
+                  onCheckedChange={setRepeatDaily}
+                />
+              </label>
 
               {repeatDaily && (
                 <div className="space-y-3 rounded-lg border border-border bg-surface-raised/40 p-3">
