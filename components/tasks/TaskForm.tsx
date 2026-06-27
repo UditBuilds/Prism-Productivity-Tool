@@ -358,7 +358,7 @@ export function TaskForm() {
                   aria-hidden
                   className={cn(
                     "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-                    repeatDaily ? "bg-accent" : "bg-muted"
+                    repeatDaily ? "bg-accent" : "border border-border bg-muted"
                   )}
                 >
                   <span
