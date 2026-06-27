@@ -45,6 +45,22 @@ function parseDaysOfWeek(v: unknown): number[] {
   return days.length > 0 ? days : ALL_DAYS;
 }
 
+/**
+ * Deactivate the recurring template behind a task instance so the cron stops
+ * spawning future instances. Shared by the "Stop repeating" PATCH path and the
+ * DELETE handler. Returns an error message on failure, or null on success.
+ */
+async function deactivateRecurringTemplate(
+  supabase: ReturnType<typeof createClient>,
+  recurringTaskId: string
+): Promise<string | null> {
+  const { error } = await supabase
+    .from("recurring_tasks")
+    .update({ is_active: false })
+    .eq("id", recurringTaskId);
+  return error ? error.message : null;
+}
+
 // GET /api/tasks — all tasks for the authed user
 export async function GET() {
   const supabase = createClient();
@@ -225,12 +241,12 @@ export async function PATCH(request: Request) {
       return json({ data: null, error: "Task not found" }, 404);
     }
     if (task.recurring_task_id) {
-      const { error: stopError } = await supabase
-        .from("recurring_tasks")
-        .update({ is_active: false })
-        .eq("id", task.recurring_task_id);
+      const stopError = await deactivateRecurringTemplate(
+        supabase,
+        task.recurring_task_id
+      );
       if (stopError) {
-        return json({ data: null, error: stopError.message }, 500);
+        return json({ data: null, error: stopError }, 500);
       }
     }
     return json<Task>({ data: task, error: null });
@@ -314,6 +330,25 @@ export async function DELETE(request: Request) {
 
   const id = typeof body.id === "string" ? body.id : "";
   if (!id) return json({ data: null, error: "Task id is required" }, 400);
+
+  // If this instance belongs to a recurring template, deactivate the template
+  // FIRST (same logic as the "Stop repeating" PATCH) so the cron stops spawning
+  // replacements. Only delete the instance once that succeeds — never leave a
+  // deleted instance behind a still-active template.
+  const { data: task, error: lookupError } = await supabase
+    .from("tasks")
+    .select("recurring_task_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (lookupError) return json({ data: null, error: lookupError.message }, 500);
+
+  if (task?.recurring_task_id) {
+    const stopError = await deactivateRecurringTemplate(
+      supabase,
+      task.recurring_task_id
+    );
+    if (stopError) return json({ data: null, error: stopError }, 500);
+  }
 
   const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) return json({ data: null, error: error.message }, 500);
