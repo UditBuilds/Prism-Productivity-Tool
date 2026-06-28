@@ -125,7 +125,8 @@ export function formatCountdown(dateStr: string): CountdownDisplay {
  * Relative due-date label, by IST calendar day:
  *   overdue → "N days overdue" (danger, bold)
  *   today   → "Today" (warning)
- *   future  → "in N days" (muted)
+ *   tomorrow → "Tomorrow" (muted)
+ *   future  → literal IST date "Jun 28" (muted)
  *   none    → null (caller hides it)
  */
 export function formatDueDate(dueIso: string | null): DueDateDisplay | null {
@@ -138,7 +139,17 @@ export function formatDueDate(dueIso: string | null): DueDateDisplay | null {
     return { label: `${n} day${n > 1 ? "s" : ""} overdue`, tone: "danger", bold: true };
   }
   if (diff === 1) return { label: "Tomorrow", tone: "muted", bold: false };
-  return { label: `in ${diff} days`, tone: "muted", bold: false };
+  // Further out: show the literal due date in IST (e.g. "Jun 28") — clearer
+  // than a vague "in N days" count for anything more than a day away.
+  return {
+    label: new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(dueIso)),
+    tone: "muted",
+    bold: false,
+  };
 }
 
 /** True when a task's due date is before today (IST) and it isn't done. */
