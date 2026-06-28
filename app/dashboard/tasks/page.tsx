@@ -13,9 +13,8 @@ import type { LucideIcon } from "lucide-react";
 
 import { useTasksQuery } from "@/hooks/useTasks";
 import { useUIStore } from "@/store/ui.store";
-import { isOverdue } from "@/lib/date";
 import { cn } from "@/lib/utils";
-import type { Task, TaskPriority, TaskStatus } from "@/types/database";
+import type { Task, TaskStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskList } from "@/components/tasks/TaskList";
@@ -27,23 +26,14 @@ import { EmptyTasks } from "@/components/shared/EmptyStates";
 
 type Filter = "all" | TaskStatus;
 
-const priorityRank: Record<TaskPriority, number> = {
-  high: 0,
-  medium: 1,
-  low: 2,
-};
-
-// overdue first → high → medium → low → newest
-function sortTasks(tasks: Task[]): Task[] {
-  return [...tasks].sort((a, b) => {
-    const ao = isOverdue(a.due_date, a.status === "done") ? 0 : 1;
-    const bo = isOverdue(b.due_date, b.status === "done") ? 0 : 1;
-    if (ao !== bo) return ao - bo;
-    if (priorityRank[a.priority] !== priorityRank[b.priority]) {
-      return priorityRank[a.priority] - priorityRank[b.priority];
-    }
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
+// The tasks API already returns rows ordered by due_date ascending (nulls last)
+// then created_at descending — i.e. overdue oldest-first → today → future
+// ascending → no-due-date. We only re-home completed tasks to the bottom,
+// preserving each group's existing relative order (no re-sorting).
+function partitionTasks(tasks: Task[]): Task[] {
+  const active = tasks.filter((t) => t.status !== "done");
+  const done = tasks.filter((t) => t.status === "done");
+  return [...active, ...done];
 }
 
 // Filter-specific empties; the "all" case uses the custom EmptyTasks SVG.
@@ -91,10 +81,10 @@ export default function TasksPage() {
   }, [tasks]);
 
   const visible = useMemo(() => {
-    const sorted = sortTasks(tasks ?? []);
+    const ordered = partitionTasks(tasks ?? []);
     return filter === "all"
-      ? sorted
-      : sorted.filter((t) => t.status === filter);
+      ? ordered
+      : ordered.filter((t) => t.status === filter);
   }, [tasks, filter]);
 
   return (
