@@ -6,7 +6,6 @@ import {
   Bell,
   Coffee,
   AlertCircle,
-  Repeat,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,12 +21,8 @@ import {
 } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import type { Countdown, Reminder, Task } from "@/types/database";
-import {
-  priorityStyles,
-  statusStyles,
-  statusLabel,
-} from "@/components/tasks/task-styles";
 import { MoodWidget } from "@/components/dashboard/MoodWidget";
+import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
 
 /**
  * SVG polyline points for a small sparkline (values oldest→newest). The 100×24
@@ -303,51 +298,11 @@ export default async function DashboardHome() {
               {dueTasks.map((task) => {
                 const due = formatDueDate(task.due_date);
                 return (
-                  <li key={task.id}>
-                    <Link
-                      href={`/dashboard/tasks/${task.id}`}
-                      className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span
-                          className={cn(
-                            "min-w-0 truncate text-sm font-medium text-foreground",
-                            task.status === "done" &&
-                              "text-muted-foreground line-through"
-                          )}
-                        >
-                          {task.title}
-                        </span>
-                        {task.recurring_task_id && (
-                          <Repeat
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                            aria-label="Repeats daily"
-                          />
-                        )}
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize",
-                            priorityStyles[task.priority]
-                          )}
-                        >
-                          {task.priority}
-                        </span>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-                            statusStyles[task.status]
-                          )}
-                        >
-                          {statusLabel[task.status]}
-                        </span>
-                      </div>
-                      {due && (
-                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                          {due.label}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
+                  <DueTodayRow
+                    key={task.id}
+                    task={task}
+                    dueLabel={due?.label ?? null}
+                  />
                 );
               })}
           </ul>
