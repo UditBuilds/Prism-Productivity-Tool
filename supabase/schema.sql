@@ -261,7 +261,10 @@ create table if not exists recurring_tasks (
   title text not null,
   priority text not null default 'medium',
   is_active boolean not null default true,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  -- IST weekday numbers (0=Sun … 6=Sat) the template spawns on. Added in a
+  -- later patch; live column is NOT NULL with no default (rows were backfilled).
+  days_of_week integer[] not null
 );
 
 alter table recurring_tasks enable row level security;
@@ -287,3 +290,29 @@ alter table tasks
 create unique index if not exists idx_tasks_recurring_unique_per_day
   on tasks (recurring_task_id, due_date)
   where recurring_task_id is not null;
+
+-- FOCUS CATEGORIES (custom per-user focus-timer categories)
+-- name + color (hex) drive the focus timer's category chips; sort_order sets
+-- list order. Created via /api/focus/categories (auto-seeded from the static
+-- defaults on first use).
+create table if not exists focus_categories (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  name text not null,
+  color text not null default '#3b82f6',
+  sort_order integer not null default 0,
+  created_at timestamptz default now()
+);
+
+alter table focus_categories enable row level security;
+
+-- Own-rows access, split into the four commands (auth.uid() = user_id).
+create policy "focus_categories_select_own"
+  on focus_categories for select using (auth.uid() = user_id);
+create policy "focus_categories_insert_own"
+  on focus_categories for insert with check (auth.uid() = user_id);
+create policy "focus_categories_update_own"
+  on focus_categories for update
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "focus_categories_delete_own"
+  on focus_categories for delete using (auth.uid() = user_id);
