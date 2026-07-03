@@ -23,10 +23,17 @@ export function ThemeCard() {
             aria-label={`${t.label} accent`}
             aria-pressed={theme === t.id}
             title={t.label}
-            className="flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:scale-110 active:scale-95"
-            style={{ backgroundColor: t.hex }}
+            className="flex h-8 w-8 items-center justify-center rounded-full transition-[transform,box-shadow] hover:scale-110 active:scale-95"
+            style={{
+              backgroundColor: t.hex,
+              ...(theme === t.id && {
+                boxShadow: `0 0 0 2px #0A0A0A, 0 0 0 4px ${t.hex}66, 0 0 16px ${t.hex}59`,
+              }),
+            }}
           >
-            {theme === t.id && <Check className="h-4 w-4 text-white" />}
+            {theme === t.id && (
+              <Check className="h-4 w-4 animate-pop text-white" />
+            )}
           </button>
         ))}
       </div>

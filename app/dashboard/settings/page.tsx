@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import { Loader2, Settings } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { getInitials } from "@/lib/utils";
 import { useUser } from "@/hooks/useUser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,10 +63,20 @@ export default function SettingsPage() {
       />
 
       <div className="mt-5 max-w-lg rounded-xl border border-border bg-surface p-6">
-        <h2 className="text-base font-semibold text-foreground">Profile</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Update how you appear across PRISM.
-        </p>
+        <div className="flex items-center gap-3">
+          {/* Gradient-ringed avatar */}
+          <div className="rounded-full bg-accent-gradient p-[2px] shadow-glow-accent-sm">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-surface text-sm font-semibold text-accent">
+              {getInitials(currentUser?.profile?.display_name ?? "?")}
+            </div>
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Profile</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Update how you appear across PRISM.
+            </p>
+          </div>
+        </div>
 
         {isLoading ? (
           <div className="mt-6 space-y-5">

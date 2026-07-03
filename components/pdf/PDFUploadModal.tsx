@@ -383,10 +383,10 @@ export function PDFUploadModal() {
                   selectFile(e.dataTransfer.files?.[0]);
                 }}
                 className={cn(
-                  "flex w-full flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors",
+                  "flex w-full flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-[border-color,background-color,box-shadow]",
                   dragging
-                    ? "border-accent bg-accent/10"
-                    : "border-border bg-surface hover:border-muted-foreground/40"
+                    ? "border-accent bg-accent/10 shadow-glow-accent"
+                    : "border-border bg-surface hover:border-accent/40 hover:shadow-glow-accent-sm"
                 )}
               >
                 <FileText className="h-9 w-9 text-accent" />

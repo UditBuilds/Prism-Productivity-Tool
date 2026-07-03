@@ -87,8 +87,8 @@ export default function NotesPage() {
       />
 
       {hasNotes && (
-        <div className="relative mt-5">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div className="group relative mt-5">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-accent" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -100,7 +100,7 @@ export default function NotesPage() {
               type="button"
               aria-label="Clear search"
               onClick={() => setQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute right-3 top-1/2 -translate-y-1/2 animate-fade-in text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>

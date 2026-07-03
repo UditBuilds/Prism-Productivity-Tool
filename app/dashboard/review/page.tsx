@@ -171,16 +171,16 @@ function ReviewContent({
       </p>
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="stagger-children grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpis.map((kpi) => (
           <div
             key={kpi.label}
-            className="rounded-xl border border-border bg-surface p-4"
+            className="rounded-xl border border-border bg-surface p-4 transition-[transform,border-color,box-shadow] duration-200 hover:scale-[1.01] hover:border-accent/30 hover:shadow-lift"
           >
             <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
               {kpi.label}
             </p>
-            <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-white">
+            <p className="text-gradient mt-2 text-2xl font-bold tabular-nums tracking-tight">
               {kpi.value}
             </p>
           </div>
@@ -197,10 +197,10 @@ function ReviewContent({
 
       {/* Mon–Sun daily strip — the heart of the page */}
       <section>
-        <h2 className="mb-3 border-l-2 border-accent pl-3 text-base font-semibold text-foreground">
+        <h2 className="text-gradient mb-3 border-l-2 border-accent pl-3 text-base font-semibold">
           Day by day
         </h2>
-        <ul className="space-y-2">
+        <ul className="stagger-children space-y-2">
           {days.map((day) => {
             const isBest = bestDay?.date === day.date;
             const hasActivity = day.score > 0;
@@ -254,7 +254,7 @@ function ReviewContent({
                   </p>
 
                   {isBest && (
-                    <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-accent-foreground">
+                    <span className="shrink-0 rounded-full bg-accent-gradient px-2 py-0.5 text-[10px] font-semibold text-accent-foreground shadow-glow-accent-sm">
                       Best
                     </span>
                   )}
@@ -269,7 +269,7 @@ function ReviewContent({
                 {!day.isFuture && (
                   <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted/60">
                     <div
-                      className="h-full rounded-full bg-accent/70"
+                      className="h-full rounded-full bg-accent-gradient opacity-80"
                       style={{
                         width: `${(day.focusMinutes / maxFocus) * 100}%`,
                       }}

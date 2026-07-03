@@ -46,6 +46,15 @@ function sparklinePoints(values: number[]): string {
 
 export const metadata = { title: "Dashboard | Prism" };
 
+// IST-anchored hero date line (same Intl convention as TopBar — local time
+// would render the wrong day on UTC Vercel between 00:00–05:30 IST).
+const istHeroDateFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+
 export default async function DashboardHome() {
   const supabase = createClient();
   const {
@@ -182,67 +191,125 @@ export default async function DashboardHome() {
     value: number;
     icon: LucideIcon;
     sparkline?: number[];
+    variant: "due" | "done" | "cards" | "reminders";
   }[] = [
-    { label: "Due Today", value: dueCount, icon: CalendarClock },
+    { label: "Due Today", value: dueCount, icon: CalendarClock, variant: "due" },
     {
       label: "Done This Week",
       value: completedCount,
       icon: CheckCircle2,
       sparkline: doneSparkline,
+      variant: "done",
     },
-    { label: "Cards to Review", value: cardsCount, icon: Brain },
-    { label: "Reminders Today", value: remindersTodayCount, icon: Bell },
+    { label: "Cards to Review", value: cardsCount, icon: Brain, variant: "cards" },
+    {
+      label: "Reminders Today",
+      value: remindersTodayCount,
+      icon: Bell,
+      variant: "reminders",
+    },
   ];
 
   return (
     <div>
       {/* Hero: the greeting anchors the page */}
       <header className="pt-2">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {greetingForHour(hour)},{" "}
-          <span className="text-accent">{displayName}</span>
+          <span className="text-gradient">{displayName}</span>
         </h1>
+        <span
+          aria-hidden
+          className="mt-2 block h-0.5 w-24 origin-left animate-underline-grow rounded-full bg-accent-gradient"
+        />
+        <p className="mt-2 text-sm text-muted-foreground">
+          {istHeroDateFmt.format(new Date())}
+        </p>
       </header>
 
       {/* Daily mood check-in */}
       <MoodWidget />
 
       {/* Stats */}
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {stats.map(({ label, value, icon: Icon, sparkline }) => (
-          <div
-            key={label}
-            className="cursor-default rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/30"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                {label}
-              </span>
-              <Icon className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-            </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-white">
-              {value}
-            </p>
-            {sparkline && (
-              <svg
-                viewBox="0 0 100 24"
-                preserveAspectRatio="none"
-                aria-hidden
-                className="mt-2 h-6 w-full text-muted-foreground/50"
-              >
-                <polyline
-                  points={sparklinePoints(sparkline)}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
+      <section className="stagger-children mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {stats.map(({ label, value, icon: Icon, sparkline, variant }) => {
+          const active = value > 0;
+          return (
+            <div
+              key={label}
+              className={cn(
+                "cursor-default rounded-xl border border-border bg-surface p-4 transition-[transform,border-color,background-color,box-shadow] duration-200 hover:scale-[1.01] hover:border-accent/30 hover:bg-surface-raised/60 hover:shadow-lift",
+                variant === "due" && active && "animate-pulse-ring",
+                variant === "cards" && active && "border-warning/25"
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  {label}
+                </span>
+                <Icon
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    !active && "text-muted-foreground/40",
+                    active && variant === "cards" && "animate-breathe text-accent",
+                    active &&
+                      variant === "reminders" &&
+                      "animate-bell-ring-loop text-accent",
+                    active &&
+                      (variant === "due" || variant === "done") &&
+                      "text-accent/70"
+                  )}
                 />
-              </svg>
-            )}
-          </div>
-        ))}
+              </div>
+              <p
+                className={cn(
+                  "mt-2 text-3xl font-bold tabular-nums tracking-tight",
+                  variant === "done" && active
+                    ? "bg-gradient-to-r from-accent to-emerald-400 bg-clip-text text-transparent"
+                    : "text-white"
+                )}
+              >
+                {value}
+              </p>
+              {sparkline && (
+                <svg
+                  viewBox="0 0 100 24"
+                  preserveAspectRatio="none"
+                  aria-hidden
+                  className="mt-2 h-6 w-full"
+                >
+                  <defs>
+                    <linearGradient id="spark-stroke" x1="0" y1="0" x2="1" y2="0">
+                      <stop
+                        offset="0%"
+                        style={{
+                          stopColor: "rgb(var(--accent-rgb))",
+                          stopOpacity: 0.35,
+                        }}
+                      />
+                      <stop
+                        offset="100%"
+                        style={{
+                          stopColor: "rgb(var(--accent-soft-rgb))",
+                          stopOpacity: 1,
+                        }}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <polyline
+                    points={sparklinePoints(sparkline)}
+                    fill="none"
+                    stroke="url(#spark-stroke)"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              )}
+            </div>
+          );
+        })}
       </section>
 
       {/* Due Today */}
@@ -252,7 +319,7 @@ export default async function DashboardHome() {
             aria-hidden
             className="h-5 w-0.5 self-center rounded-full bg-accent"
           />
-          <h2 className="text-base font-semibold text-foreground">Due Today</h2>
+          <h2 className="text-gradient text-base font-semibold">Due Today</h2>
           {dueCount > 0 && (
             <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
               {dueCount}
@@ -260,9 +327,15 @@ export default async function DashboardHome() {
           )}
           <Link
             href="/dashboard/tasks"
-            className="ml-auto text-sm font-medium text-accent hover:text-accent-hover"
+            className="group ml-auto text-sm font-medium text-accent hover:text-accent-hover"
           >
-            View all →
+            View all{" "}
+            <span
+              aria-hidden
+              className="inline-block transition-transform group-hover:translate-x-0.5"
+            >
+              →
+            </span>
           </Link>
         </div>
 
@@ -276,7 +349,12 @@ export default async function DashboardHome() {
             </p>
           </div>
         ) : dueTasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
+          <div className="relative flex flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
+            {/* Ambient floating dots — pure CSS celebration of an empty list */}
+            <span aria-hidden className="particle-dot" style={{ left: "18%", bottom: "20%" }} />
+            <span aria-hidden className="particle-dot" style={{ left: "36%", bottom: "10%", animationDelay: "0.9s" }} />
+            <span aria-hidden className="particle-dot" style={{ left: "62%", bottom: "16%", animationDelay: "1.7s" }} />
+            <span aria-hidden className="particle-dot" style={{ left: "82%", bottom: "24%", animationDelay: "2.4s" }} />
             <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-raised">
               <Coffee className="h-5 w-5 text-muted-foreground" />
             </div>
@@ -294,7 +372,7 @@ export default async function DashboardHome() {
             </Link>
           </div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="stagger-children space-y-2">
               {dueTasks.map((task) => {
                 const due = formatDueDate(task.due_date);
                 return (
@@ -316,7 +394,7 @@ export default async function DashboardHome() {
             aria-hidden
             className="h-5 w-0.5 self-center rounded-full bg-accent"
           />
-          <h2 className="text-base font-semibold text-foreground">Upcoming</h2>
+          <h2 className="text-gradient text-base font-semibold">Upcoming</h2>
           <Link
             href="/dashboard/reminders"
             className="ml-auto text-sm font-medium text-accent hover:text-accent-hover"
@@ -338,7 +416,7 @@ export default async function DashboardHome() {
             </p>
           </div>
         ) : (
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+          <ul className="stagger-children grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
               {upcomingItems.map((item) => {
                 if (item.kind === "countdown") {
                   const c = item.countdown;
@@ -354,9 +432,12 @@ export default async function DashboardHome() {
                   return (
                     <li
                       key={`countdown-${c.id}`}
-                      className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
+                      className="group flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/25"
                     >
-                      <span aria-hidden className="text-2xl">
+                      <span
+                        aria-hidden
+                        className="text-2xl transition-transform group-hover:scale-110"
+                      >
                         {c.emoji}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -365,7 +446,12 @@ export default async function DashboardHome() {
                         </p>
                         <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
                           <div
-                            className="h-full rounded-full bg-accent"
+                            className={cn(
+                              "h-full rounded-full",
+                              display.tone === "warning"
+                                ? "bg-warning-gradient"
+                                : "bg-accent-gradient"
+                            )}
                             style={{
                               width: `${countdownProgressPct(
                                 c.created_at,
@@ -384,6 +470,8 @@ export default async function DashboardHome() {
 
                 const r = item.reminder;
                 const display = formatReminderTime(r.remind_at);
+                const withinHour =
+                  new Date(r.remind_at).getTime() - Date.now() < 3_600_000;
                 const toneClass =
                   display.tone === "danger"
                     ? "text-danger font-medium"
@@ -393,11 +481,15 @@ export default async function DashboardHome() {
                 return (
                   <li
                     key={`reminder-${r.id}`}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
+                    className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/25"
                   >
                     <span
                       aria-hidden
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-raised"
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-raised",
+                        withinHour &&
+                          "shadow-glow-accent-sm ring-1 ring-accent/40"
+                      )}
                     >
                       <Bell className="h-4 w-4 text-accent" />
                     </span>

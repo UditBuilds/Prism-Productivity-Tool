@@ -163,10 +163,10 @@ function IdleView() {
             type="button"
             onClick={() => setCategory(c.label)}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium",
+              "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-transform",
               category === c.label
-                ? c.activeClass
-                : "border-border bg-surface text-muted-foreground hover:text-foreground"
+                ? cn(c.activeClass, "scale-[1.04]")
+                : "border-border bg-surface text-muted-foreground hover:scale-[1.02] hover:text-foreground"
             )}
           >
             <span aria-hidden>{c.emoji}</span>
@@ -274,7 +274,7 @@ function IdleView() {
             className={cn(
               "flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition",
               timerType === opt.value
-                ? "bg-accent text-accent-foreground"
+                ? "bg-accent-gradient text-accent-foreground shadow-glow-accent-sm"
                 : "border border-border bg-surface-raised text-muted-foreground hover:text-foreground"
             )}
           >
@@ -301,7 +301,7 @@ function IdleView() {
                 className={cn(
                   "min-w-[3.5rem] rounded-lg px-3 py-1.5 text-sm font-medium tabular-nums",
                   !isCustom && duration === d
-                    ? "bg-accent text-accent-foreground"
+                    ? "bg-accent-gradient text-accent-foreground shadow-glow-accent-sm"
                     : "border border-border bg-surface-raised text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -314,7 +314,7 @@ function IdleView() {
               className={cn(
                 "rounded-lg px-3 py-1.5 text-sm font-medium",
                 isCustom
-                  ? "bg-accent text-accent-foreground"
+                  ? "bg-accent-gradient text-accent-foreground shadow-glow-accent-sm"
                   : "border border-border bg-surface-raised text-muted-foreground hover:text-foreground"
               )}
             >
@@ -341,7 +341,7 @@ function IdleView() {
           size="lg"
           disabled={!canStart}
           onClick={handleStart}
-          className="w-full rounded-xl"
+          className={cn("w-full rounded-xl", canStart && "animate-pulse-ring")}
         >
           <Play className="mr-2 h-4 w-4" />
           {timerType === "stopwatch"
@@ -353,7 +353,7 @@ function IdleView() {
 
       {/* Recent sessions */}
       <div className="mt-10">
-        <h2 className="mb-3 text-base font-semibold text-foreground">
+        <h2 className="text-gradient mb-3 text-base font-semibold">
           Recent sessions
         </h2>
         {isLoading ? (
@@ -367,7 +367,7 @@ function IdleView() {
             No sessions yet — your focus history will appear here.
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="stagger-children space-y-2">
             {recent?.map((s) => {
               const cat = categories.find((c) => c.label === s.category);
               return (
@@ -424,6 +424,9 @@ function RunningView() {
   const cat = categories.find((c) => c.label === category);
   const progress =
     totalDuration > 0 ? (totalDuration - timeLeft) / totalDuration : 0;
+  // Ring + digits shift toward amber as the countdown runs low.
+  const lowTime =
+    !isStopwatch && totalDuration > 0 && timeLeft / totalDuration <= 0.2;
 
   function handleEnd() {
     const { sessionId, elapsedSeconds: finalElapsed } =
@@ -473,6 +476,13 @@ function RunningView() {
               !isPaused && "animate-pulse"
             )}
           />
+          {/* Rotating accent arc — quiet motion cue that time is running */}
+          {!isPaused && (
+            <span
+              aria-hidden
+              className="absolute h-[268px] w-[268px] animate-spin-slow rounded-full border-2 border-transparent border-t-accent/60"
+            />
+          )}
           <div className="flex flex-col items-center">
             <span
               className="text-7xl font-bold tabular-nums tracking-tight text-white"
@@ -494,17 +504,45 @@ function RunningView() {
       ) : (
         /* Ring + countdown (preset) */
         <div className="relative mt-6 flex items-center justify-center">
+          {/* Orbiting accent particles */}
+          {!isPaused && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 animate-spin-slow"
+            >
+              <span className="absolute left-1/2 top-[8px] h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-accent/60" />
+              <span className="absolute bottom-[30px] left-[16%] h-1 w-1 rounded-full bg-accent/40" />
+              <span className="absolute right-[12%] top-[30%] h-1 w-1 rounded-full bg-accent-soft/50" />
+            </div>
+          )}
           <svg
             width={300}
             height={300}
             viewBox="0 0 300 300"
-            className="-rotate-90"
+            className={cn(
+              "-rotate-90",
+              lowTime
+                ? "drop-shadow-[0_0_24px_rgb(245_158_11/0.3)]"
+                : "drop-shadow-[0_0_24px_rgb(var(--accent-rgb)/0.25)]"
+            )}
             aria-hidden
           >
             <defs>
               <linearGradient id="ringGradient" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" style={{ stopColor: "rgb(var(--accent-rgb))" }} />
-                <stop offset="100%" style={{ stopColor: "rgb(var(--accent-hover-rgb))" }} />
+                <stop
+                  offset="0%"
+                  style={{
+                    stopColor: lowTime ? "#F59E0B" : "rgb(var(--accent-rgb))",
+                  }}
+                />
+                <stop
+                  offset="100%"
+                  style={{
+                    stopColor: lowTime
+                      ? "#EF4444"
+                      : "rgb(var(--accent-hover-rgb))",
+                  }}
+                />
               </linearGradient>
             </defs>
             <circle
@@ -529,8 +567,15 @@ function RunningView() {
             />
           </svg>
           <span
-            className="absolute text-7xl font-bold tabular-nums tracking-tight text-white"
-            style={{ textShadow: "0 0 32px rgb(var(--accent-rgb) / 0.45)" }}
+            className={cn(
+              "absolute text-7xl font-bold tabular-nums tracking-tight",
+              lowTime ? "text-amber-300" : "text-white"
+            )}
+            style={{
+              textShadow: lowTime
+                ? "0 0 32px rgb(245 158 11 / 0.45)"
+                : "0 0 32px rgb(var(--accent-rgb) / 0.45)",
+            }}
           >
             {formatClock(timeLeft)}
           </span>
@@ -571,10 +616,36 @@ function CompletedView() {
   const startBreak = useFocusStore((s) => s.startBreak);
   const clearCompleted = useFocusStore((s) => s.clearCompleted);
 
+  const confetti = [
+    { cx: -80, cy: -60, color: "#34D399", delay: "0s" },
+    { cx: 70, cy: -75, color: "rgb(var(--accent-rgb))", delay: "0.05s" },
+    { cx: -45, cy: -90, color: "#FBBF24", delay: "0.1s" },
+    { cx: 90, cy: -35, color: "#34D399", delay: "0.15s" },
+    { cx: -95, cy: -20, color: "rgb(var(--accent-soft-rgb))", delay: "0.2s" },
+    { cx: 40, cy: -95, color: "#FBBF24", delay: "0.25s" },
+    { cx: -60, cy: -45, color: "rgb(var(--accent-rgb))", delay: "0.3s" },
+    { cx: 85, cy: -60, color: "#34D399", delay: "0.35s" },
+  ];
+
   return (
     <div className="flex flex-col items-center pt-12 text-center sm:pt-20">
-      <CheckCircle2 className="h-16 w-16 text-success" />
-      <h1 className="mt-5 text-2xl font-bold text-white">
+      <div className="relative">
+        {confetti.map((c, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className="confetti-dot"
+            style={{
+              ["--cx" as string]: `${c.cx}px`,
+              ["--cy" as string]: `${c.cy}px`,
+              backgroundColor: c.color,
+              animationDelay: c.delay,
+            }}
+          />
+        ))}
+        <CheckCircle2 className="h-16 w-16 animate-pop text-success drop-shadow-[0_0_20px_rgb(16_185_129/0.4)]" />
+      </div>
+      <h1 className="text-gradient mt-5 text-2xl font-bold">
         {category} session complete!
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">

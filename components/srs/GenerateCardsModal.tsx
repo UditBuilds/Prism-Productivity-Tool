@@ -118,7 +118,7 @@ export function GenerateCardsModal({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-accent" />
+            <Sparkles className="h-5 w-5 animate-breathe text-accent" />
             {phase === "preview"
               ? `Review Generated Cards (${cards.length} card${
                   cards.length === 1 ? "" : "s"

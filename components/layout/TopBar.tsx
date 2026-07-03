@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Bell, Calendar, CalendarCheck, LogOut, User } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
-import { getInitials } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import { useUpcomingReminders } from "@/hooks/useReminders";
 import {
   DropdownMenu,
@@ -66,6 +66,15 @@ export function TopBar({
     return () => clearInterval(interval);
   }, []);
 
+  // Deepen the bottom edge once the page scrolls under the sticky bar.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   // Dot when a pending reminder is due within the next 24 hours.
   const { data: upcoming } = useUpcomingReminders();
   const hasSoonReminder = (upcoming ?? []).some((r) => {
@@ -81,13 +90,18 @@ export function TopBar({
   }
 
   return (
-    <header className="pt-safe sticky top-0 z-20 flex h-[calc(4rem_+_env(safe-area-inset-top))] items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur md:px-8">
-      <h1 className="text-base font-semibold tracking-tight text-foreground">
+    <header
+      className={cn(
+        "pt-safe sticky top-0 z-20 flex h-[calc(4rem_+_env(safe-area-inset-top))] items-center justify-between border-b border-border bg-background/70 px-4 backdrop-blur-xl md:px-8",
+        scrolled && "shadow-lg shadow-black/30"
+      )}
+    >
+      <h1 className="text-gradient text-base font-semibold tracking-tight">
         {title}
       </h1>
 
       <div className="flex items-center gap-2.5">
-        <span className="hidden items-center rounded-lg border border-border/70 bg-surface px-3 py-1.5 text-xs text-muted-foreground sm:flex">
+        <span className="hidden items-center rounded-lg border border-border/70 bg-surface px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent/30 sm:flex">
           {today}
           {time && (
             <>
@@ -105,7 +119,12 @@ export function TopBar({
           onClick={() => router.push("/dashboard/reminders")}
           className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-surface text-muted-foreground outline-none ring-offset-background transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
         >
-          <Bell className="h-[18px] w-[18px]" />
+          <Bell
+            className={cn(
+              "h-[18px] w-[18px]",
+              hasSoonReminder && "animate-bell-ring text-accent"
+            )}
+          />
           {hasSoonReminder && (
             <span
               aria-hidden
@@ -118,7 +137,7 @@ export function TopBar({
           <DropdownMenuTrigger asChild>
             <button
               aria-label="Account menu"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent outline-none ring-1 ring-accent/20 ring-offset-background focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent shadow-glow-accent-sm outline-none ring-1 ring-accent/30 ring-offset-background focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
             >
               {getInitials(displayName)}
             </button>

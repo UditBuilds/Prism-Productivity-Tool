@@ -54,7 +54,12 @@ export function DueTodayRow({
   }
 
   return (
-    <li className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3">
+    <li
+      className={cn(
+        "flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/25",
+        done && "border-success/30 bg-success/[0.04]"
+      )}
+    >
       <button
         type="button"
         onClick={markDone}
@@ -62,11 +67,11 @@ export function DueTodayRow({
         aria-label={done ? `${task.title} marked done` : `Mark "${task.title}" done`}
         className={cn(
           "shrink-0 rounded-full text-muted-foreground transition-colors hover:text-accent",
-          done && "text-accent"
+          done && "text-success"
         )}
       >
         {done ? (
-          <CheckCircle2 className="h-5 w-5" />
+          <CheckCircle2 className="h-5 w-5 animate-pop" />
         ) : (
           <Circle className="h-5 w-5" />
         )}

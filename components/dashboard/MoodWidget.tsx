@@ -77,7 +77,7 @@ export function MoodWidget() {
   return (
     <div className="mt-5 rounded-xl border border-border bg-surface px-4 py-3.5">
       {savedFlash ? (
-        <p className="flex items-center justify-center gap-2 py-3 text-sm font-medium text-success">
+        <p className="flex animate-pop items-center justify-center gap-2 py-3 text-sm font-medium text-success">
           <Check className="h-4 w-4" />
           Logged! ✓
         </p>
@@ -97,12 +97,18 @@ export function MoodWidget() {
                 onClick={() => setSelected(m.value)}
                 aria-pressed={selected === m.value}
                 className={cn(
-                  "flex flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 transition-transform hover:bg-surface-raised",
+                  "flex flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 transition-transform hover:scale-105 hover:bg-surface-raised",
                   selected === m.value &&
-                    "scale-110 border-accent/60 bg-accent/10"
+                    "scale-110 border-accent/60 bg-accent/10 shadow-glow-accent-sm"
                 )}
               >
-                <span aria-hidden className="text-2xl">
+                <span
+                  aria-hidden
+                  className={cn(
+                    "text-2xl",
+                    selected === m.value && "animate-pop"
+                  )}
+                >
                   {m.emoji}
                 </span>
                 <span className="text-[10px] text-muted-foreground">

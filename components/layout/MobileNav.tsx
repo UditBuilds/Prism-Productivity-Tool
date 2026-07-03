@@ -12,7 +12,7 @@ export function MobileNav() {
   const badges = useNavBadgeCounts();
 
   return (
-    <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 flex border-t border-[#1A1A1A] bg-[#0A0A0A]/90 backdrop-blur-xl md:hidden">
+    <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 flex border-t border-border/60 bg-background/80 backdrop-blur-xl md:hidden">
       {mobileNavItems.map((item) => {
         const active = isNavActive(pathname, item.href);
         const Icon = item.icon;
@@ -31,6 +31,14 @@ export function MobileNav() {
                 active && "bg-accent/[0.12]"
               )}
             >
+              {/* Glow dot above the active icon */}
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute left-1/2 top-0 h-1 w-1 -translate-x-1/2 -translate-y-1 rounded-full bg-accent shadow-glow-accent-sm transition-opacity",
+                  active ? "opacity-100" : "opacity-0"
+                )}
+              />
               <Icon
                 className={cn("h-[22px] w-[22px]", active && "fill-accent/20")}
                 strokeWidth={active ? 2.25 : 2}

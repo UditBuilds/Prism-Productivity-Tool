@@ -134,7 +134,7 @@ export default function CalendarPage() {
         <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
           {/* Month navigation */}
           <div className="mb-4 flex items-center gap-1">
-            <h2 className="text-base font-semibold text-foreground">
+            <h2 className="text-gradient text-base font-semibold">
               {monthLabel(month)}
             </h2>
             <div className="ml-auto flex items-center gap-1">
@@ -150,17 +150,17 @@ export default function CalendarPage() {
                 type="button"
                 aria-label="Previous month"
                 onClick={() => goToMonth(shiftMonth(month, -1))}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-surface text-muted-foreground hover:bg-surface-raised hover:text-foreground active:scale-95"
+                className="group flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-surface text-muted-foreground hover:border-accent/30 hover:bg-surface-raised hover:text-foreground active:scale-95"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
               </button>
               <button
                 type="button"
                 aria-label="Next month"
                 onClick={() => goToMonth(shiftMonth(month, 1))}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-surface text-muted-foreground hover:bg-surface-raised hover:text-foreground active:scale-95"
+                className="group flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-surface text-muted-foreground hover:border-accent/30 hover:bg-surface-raised hover:text-foreground active:scale-95"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </button>
             </div>
           </div>
@@ -197,8 +197,11 @@ export default function CalendarPage() {
                     cell.inMonth &&
                       !isSelected &&
                       "text-foreground hover:bg-surface-raised active:scale-95",
-                    isSelected && "bg-accent font-semibold text-accent-foreground",
-                    isToday && !isSelected && "border border-accent/50 font-semibold"
+                    isSelected &&
+                      "bg-accent-gradient font-semibold text-accent-foreground shadow-glow-accent-sm",
+                    isToday &&
+                      !isSelected &&
+                      "border border-accent/60 font-semibold shadow-glow-accent-sm ring-1 ring-inset ring-accent/30"
                   )}
                 >
                   {cell.dayOfMonth}

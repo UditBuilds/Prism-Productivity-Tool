@@ -50,7 +50,7 @@ export function NoteCard({
           onOpen(note, "read");
         }
       }}
-      className="group flex cursor-pointer flex-col rounded-xl border border-border bg-surface p-4 text-left duration-75 hover:-translate-y-0.5 hover:border-muted-foreground/40 active:scale-[0.99] active:opacity-90"
+      className="group flex cursor-pointer flex-col rounded-xl border border-border bg-surface p-4 text-left transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-lift active:scale-[0.99] active:opacity-90"
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="line-clamp-2 text-sm font-medium text-foreground group-hover:text-accent">
@@ -99,7 +99,7 @@ export function NoteCard({
       </div>
 
       {preview ? (
-        <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
+        <p className="mt-2 line-clamp-3 text-sm text-muted-foreground first-line:font-medium first-line:text-muted-foreground/90">
           {preview}
         </p>
       ) : (
@@ -120,7 +120,7 @@ export function NoteCard({
                   e.stopPropagation();
                   onTagClick?.(tag);
                 }}
-                className={`${color.bg} ${color.text} ${color.border} rounded-full border px-2 py-0.5 text-[11px] font-medium hover:opacity-80`}
+                className={`${color.bg} ${color.text} ${color.border} rounded-full border px-2 py-0.5 text-[11px] font-medium transition-shadow hover:opacity-80 hover:shadow-[0_0_8px_rgb(255_255_255/0.08)]`}
               >
                 #{tag}
               </button>

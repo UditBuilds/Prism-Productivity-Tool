@@ -36,14 +36,25 @@ const NavItem = memo(function NavItem({
     <Link
       href={href}
       className={cn(
-        "relative flex items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2 text-[13px] font-medium hover:translate-x-0.5",
+        "relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium hover:translate-x-0.5",
         active
-          ? "border-accent bg-[linear-gradient(to_right,rgb(var(--accent-rgb)/0.12),transparent)] text-accent"
-          : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+          ? "bg-[linear-gradient(to_right,rgb(var(--accent-rgb)/0.18),transparent)] text-accent"
+          : "text-muted-foreground hover:bg-[linear-gradient(to_right,rgb(var(--accent-rgb)/0.08),transparent)] hover:text-foreground"
       )}
     >
+      {/* Glow dot marker on the active pill */}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute left-0.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-accent shadow-glow-accent-sm transition-opacity",
+          active ? "opacity-100" : "opacity-0"
+        )}
+      />
       <Icon
-        className={cn("h-[18px] w-[18px] shrink-0", !active && "opacity-80")}
+        className={cn(
+          "h-[18px] w-[18px] shrink-0",
+          active ? "text-accent" : "opacity-80"
+        )}
       />
       {label}
       {badgeColor && <NavBadge count={badge ?? 0} color={badgeColor} />}
@@ -68,11 +79,7 @@ export function Sidebar({ displayName }: { displayName: string }) {
       <div className="flex h-16 items-center border-b border-border/60 px-6">
         <Link
           href="/dashboard"
-          className="bg-clip-text text-xl font-bold tracking-tight text-transparent"
-          style={{
-            backgroundImage:
-              "linear-gradient(to right, rgb(var(--accent-rgb) / 0.85), rgb(var(--accent-hover-rgb)))",
-          }}
+          className="text-gradient-animated text-xl font-bold tracking-tight drop-shadow-[0_0_12px_rgb(var(--accent-rgb)/0.35)]"
         >
           PRISM
         </Link>
@@ -106,7 +113,7 @@ export function Sidebar({ displayName }: { displayName: string }) {
 
       <div className="mt-auto border-t border-border/60 p-3 pt-3">
         <div className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-surface-raised">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent ring-1 ring-accent/20">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent shadow-glow-accent-sm ring-1 ring-accent/30">
             {getInitials(displayName)}
           </div>
           <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">

@@ -44,7 +44,7 @@ export function ReminderList({ reminders }: { reminders: Reminder[] }) {
               {groups[key].length}
             </span>
           </h2>
-          <div className="space-y-2">
+          <div className="stagger-children space-y-2">
             {groups[key].map((reminder) => (
               <ReminderCard key={reminder.id} reminder={reminder} />
             ))}

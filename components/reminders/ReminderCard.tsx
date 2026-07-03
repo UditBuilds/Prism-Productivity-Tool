@@ -44,10 +44,31 @@ export function ReminderCard({ reminder }: { reminder: Reminder }) {
     ? notes?.find((n) => n.id === reminder.note_id)
     : undefined;
 
+  // Time-based coloring: overdue pending = red pulse, due soon = accent glow,
+  // far future / sent = calm default.
+  const pending = !reminder.is_sent;
+  const urgent = pending && when.tone === "danger";
+  const soon = pending && when.tone === "warning";
+
   return (
-    <div className="group flex items-start gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-muted-foreground/40">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
-        <Bell className="h-4 w-4" />
+    <div
+      className={cn(
+        "group flex items-start gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/25",
+        urgent && "border-danger/30",
+        soon && "border-accent/25 shadow-glow-accent-sm"
+      )}
+    >
+      <div
+        className={cn(
+          "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+          urgent
+            ? "animate-pulse bg-danger/15 text-danger"
+            : "bg-accent/15 text-accent"
+        )}
+      >
+        <Bell
+          className={cn("h-4 w-4", (urgent || soon) && "animate-bell-ring-loop")}
+        />
       </div>
 
       <div className="min-w-0 flex-1">

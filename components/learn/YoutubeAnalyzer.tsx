@@ -99,10 +99,10 @@ export function YoutubeAnalyzer({ onSuccess }: YoutubeAnalyzerProps) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
+    <div className="rounded-xl border border-border bg-surface p-5 transition-colors hover:border-accent/25">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent shadow-glow-accent-sm">
           <Play className="h-4 w-4" />
         </span>
         <div className="min-w-0">

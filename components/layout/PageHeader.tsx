@@ -16,12 +16,12 @@ export function PageHeader({
   return (
     <div className="mb-6 flex items-center gap-3.5">
       {Icon && (
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/20 bg-accent/10">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/20 bg-accent/10 shadow-glow-accent-sm">
           <Icon className="h-[18px] w-[18px] text-accent" />
         </div>
       )}
       <div className="min-w-0">
-        <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="text-gradient truncate text-xl font-semibold tracking-tight">
           {title}
         </h1>
         {subtitle && (

@@ -57,10 +57,13 @@ function formatHour(hour: number): string {
 }
 
 const chartTooltipStyle = {
-  backgroundColor: "#111111",
-  border: "1px solid #2A2A2A",
-  borderRadius: "8px",
+  backgroundColor: "rgba(17, 17, 17, 0.8)",
+  backdropFilter: "blur(12px)",
+  WebkitBackdropFilter: "blur(12px)",
+  border: "1px solid rgb(var(--accent-rgb) / 0.2)",
+  borderRadius: "10px",
   fontSize: "12px",
+  boxShadow: "0 8px 24px rgb(0 0 0 / 0.4)",
 } as const;
 
 /* ── Week-over-week comparison tile ─────────────────────────────── */

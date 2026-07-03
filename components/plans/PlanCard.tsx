@@ -39,12 +39,15 @@ export function PlanCard({
   const pct = taskCount === 0 ? 0 : Math.round((doneCount / taskCount) * 100);
 
   return (
-    <div className="group flex flex-col rounded-xl border border-border bg-surface p-4 duration-75 hover:-translate-y-0.5 hover:border-muted-foreground/40 active:scale-[0.99] active:opacity-90">
+    <div className="group flex flex-col rounded-xl border border-border bg-surface p-4 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-lift active:scale-[0.99] active:opacity-90">
       <div className="flex items-start justify-between gap-2">
         <button
           type="button"
           onClick={() => openEditPlan(plan)}
-          className="line-clamp-2 text-left text-sm font-medium text-foreground hover:text-accent"
+          className={cn(
+            "line-clamp-2 text-left text-sm font-medium text-foreground hover:text-accent",
+            pct === 100 && "text-muted-foreground line-through decoration-success/60"
+          )}
         >
           {plan.title}
         </button>
@@ -91,17 +94,35 @@ export function PlanCard({
             Progress
           </span>
           {taskCount > 0 && (
-            <span className="text-sm font-semibold tabular-nums text-accent">
+            <span
+              className={cn(
+                "text-sm font-semibold tabular-nums",
+                pct === 100 ? "text-success" : "text-accent"
+              )}
+            >
               {pct}%
             </span>
           )}
         </div>
         <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-accent transition-all"
+            className={cn(
+              "h-full rounded-full transition-all",
+              // Completion trends violet → emerald as the plan fills up
+              pct === 100
+                ? "bg-success-gradient"
+                : pct >= 60
+                  ? "bg-gradient-to-r from-accent to-emerald-400"
+                  : "bg-accent-gradient"
+            )}
             style={{
               width: `${pct}%`,
-              ...(pct > 0 && { boxShadow: "0 0 6px rgb(var(--accent-rgb) / 0.5)" }),
+              ...(pct > 0 && {
+                boxShadow:
+                  pct === 100
+                    ? "0 0 6px rgb(16 185 129 / 0.5)"
+                    : "0 0 6px rgb(var(--accent-rgb) / 0.5)",
+              }),
             }}
           />
         </div>

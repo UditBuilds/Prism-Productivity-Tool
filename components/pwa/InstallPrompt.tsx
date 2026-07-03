@@ -99,7 +99,7 @@ export function InstallPrompt() {
   if (!showAndroid && !showIos) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-40 border-t border-border bg-surface px-4 py-3 md:hidden">
+    <div className="glass fixed inset-x-0 bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-40 animate-fade-up border-t border-accent/15 px-4 py-3 md:hidden">
       <div className="mx-auto flex max-w-md items-center gap-3">
         {showAndroid ? (
           <>

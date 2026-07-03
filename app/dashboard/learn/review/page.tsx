@@ -163,19 +163,46 @@ function ReviewSession() {
       (r) => r.rating === 0 || r.rating === 2
     ).length;
 
+    // Confetti burst vectors — deterministic spread around the check icon.
+    const confetti = [
+      { cx: -70, cy: -50, color: "rgb(var(--accent-rgb))", delay: "0s" },
+      { cx: 60, cy: -65, color: "#34D399", delay: "0.05s" },
+      { cx: -35, cy: -80, color: "#FBBF24", delay: "0.1s" },
+      { cx: 80, cy: -30, color: "rgb(var(--accent-soft-rgb))", delay: "0.12s" },
+      { cx: -85, cy: -15, color: "#34D399", delay: "0.18s" },
+      { cx: 30, cy: -85, color: "rgb(var(--accent-rgb))", delay: "0.22s" },
+      { cx: -55, cy: -35, color: "#FBBF24", delay: "0.28s" },
+      { cx: 70, cy: -55, color: "rgb(var(--accent-soft-rgb))", delay: "0.32s" },
+    ];
+
     return (
       <div className="mx-auto flex max-w-md flex-col items-center px-4 py-16 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-accent/30 bg-accent/10">
-          <CheckCircle2 className="h-6 w-6 text-accent" />
+        <div className="relative">
+          {confetti.map((c, i) => (
+            <span
+              key={i}
+              aria-hidden
+              className="confetti-dot"
+              style={{
+                ["--cx" as string]: `${c.cx}px`,
+                ["--cy" as string]: `${c.cy}px`,
+                backgroundColor: c.color,
+                animationDelay: c.delay,
+              }}
+            />
+          ))}
+          <div className="flex h-12 w-12 animate-pop items-center justify-center rounded-full border border-accent/30 bg-accent/10 shadow-glow-accent">
+            <CheckCircle2 className="h-6 w-6 text-accent" />
+          </div>
         </div>
-        <h1 className="mt-5 text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="text-gradient mt-5 text-xl font-semibold tracking-tight">
           Session complete
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {ratingsGiven.length} card{ratingsGiven.length === 1 ? "" : "s"} reviewed
         </p>
 
-        <div className="mt-7 grid w-full grid-cols-4 gap-2">
+        <div className="stagger-children mt-7 grid w-full grid-cols-4 gap-2">
           {counts.map(({ label, quality, count }) => {
             const dot = RATING_OPTIONS.find(
               (o) => o.quality === quality
@@ -233,7 +260,7 @@ function ReviewSession() {
         </div>
         <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
+            className="h-full rounded-full bg-gradient-to-r from-accent via-accent-soft to-emerald-400 transition-[width] duration-300 ease-out"
             style={{ width: `${progressPct}%` }}
           />
         </div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Loader2, MailCheck } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { AuthCard, AuthHeader } from "@/components/auth/AuthCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,13 +50,8 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-8 shadow-xl">
-      <h1 className="mb-1 text-center text-3xl font-bold tracking-tight text-accent">
-        PRISM
-      </h1>
-      <p className="mb-8 text-center text-sm text-muted-foreground">
-        Reset your password
-      </p>
+    <AuthCard shake={!!error}>
+      <AuthHeader subtitle="Reset your password" />
 
       {sent ? (
         <div className="flex flex-col items-center text-center">
@@ -107,6 +103,6 @@ export default function ForgotPasswordPage() {
           Back to sign in
         </Link>
       </p>
-    </div>
+    </AuthCard>
   );
 }

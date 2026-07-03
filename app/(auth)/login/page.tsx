@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { AuthCard, AuthHeader } from "@/components/auth/AuthCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,13 +40,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-8 shadow-xl">
-      <h1 className="mb-1 text-center text-3xl font-bold tracking-tight text-accent">
-        PRISM
-      </h1>
-      <p className="mb-8 text-center text-sm text-muted-foreground">
-        Sign in to your workspace
-      </p>
+    <AuthCard shake={!!error}>
+      <AuthHeader subtitle="Sign in to your workspace" />
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
@@ -110,6 +106,6 @@ export default function LoginPage() {
           Sign up
         </Link>
       </p>
-    </div>
+    </AuthCard>
   );
 }

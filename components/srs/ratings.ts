@@ -26,7 +26,7 @@ export const RATING_OPTIONS: RatingOption[] = [
     label: "Again",
     description: "Forgot it",
     className:
-      "border-border bg-surface-raised hover:border-red-500/40 hover:bg-red-500/[0.08]",
+      "border-border bg-surface-raised hover:border-red-500/40 hover:bg-red-500/[0.08] hover:shadow-[0_0_14px_rgb(248_113_113/0.25)]",
     dotClassName: "bg-red-400",
     keyHint: "1",
     requeues: true,
@@ -36,7 +36,7 @@ export const RATING_OPTIONS: RatingOption[] = [
     label: "Hard",
     description: "Recalled with effort",
     className:
-      "border-border bg-surface-raised hover:border-amber-500/40 hover:bg-amber-500/[0.08]",
+      "border-border bg-surface-raised hover:border-amber-500/40 hover:bg-amber-500/[0.08] hover:shadow-[0_0_14px_rgb(251_191_36/0.25)]",
     dotClassName: "bg-amber-400",
     keyHint: "2",
     requeues: true,
@@ -46,7 +46,7 @@ export const RATING_OPTIONS: RatingOption[] = [
     label: "Good",
     description: "Recalled correctly",
     className:
-      "border-border bg-surface-raised hover:border-blue-500/40 hover:bg-blue-500/[0.08]",
+      "border-border bg-surface-raised hover:border-blue-500/40 hover:bg-blue-500/[0.08] hover:shadow-[0_0_14px_rgb(96_165_250/0.25)]",
     dotClassName: "bg-blue-400",
     keyHint: "3",
     requeues: false,
@@ -56,7 +56,7 @@ export const RATING_OPTIONS: RatingOption[] = [
     label: "Easy",
     description: "Effortless",
     className:
-      "border-border bg-surface-raised hover:border-emerald-500/40 hover:bg-emerald-500/[0.08]",
+      "border-border bg-surface-raised hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] hover:shadow-[0_0_14px_rgb(52_211_153/0.25)]",
     dotClassName: "bg-emerald-400",
     keyHint: "4",
     requeues: false,

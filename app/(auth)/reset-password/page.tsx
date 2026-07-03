@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Loader2, AlertTriangle } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { AuthCard, AuthHeader } from "@/components/auth/AuthCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,10 +62,8 @@ export default function ResetPasswordPage() {
 
   if (linkExpired) {
     return (
-      <div className="rounded-xl border border-border bg-surface p-8 shadow-xl">
-        <h1 className="mb-1 text-center text-3xl font-bold tracking-tight text-accent">
-          PRISM
-        </h1>
+      <AuthCard>
+        <AuthHeader />
         <div className="mt-6 flex flex-col items-center text-center">
           <AlertTriangle className="h-10 w-10 text-warning" />
           <p className="mt-4 text-base font-semibold text-foreground">
@@ -78,18 +77,13 @@ export default function ResetPasswordPage() {
             <Link href="/forgot-password">Request a new link</Link>
           </Button>
         </div>
-      </div>
+      </AuthCard>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-8 shadow-xl">
-      <h1 className="mb-1 text-center text-3xl font-bold tracking-tight text-accent">
-        PRISM
-      </h1>
-      <p className="mb-8 text-center text-sm text-muted-foreground">
-        Choose a new password
-      </p>
+    <AuthCard shake={!!error}>
+      <AuthHeader subtitle="Choose a new password" />
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
@@ -142,6 +136,6 @@ export default function ResetPasswordPage() {
           Back to sign in
         </Link>
       </p>
-    </div>
+    </AuthCard>
   );
 }

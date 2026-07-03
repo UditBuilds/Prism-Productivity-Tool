@@ -125,12 +125,12 @@ export function TaskCard({ task }: { task: Task }) {
           className={cn(
             "absolute inset-0 flex items-center rounded-r-xl px-5",
             dragX > 0
-              ? "justify-start bg-success/15 text-success"
-              : "justify-end bg-danger/15 text-danger"
+              ? "justify-start bg-gradient-to-r from-success/30 via-success/15 to-transparent text-success"
+              : "justify-end bg-gradient-to-l from-danger/30 via-danger/15 to-transparent text-danger"
           )}
         >
           {dragX > 0 ? (
-            <CheckCircle2 className="h-5 w-5" />
+            <CheckCircle2 className="h-5 w-5 animate-pop" />
           ) : (
             <Trash2 className="h-5 w-5" />
           )}
@@ -146,7 +146,7 @@ export function TaskCard({ task }: { task: Task }) {
           touchAction: "pan-y",
         }}
         className={cn(
-          "group cursor-default rounded-l-none rounded-r-xl border border-l-2 border-[#1F1F1F] bg-[#111111] p-4 transition duration-75 hover:-translate-y-0.5 hover:border-[#2A2A2A] hover:shadow-lg hover:shadow-black/30 active:scale-[0.99] active:opacity-90",
+          "group cursor-default rounded-l-none rounded-r-xl border border-l-2 border-[#1F1F1F] bg-[#111111] p-4 transition duration-200 hover:-translate-y-0.5 hover:border-accent/25 hover:shadow-lift active:scale-[0.99] active:opacity-90",
           dragging && "no-transition",
           priorityBorder[task.priority]
         )}
@@ -164,7 +164,7 @@ export function TaskCard({ task }: { task: Task }) {
             </Link>
             {task.recurring_task_id && (
               <Repeat
-                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin-slow text-muted-foreground [animation-duration:12s]"
                 aria-label="Repeats daily"
               />
             )}

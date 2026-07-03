@@ -344,7 +344,7 @@ export function TaskForm() {
                 className={cn(
                   "flex w-full cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 transition",
                   repeatDaily
-                    ? "border-accent/40 bg-accent/10"
+                    ? "border-accent/40 bg-accent/10 shadow-glow-accent-sm"
                     : "border-border bg-surface hover:bg-surface-raised"
                 )}
               >
@@ -371,7 +371,7 @@ export function TaskForm() {
                         className={cn(
                           "rounded-full border px-3 py-1 text-xs font-medium transition",
                           repeatPattern === p.value
-                            ? "border-accent bg-accent/15 text-accent"
+                            ? "border-accent bg-accent/15 text-accent shadow-glow-accent-sm"
                             : "border-border text-muted-foreground hover:text-foreground"
                         )}
                       >
@@ -393,7 +393,7 @@ export function TaskForm() {
                             className={cn(
                               "h-8 w-10 rounded-md border text-xs font-medium transition",
                               active
-                                ? "border-accent bg-accent/15 text-accent"
+                                ? "border-accent bg-accent/15 text-accent shadow-glow-accent-sm"
                                 : "border-border text-muted-foreground hover:text-foreground"
                             )}
                           >

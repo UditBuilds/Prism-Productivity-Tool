@@ -78,6 +78,11 @@ export function FlashCard({
       >
         {/* Front (question) */}
         <div className="card-face flex flex-col overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-surface-raised to-surface p-6 shadow-xl shadow-black/30 sm:p-8">
+          {/* Static accent particle field — quiet depth, no animation cost */}
+          <span aria-hidden className="pointer-events-none absolute left-[12%] top-[20%] h-1 w-1 rounded-full bg-accent/20" />
+          <span aria-hidden className="pointer-events-none absolute right-[18%] top-[32%] h-1.5 w-1.5 rounded-full bg-accent/10" />
+          <span aria-hidden className="pointer-events-none absolute bottom-[24%] left-[26%] h-1 w-1 rounded-full bg-accent/15" />
+          <span aria-hidden className="pointer-events-none absolute bottom-[16%] right-[10%] h-1 w-1 rounded-full bg-accent/20" />
           <FaceLabel>Question</FaceLabel>
           <div className="flex flex-1 items-center justify-center overflow-y-auto py-5">
             <CardContent text={front} className={bodyClass} />
@@ -92,8 +97,8 @@ export function FlashCard({
           )}
         </div>
 
-        {/* Back (answer) — a whisper of the themeable accent */}
-        <div className="card-face back flex flex-col overflow-hidden rounded-2xl border border-accent/25 bg-gradient-to-b from-surface-raised to-surface p-6 shadow-xl shadow-black/30 ring-1 ring-inset ring-accent/10 sm:p-8">
+        {/* Back (answer) — a whisper of the themeable accent + glow ring */}
+        <div className="card-face back flex flex-col overflow-hidden rounded-2xl border border-accent/25 bg-gradient-to-b from-surface-raised to-surface p-6 shadow-xl shadow-black/30 ring-1 ring-inset ring-accent/10 [box-shadow:0_20px_25px_-5px_rgb(0_0_0/0.3),0_0_20px_rgb(var(--accent-rgb)/0.12)] sm:p-8">
           <FaceLabel accent>Answer</FaceLabel>
           <div className="flex flex-1 items-center justify-center overflow-y-auto py-5">
             <CardContent text={back} className={bodyClass} />
