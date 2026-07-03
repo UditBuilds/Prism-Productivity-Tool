@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   Bell,
@@ -37,16 +37,26 @@ export function WelcomeWizard() {
   const [busy, setBusy] = useState(false);
   const { subscribe } = usePushSubscription();
 
+  // Session-scoped guard: even if localStorage writes fail (private mode,
+  // iOS storage pressure), a dismissed wizard must never re-open this session.
+  const dismissedRef = useRef(false);
+
   // Client-only check after mount (localStorage doesn't exist during SSR).
   useEffect(() => {
-    if (!onboardingComplete()) setOpen(true);
+    if (dismissedRef.current) return;
+    if (onboardingComplete()) {
+      dismissedRef.current = true;
+      return;
+    }
+    setOpen(true);
   }, []);
 
   function finish() {
+    dismissedRef.current = true;
     try {
       localStorage.setItem(STORAGE_KEY, "true");
     } catch {
-      // Storage unavailable — the wizard may show again next visit; harmless.
+      // Storage unavailable — the ref above still blocks re-opening now.
     }
     setOpen(false);
   }

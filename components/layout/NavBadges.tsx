@@ -44,7 +44,7 @@ export function NavBadge({
         className ?? "right-1 top-1"
       )}
     >
-      {count > 9 ? "9+" : count}
+      {count > 99 ? "99+" : count}
     </span>
   );
 }

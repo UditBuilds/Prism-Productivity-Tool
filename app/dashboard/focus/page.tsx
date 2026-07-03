@@ -398,6 +398,13 @@ function IdleView() {
             })}
           </ul>
         )}
+        {recent &&
+          recent.length >= 3 &&
+          recent.slice(0, 3).every((s) => !s.completed) && (
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              💡 Try completing one full session — it builds momentum.
+            </p>
+          )}
       </div>
 
       <ManageCategoriesModal open={manageOpen} onOpenChange={setManageOpen} />

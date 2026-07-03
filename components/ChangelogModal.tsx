@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 
 import pkg from "@/package.json";
@@ -48,12 +48,23 @@ const CHANGELOG: { version: string; note: string }[] = [
 export function ChangelogModal() {
   const [open, setOpen] = useState(false);
 
+  // Session guard mirroring WelcomeWizard: a dismissed changelog stays
+  // dismissed this session even when localStorage writes fail. The
+  // onboarding check below also means the modal never opens in the same
+  // session the wizard runs — new users get the wizard, not both.
+  const dismissedRef = useRef(false);
+
   useEffect(() => {
+    if (dismissedRef.current) return;
     try {
       const seen = localStorage.getItem(STORAGE_KEY);
-      if (seen === appVersion) return;
+      if (seen === appVersion) {
+        dismissedRef.current = true;
+        return;
+      }
       if (!onboardingComplete()) {
         localStorage.setItem(STORAGE_KEY, appVersion);
+        dismissedRef.current = true;
         return;
       }
       setOpen(true);
@@ -63,10 +74,11 @@ export function ChangelogModal() {
   }, []);
 
   function dismiss() {
+    dismissedRef.current = true;
     try {
       localStorage.setItem(STORAGE_KEY, appVersion);
     } catch {
-      // Ignore.
+      // Ignore — the ref above still blocks re-opening this session.
     }
     setOpen(false);
   }

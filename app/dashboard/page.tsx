@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Countdown, Reminder, Task } from "@/types/database";
 import { MoodWidget } from "@/components/dashboard/MoodWidget";
+import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
 
 /**
@@ -227,6 +228,9 @@ export default async function DashboardHome() {
         </p>
       </header>
 
+      {/* Notification permission nudge (renders only while undecided) */}
+      <NotificationNudge />
+
       {/* Daily mood check-in */}
       <MoodWidget />
 
@@ -404,16 +408,24 @@ export default async function DashboardHome() {
         </div>
 
         {upcomingItems.length === 0 ? (
-          <div className="rounded-xl border border-border bg-surface p-4">
-            <p className="text-sm text-muted-foreground">
-              Nothing coming up ·{" "}
+          <div className="rounded-xl border border-dashed border-border bg-surface p-6 text-center">
+            <p className="mb-3 text-sm text-muted-foreground">
+              Nothing coming up
+            </p>
+            <div className="flex justify-center gap-2">
               <Link
                 href="/dashboard/reminders"
-                className="text-accent underline underline-offset-2"
+                className="rounded-lg bg-accent-gradient px-4 py-2 text-sm font-medium text-white shadow-glow-accent-sm hover:bg-accent-gradient-hover"
               >
-                Add countdown
+                + Add countdown
               </Link>
-            </p>
+              <Link
+                href="/dashboard/tasks"
+                className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground hover:border-accent/30 hover:bg-surface-raised"
+              >
+                + Add task
+              </Link>
+            </div>
           </div>
         ) : (
           <ul className="stagger-children grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">

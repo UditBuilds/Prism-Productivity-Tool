@@ -122,29 +122,32 @@ export function ReminderForm() {
   function maybePromptForNotifications() {
     if (typeof Notification === "undefined") return;
     if (Notification.permission === "default") {
-      toast(
-        (t) => (
-          <span className="flex items-center gap-3 text-sm">
-            🔔 Enable notifications to get reminded on time?
-            <button
-              type="button"
-              className="shrink-0 font-semibold text-accent"
-              onClick={async () => {
-                toast.dismiss(t.id);
-                const result = await Notification.requestPermission();
-                setNotifPermission(result);
-                if (result === "granted") {
-                  void subscribe(); // register Web Push for this device too
-                  toast.success("Notifications enabled");
-                }
-              }}
-            >
-              Enable
-            </button>
-          </span>
-        ),
-        { duration: 8000 }
-      );
+      // Small delay so it lands after the "Reminder created" success toast.
+      setTimeout(() => {
+        toast(
+          (t) => (
+            <span className="flex items-center gap-3 text-sm">
+              🔔 Enable notifications to get reminded on time?
+              <button
+                type="button"
+                className="shrink-0 font-semibold text-accent"
+                onClick={async () => {
+                  toast.dismiss(t.id);
+                  const result = await Notification.requestPermission();
+                  setNotifPermission(result);
+                  if (result === "granted") {
+                    void subscribe(); // register Web Push for this device too
+                    toast.success("Notifications enabled");
+                  }
+                }}
+              >
+                Enable
+              </button>
+            </span>
+          ),
+          { duration: 8000 }
+        );
+      }, 500);
     } else if (Notification.permission === "denied") {
       toast(
         "Notifications are blocked. Enable them in browser settings to receive reminders.",
