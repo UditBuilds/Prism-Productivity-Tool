@@ -26,14 +26,13 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
 
-  // Only upcoming reminders. Fired reminders are deleted by the push cron once
-  // delivered, so there's nothing past worth showing — past rows simply drop
-  // off the list once their time passes.
-  const now = new Date().toISOString();
+  // Return all reminders. Past-due unsent reminders are included so the
+  // client-side NotificationChecker can fire them — filtering by remind_at
+  // here made due reminders vanish from the cache on refetch before the
+  // 60s checker tick could see them.
   const { data, error } = await supabase
     .from("reminders")
     .select("*")
-    .gte("remind_at", now)
     .order("remind_at", { ascending: true });
 
   if (error) return json({ data: null, error: error.message }, 500);

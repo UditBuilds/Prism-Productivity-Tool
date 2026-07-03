@@ -105,8 +105,11 @@ function ReviewSession() {
   // --- Loading / error ---
   if (isLoading || !startedRef.current) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
-        <Loader2 className="h-6 w-6 animate-spin" />
+      <div
+        role="status"
+        className="flex flex-col items-center justify-center py-24 text-muted-foreground"
+      >
+        <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
         <p className="mt-3 text-sm">Loading cards…</p>
       </div>
     );
@@ -304,8 +307,12 @@ export default function ReviewPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex justify-center py-24 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin" />
+        <div
+          role="status"
+          aria-label="Loading review session"
+          className="flex justify-center py-24 text-muted-foreground"
+        >
+          <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
         </div>
       }
     >

@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef, useState } from "react";
+import toast from "react-hot-toast";
 import {
   Bell,
   CheckSquare,
@@ -29,6 +31,9 @@ const toneClass: Record<DueTone, string> = {
   danger: "text-danger",
 };
 
+const SWIPE_THRESHOLD = 80; // px to trigger delete
+const SWIPE_MAX = 120; // px clamp so the card doesn't fly off
+
 export function ReminderCard({ reminder }: { reminder: Reminder }) {
   const openEditReminder = useUIStore((s) => s.openEditReminder);
   const deleteReminder = useDeleteReminder();
@@ -36,6 +41,70 @@ export function ReminderCard({ reminder }: { reminder: Reminder }) {
   const { data: notes } = useNotesQuery();
 
   const when = formatReminderTime(reminder.remind_at);
+
+  // --- Trailing swipe (touch only): left = delete with 5s undo, same
+  // gesture/undo pattern as TaskCard. Right swipe is intentionally inert.
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const horizontal = useRef(false);
+
+  function queueDelete() {
+    const timeout = setTimeout(() => deleteReminder.mutate(reminder.id), 5000);
+    toast(
+      (t) => (
+        <span className="flex items-center gap-3 text-sm">
+          Deleting &ldquo;{reminder.title.slice(0, 24)}
+          {reminder.title.length > 24 ? "…" : ""}&rdquo;
+          <button
+            type="button"
+            className="font-semibold text-accent"
+            onClick={() => {
+              clearTimeout(timeout);
+              toast.dismiss(t.id);
+            }}
+          >
+            Undo
+          </button>
+        </span>
+      ),
+      { duration: 5000, icon: "🗑️" }
+    );
+  }
+
+  function onTouchStart(e: React.TouchEvent) {
+    touchStart.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+    horizontal.current = false;
+    setDragging(true);
+  }
+
+  function onTouchMove(e: React.TouchEvent) {
+    if (!touchStart.current) return;
+    const dx = e.touches[0].clientX - touchStart.current.x;
+    const dy = e.touches[0].clientY - touchStart.current.y;
+    // Horizontal-intent lock keeps vertical page scrolling untouched.
+    if (!horizontal.current) {
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        horizontal.current = true;
+      } else {
+        return;
+      }
+    }
+    setDragX(Math.max(-SWIPE_MAX, Math.min(0, dx)));
+  }
+
+  function onTouchEnd() {
+    setDragging(false);
+    if (horizontal.current && dragX < -SWIPE_THRESHOLD) {
+      queueDelete();
+    }
+    setDragX(0);
+    touchStart.current = null;
+    horizontal.current = false;
+  }
 
   const linkedTask = reminder.task_id
     ? tasks?.find((t) => t.id === reminder.task_id)
@@ -51,13 +120,32 @@ export function ReminderCard({ reminder }: { reminder: Reminder }) {
   const soon = pending && when.tone === "warning";
 
   return (
-    <div
-      className={cn(
-        "group flex items-start gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/25",
-        urgent && "border-danger/30",
-        soon && "border-accent/25 shadow-glow-accent-sm"
+    <div className="relative">
+      {/* Reveal layer behind the card while swiping left */}
+      {dragX !== 0 && (
+        <div
+          aria-hidden
+          className="absolute inset-0 flex items-center justify-end rounded-xl bg-gradient-to-l from-danger/30 via-danger/15 to-transparent px-5 text-danger"
+        >
+          <Trash2 className="h-5 w-5" />
+        </div>
       )}
-    >
+
+      <div
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        style={{
+          transform: dragX !== 0 ? `translateX(${dragX}px)` : undefined,
+          touchAction: "pan-y",
+        }}
+        className={cn(
+          "group flex items-start gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/25",
+          dragging && "no-transition",
+          urgent && "border-danger/30",
+          soon && "border-accent/25 shadow-glow-accent-sm"
+        )}
+      >
       <div
         className={cn(
           "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
@@ -149,6 +237,7 @@ export function ReminderCard({ reminder }: { reminder: Reminder }) {
               <span className="truncate">{linkedNote.title}</span>
             </span>
           )}
+        </div>
         </div>
       </div>
     </div>

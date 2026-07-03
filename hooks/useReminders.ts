@@ -48,11 +48,14 @@ async function request<T>(method: string, body?: unknown): Promise<T> {
 }
 
 // Exported so DataPrefetcher can warm this cache with the exact same queryFn.
+// staleTime is long on purpose: the cache must not expire (and refetch) while
+// a due reminder might be waiting for the NotificationChecker's next tick —
+// mutations and the checker itself invalidate explicitly when data changes.
 export const remindersQueryOptions = {
   queryKey: REMINDERS_KEY,
   queryFn: () => request<Reminder[]>("GET"),
-  staleTime: 3 * 60 * 1000,
-  gcTime: 6 * 60 * 1000,
+  staleTime: 30 * 60 * 1000,
+  gcTime: 60 * 60 * 1000,
 };
 
 export function useRemindersQuery() {

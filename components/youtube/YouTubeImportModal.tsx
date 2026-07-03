@@ -128,8 +128,11 @@ export function YouTubeImportModal({
         )}
 
         {generating ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground">
-            <Loader2 className="h-6 w-6 animate-spin text-accent" />
+          <div
+            role="status"
+            className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground"
+          >
+            <Loader2 className="h-6 w-6 animate-spin text-accent" aria-hidden />
             <p className="text-sm">Fetching captions &amp; writing your note…</p>
           </div>
         ) : (

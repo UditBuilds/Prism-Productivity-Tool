@@ -45,7 +45,7 @@ export default function WeeklyReviewPage() {
   const { data, isLoading, isError, refetch } = useWeeklyReview(week);
 
   return (
-    <div>
+    <div className="animate-fade-up">
       <PageHeader
         title="Weekly Review"
         subtitle="How your week actually went"

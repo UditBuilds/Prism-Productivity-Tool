@@ -21,6 +21,7 @@ import { TaskList } from "@/components/tasks/TaskList";
 import { TaskForm } from "@/components/tasks/TaskForm";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
+import { PullToRefresh } from "@/components/shared/PullToRefresh";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { EmptyTasks } from "@/components/shared/EmptyStates";
 
@@ -88,7 +89,8 @@ export default function TasksPage() {
   }, [tasks, filter]);
 
   return (
-    <div>
+    <div className="animate-fade-up">
+      <PullToRefresh onRefresh={() => refetch()}>
       <PageHeader
         title="Tasks"
         subtitle="Manage and track your work"
@@ -175,6 +177,7 @@ export default function TasksPage() {
       </div>
 
       <TaskForm />
+      </PullToRefresh>
     </div>
   );
 }

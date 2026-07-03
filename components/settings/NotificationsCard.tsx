@@ -97,10 +97,10 @@ export function NotificationsCard() {
           </p>
         ) : permission === "granted" && subscribed ? (
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-success">
-              <CheckCircle2 className="h-5 w-5 shrink-0" />
-              Notifications enabled
-            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              Notifications enabled ✓
+            </span>
             <Button
               variant="outline"
               onClick={disable}
@@ -113,25 +113,26 @@ export function NotificationsCard() {
           </div>
         ) : permission === "denied" ? (
           <div>
-            <div className="flex items-center gap-2 text-sm font-medium text-danger">
-              <XCircle className="h-5 w-5 shrink-0" />
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/30 bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger">
+              <XCircle className="h-3.5 w-3.5 shrink-0" />
               Notifications blocked
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              To enable: go to your device Settings and allow notifications for
-              Prism.
+            </span>
+            <p className="mt-3 text-sm text-muted-foreground">
+              To enable: open your browser or device settings and allow
+              notifications for Prism, then reload this page.
             </p>
           </div>
         ) : (
           // 'default', or 'granted' but not yet subscribed → offer to enable.
           <div>
-            <div className="flex items-start gap-2 text-sm text-muted-foreground">
-              <Bell className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
-              <span>
-                Enable notifications to receive reminders even when the app is
-                closed.
-              </span>
-            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning">
+              <Bell className="h-3.5 w-3.5 shrink-0" />
+              Notifications not set up
+            </span>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Enable notifications to receive reminders even when the app is
+              closed.
+            </p>
             <Button
               onClick={enable}
               disabled={busy}

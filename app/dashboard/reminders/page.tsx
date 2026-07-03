@@ -18,6 +18,7 @@ import { CountdownsTab } from "@/components/countdowns/CountdownsTab";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { PullToRefresh } from "@/components/shared/PullToRefresh";
 import { EmptyReminders } from "@/components/shared/EmptyStates";
 
 type Filter = "all" | "pending" | "sent" | "countdowns";
@@ -86,7 +87,8 @@ export default function RemindersPage() {
   }, [reminders, filter]);
 
   return (
-    <div>
+    <div className="animate-fade-up">
+      <PullToRefresh onRefresh={() => refetch()}>
       <PageHeader
         title="Reminders"
         subtitle="Never miss what matters"
@@ -191,6 +193,7 @@ export default function RemindersPage() {
       </div>
 
       <ReminderForm />
+      </PullToRefresh>
     </div>
   );
 }

@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
+import toast from "react-hot-toast";
 import { CalendarIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { istDateTimeToIso, istTimeValue } from "@/lib/date";
 import { useUIStore } from "@/store/ui.store";
 import { useCreateReminder, useUpdateReminder } from "@/hooks/useReminders";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { useTasksQuery } from "@/hooks/useTasks";
 import { useNotesQuery } from "@/hooks/useNotes";
 import {
@@ -38,6 +40,17 @@ export function ReminderForm() {
   const updateReminder = useUpdateReminder();
   const { data: tasks = [] } = useTasksQuery();
   const { data: notes = [] } = useNotesQuery();
+  const { subscribe } = usePushSubscription();
+
+  // Read on the client only (null during SSR) so the permission hint below the
+  // pickers can't cause a hydration mismatch.
+  const [notifPermission, setNotifPermission] =
+    useState<NotificationPermission | null>(null);
+  useEffect(() => {
+    if (typeof Notification !== "undefined") {
+      setNotifPermission(Notification.permission);
+    }
+  }, [reminderDialogOpen]);
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -98,8 +111,46 @@ export function ReminderForm() {
       updateReminder.mutate({ id: editingReminder.id, ...payload });
     } else {
       createReminder.mutate(payload);
+      maybePromptForNotifications();
     }
     closeReminderDialog();
+  }
+
+  // After saving a NEW reminder, nudge toward browser notifications. The
+  // toast's Enable button is a user gesture, so requestPermission works on iOS
+  // (which silently ignores requests outside a gesture — see Session 8 notes).
+  function maybePromptForNotifications() {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      toast(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            🔔 Enable notifications to get reminded on time?
+            <button
+              type="button"
+              className="shrink-0 font-semibold text-accent"
+              onClick={async () => {
+                toast.dismiss(t.id);
+                const result = await Notification.requestPermission();
+                setNotifPermission(result);
+                if (result === "granted") {
+                  void subscribe(); // register Web Push for this device too
+                  toast.success("Notifications enabled");
+                }
+              }}
+            >
+              Enable
+            </button>
+          </span>
+        ),
+        { duration: 8000 }
+      );
+    } else if (Notification.permission === "denied") {
+      toast(
+        "Notifications are blocked. Enable them in browser settings to receive reminders.",
+        { icon: "🔕" }
+      );
+    }
   }
 
   return (
@@ -198,6 +249,13 @@ export function ReminderForm() {
               )}
             </div>
           </div>
+
+          {notifPermission !== null && notifPermission !== "granted" && (
+            <p className="text-xs text-muted-foreground">
+              ⚠️ Notifications are not enabled. You&apos;ll only see reminders
+              while Prism is open.
+            </p>
+          )}
 
           {tasks.length > 0 && (
             <div className="space-y-2">

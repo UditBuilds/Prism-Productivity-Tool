@@ -26,7 +26,8 @@ const emptyByFilter: Record<
   all: {
     icon: Target,
     title: "No plans yet",
-    description: "Group tasks under a goal with a target date and track progress.",
+    description:
+      "Create a plan to group related tasks and track progress toward a goal.",
   },
   active: {
     icon: Target,
@@ -86,7 +87,7 @@ export default function PlansPage() {
   }, [plans, filter]);
 
   return (
-    <div>
+    <div className="animate-fade-up">
       <PageHeader
         title="Plans"
         subtitle="Goals and projects"

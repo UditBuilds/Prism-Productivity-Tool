@@ -113,7 +113,7 @@ export function LearnClient({ streak }: { streak: number }) {
   ];
 
   return (
-    <div>
+    <div className="animate-fade-up">
       <PageHeader
         title="Learn"
         subtitle="Spaced repetition system"

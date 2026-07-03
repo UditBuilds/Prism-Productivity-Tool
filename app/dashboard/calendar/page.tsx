@@ -122,7 +122,7 @@ export default function CalendarPage() {
   const monthIsEmpty = !isLoading && !isError && (data?.days.length ?? 0) === 0;
 
   return (
-    <div>
+    <div className="animate-fade-up">
       <PageHeader
         title="Calendar"
         subtitle="Tasks and reminders by date"

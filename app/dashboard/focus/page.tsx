@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { hapticTap } from "@/lib/haptics";
 import { useFocusStore, formatClock } from "@/store/focus.store";
 import {
   useRecentFocusSessions,
@@ -78,6 +79,7 @@ function IdleView() {
 
   async function handleStart() {
     if (!canStart) return;
+    hapticTap();
     // Stopwatch starts open-ended (duration 0 sentinel); preset uses minutes.
     const isStopwatch = timerType === "stopwatch";
     startSession(category, isStopwatch ? 0 : minutes, timerType);
@@ -133,7 +135,7 @@ function IdleView() {
   }
 
   return (
-    <div>
+    <div className="animate-fade-up">
       <PageHeader
         title="Focus Timer"
         subtitle="Track your deep work sessions"
@@ -364,7 +366,8 @@ function IdleView() {
           </div>
         ) : (recent?.length ?? 0) === 0 ? (
           <p className="rounded-xl border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-muted-foreground">
-            No sessions yet — your focus history will appear here.
+            Start your first focus session to track deep work — your history
+            will appear here.
           </p>
         ) : (
           <ul className="stagger-children space-y-2">

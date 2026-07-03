@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { hapticTap } from "@/lib/haptics";
 import type { SrsCard } from "@/types/database";
 import { RATING_OPTIONS, previewInterval } from "./ratings";
 
@@ -21,7 +22,10 @@ export function RatingButtons({
           type="button"
           disabled={disabled}
           title={`${option.label} — ${option.description}`}
-          onClick={() => onRate(option.quality)}
+          onClick={() => {
+            hapticTap();
+            onRate(option.quality);
+          }}
           className={cn(
             "group relative flex min-h-[3.5rem] flex-col items-center justify-center gap-1 rounded-xl border px-3 py-2.5 transition-[background-color,border-color,box-shadow,transform] duration-200 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] active:scale-95 disabled:pointer-events-none disabled:opacity-50",
             option.className

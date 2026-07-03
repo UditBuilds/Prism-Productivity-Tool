@@ -48,7 +48,7 @@ export default async function TaskDetailPage({
 
   if (!task) {
     return (
-      <div>
+      <div className="animate-fade-up">
         {backLink}
         <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-14 text-center">
           <AlertCircle className="h-8 w-8 text-muted-foreground" />
@@ -74,7 +74,7 @@ export default async function TaskDetailPage({
   }
 
   return (
-    <div>
+    <div className="animate-fade-up">
       {backLink}
 
       <div className="mt-5 rounded-xl border border-border bg-surface p-6">

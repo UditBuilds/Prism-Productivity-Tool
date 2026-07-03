@@ -8,6 +8,11 @@ import { NotificationChecker } from "@/components/reminders/NotificationChecker"
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { FloatingTimer } from "@/components/focus/FloatingTimer";
 import { DataPrefetcher } from "@/components/layout/DataPrefetcher";
+import { WelcomeWizard } from "@/components/onboarding/WelcomeWizard";
+import { ChangelogModal } from "@/components/ChangelogModal";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { OfflineBanner } from "@/components/OfflineBanner";
+import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 
 export default async function DashboardLayout({
   children,
@@ -34,11 +39,12 @@ export default async function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-background">
+      <OfflineBanner />
       <Sidebar displayName={displayName} />
       <div className="md:pl-60">
         <TopBar displayName={displayName} email={email} />
         <main className="mx-auto max-w-6xl px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] md:px-8 md:pb-10">
-          {children}
+          <ErrorBoundary>{children}</ErrorBoundary>
         </main>
       </div>
       <MobileNav />
@@ -46,6 +52,9 @@ export default async function DashboardLayout({
       <NotificationChecker />
       <FloatingTimer />
       <DataPrefetcher />
+      <WelcomeWizard />
+      <ChangelogModal />
+      <KeyboardShortcuts />
     </div>
   );
 }

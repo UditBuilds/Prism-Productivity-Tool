@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { hapticTap } from "@/lib/haptics";
 import { renderMarkdown } from "@/lib/markdown";
 
 /** Heuristic: does this text use markdown syntax worth rendering? */
@@ -69,7 +70,10 @@ export function FlashCard({
     <div className="card-scene h-80 w-full sm:h-[22rem]">
       <button
         type="button"
-        onClick={onFlip}
+        onClick={() => {
+          hapticTap();
+          onFlip();
+        }}
         aria-label={isFlipped ? "Show question" : "Reveal answer"}
         className={cn(
           "card-3d h-full w-full cursor-pointer text-left outline-none",

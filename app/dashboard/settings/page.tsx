@@ -55,7 +55,7 @@ export default function SettingsPage() {
   const canSave = !!trimmed && trimmed !== original && !save.isPending;
 
   return (
-    <div>
+    <div className="animate-fade-up">
       <PageHeader
         title="Settings"
         subtitle="Account and preferences"

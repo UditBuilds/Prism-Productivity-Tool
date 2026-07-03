@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Circle, Repeat } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { hapticTap } from "@/lib/haptics";
 import { useUpdateTask } from "@/hooks/useTasks";
 import type { Task } from "@/types/database";
 import {
@@ -42,6 +43,7 @@ export function DueTodayRow({
 
   function markDone() {
     if (done || updateTask.isPending) return;
+    hapticTap();
     setOptimisticDone(true);
     // Send ONLY status — the API route stamps completed_at server-side.
     updateTask.mutate(

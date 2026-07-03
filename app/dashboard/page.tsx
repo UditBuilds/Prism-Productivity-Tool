@@ -211,7 +211,7 @@ export default async function DashboardHome() {
   ];
 
   return (
-    <div>
+    <div className="animate-fade-up">
       {/* Hero: the greeting anchors the page */}
       <header className="pt-2">
         <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">

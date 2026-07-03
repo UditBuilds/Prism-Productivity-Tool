@@ -1,3 +1,5 @@
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+
 export default function AuthLayout({
   children,
 }: {
@@ -5,7 +7,9 @@ export default function AuthLayout({
 }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(ellipse_at_center,#0A0A0A_0%,#050505_100%)] px-4 py-10">
-      <div className="w-full max-w-sm">{children}</div>
+      <div className="w-full max-w-sm">
+        <ErrorBoundary>{children}</ErrorBoundary>
+      </div>
     </div>
   );
 }

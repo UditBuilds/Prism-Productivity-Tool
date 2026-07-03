@@ -15,6 +15,7 @@ import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
 import { YouTubeImportModal } from "@/components/youtube/YouTubeImportModal";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
+import { PullToRefresh } from "@/components/shared/PullToRefresh";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { EmptyNotes } from "@/components/shared/EmptyStates";
 
@@ -50,7 +51,8 @@ export default function NotesPage() {
   const hasNotes = (notes?.length ?? 0) > 0;
 
   return (
-    <div>
+    <div className="animate-fade-up">
+      <PullToRefresh onRefresh={() => refetch()}>
       <PageHeader
         title="Notes"
         subtitle="Your knowledge base"
@@ -171,6 +173,7 @@ export default function NotesPage() {
         open={youtubeOpen}
         onClose={() => setYoutubeOpen(false)}
       />
+      </PullToRefresh>
     </div>
   );
 }

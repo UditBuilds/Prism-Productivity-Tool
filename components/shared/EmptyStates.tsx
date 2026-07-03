@@ -5,11 +5,14 @@ function EmptyShell({
   svg,
   title,
   subtitle,
+  hint,
   action,
 }: {
   svg: ReactNode;
   title: string;
   subtitle: string;
+  /** Optional suggestion chip rendered between subtitle and action. */
+  hint?: string;
   action?: ReactNode;
 }) {
   return (
@@ -20,7 +23,14 @@ function EmptyShell({
       <p className="mt-5 text-[15px] font-medium text-muted-foreground">
         {title}
       </p>
-      <p className="mt-1 text-[13px] text-muted-foreground/60">{subtitle}</p>
+      <p className="mt-1 max-w-xs text-[13px] text-muted-foreground/60">
+        {subtitle}
+      </p>
+      {hint && (
+        <span className="mt-3 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
+          {hint}
+        </span>
+      )}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
@@ -41,7 +51,8 @@ export function EmptyTasks({ action }: { action?: ReactNode }) {
   return (
     <EmptyShell
       title="No tasks yet"
-      subtitle="Add your first task to get started"
+      subtitle="Create your first task to start organizing your day"
+      hint="Try: 'Review weekly goals'"
       action={action}
       svg={
         <svg {...svgProps} aria-hidden>
@@ -57,7 +68,7 @@ export function EmptyNotes({ action }: { action?: ReactNode }) {
   return (
     <EmptyShell
       title="No notes yet"
-      subtitle="Capture your first idea"
+      subtitle="Write your first note — Prism can generate flashcards from it"
       action={action}
       svg={
         <svg {...svgProps} aria-hidden>
@@ -91,7 +102,7 @@ export function EmptyCards({ action }: { action?: ReactNode }) {
   return (
     <EmptyShell
       title="No flashcards yet"
-      subtitle="Upload a PDF or add cards manually"
+      subtitle="Add your first flashcard or import from a note, PDF, or YouTube video"
       action={action}
       svg={
         <svg {...svgProps} aria-hidden>
