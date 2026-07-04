@@ -290,11 +290,63 @@ body::before {
   }
 }
 
+/* Aurora backdrop (landing hero) — two drifting accent blobs, CSS only.
+   Parent must be relative + overflow-hidden; content sits above via z-index. */
+.aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.aurora::before,
+.aurora::after {
+  content: "";
+  position: absolute;
+  width: 55vw;
+  height: 55vw;
+  min-width: 480px;
+  min-height: 480px;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.22;
+  will-change: transform;
+}
+.aurora::before {
+  left: -12%;
+  top: -18%;
+  background: radial-gradient(
+    circle,
+    rgb(var(--accent-rgb)),
+    transparent 62%
+  );
+  animation: aurora-drift 20s ease-in-out infinite alternate;
+}
+.aurora::after {
+  right: -14%;
+  top: -8%;
+  background: radial-gradient(
+    circle,
+    rgb(var(--accent-soft-rgb)),
+    transparent 62%
+  );
+  animation: aurora-drift 26s ease-in-out -9s infinite alternate-reverse;
+}
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(-8%, -4%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(12%, 10%, 0) scale(1.18);
+  }
+}
+
 /* Respect reduced-motion: kill decorative animation, keep functional opacity */
 @media (prefers-reduced-motion: reduce) {
   .stagger-children > *,
   .particle-dot,
   .confetti-dot,
+  .aurora::before,
+  .aurora::after,
   .skeleton-shimmer::after {
     animation: none !important;
   }
