@@ -1,7 +1,23 @@
 import { redirect } from "next/navigation";
 
-// Root entry — middleware sends unauthenticated users to /login,
-// authenticated users land on the dashboard.
-export default function Home() {
-  redirect("/dashboard");
+import { createClient } from "@/lib/supabase/server";
+import { LandingPage } from "@/components/landing/LandingPage";
+
+export const metadata = {
+  title: "Prism — Remember everything you learn",
+  description:
+    "Tasks, notes, and AI-powered spaced repetition in one tool. Drop in a PDF, a YouTube link, or your own notes — Prism turns them into flashcards scheduled with the SM-2 algorithm.",
+};
+
+// Root entry: authenticated users go straight to the dashboard;
+// unauthenticated visitors get the landing page (middleware only guards
+// /dashboard, so / is publicly reachable).
+export default async function Home() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) redirect("/dashboard");
+  return <LandingPage />;
 }
