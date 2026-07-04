@@ -253,28 +253,11 @@ function DashboardMockup() {
 
 /* ── Trust bar ───────────────────────────────────────────────────── */
 
-function TrustBar({ stars }: { stars: number | null }) {
+function TrustBar() {
   return (
     <div className="border-y border-border/40 bg-surface/30">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-6 gap-y-2 px-6 py-4 text-xs text-muted-foreground">
-        <a
-          href={GITHUB_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 font-medium text-foreground/80 hover:text-foreground"
-        >
-          <GithubMark className="h-3.5 w-3.5" />
-          Open source
-          {stars !== null && (
-            <span className="rounded-full border border-border/70 bg-surface px-1.5 py-0.5 tabular-nums text-muted-foreground">
-              ★ {stars}
-            </span>
-          )}
-        </a>
-        <span aria-hidden className="hidden text-border sm:inline">
-          ·
-        </span>
-        <span>Built with Next.js, TypeScript, and Supabase</span>
+      <div className="mx-auto flex max-w-6xl items-center justify-center px-6 py-4 text-xs text-muted-foreground">
+        <span>Built with Next.js, TypeScript, Supabase, and Groq LLaMA 3.3 70B</span>
       </div>
     </div>
   );
@@ -638,16 +621,7 @@ function TechStack() {
   return (
     <section className="mx-auto max-w-3xl px-6 pb-24 text-center">
       <p className="text-sm text-muted-foreground">
-        Open source. Next.js 14, TypeScript, Supabase, Groq LLaMA 3.3 70B.{" "}
-        <a
-          href={GITHUB_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-medium text-accent underline-offset-4 hover:underline"
-        >
-          View on GitHub
-        </a>
-        .
+        Built with Next.js 14, TypeScript, Supabase, and Groq LLaMA 3.3 70B.
       </p>
     </section>
   );
@@ -699,13 +673,13 @@ function Footer() {
 
 /* ── Page ────────────────────────────────────────────────────────── */
 
-export function LandingPage({ stars }: { stars: number | null }) {
+export function LandingPage() {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
       <main>
         <Hero />
-        <TrustBar stars={stars} />
+        <TrustBar />
         <Features />
         <Pricing />
         <TechStack />
