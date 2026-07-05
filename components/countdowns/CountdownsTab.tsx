@@ -9,6 +9,7 @@ import { useCountdownsQuery, useDeleteCountdown } from "@/hooks/useCountdowns";
 import { Button } from "@/components/ui/button";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { ProgressBar } from "@/components/shared/ProgressBar";
 import { CountdownForm } from "./CountdownForm";
 
 const toneClass: Record<string, string> = {
@@ -68,17 +69,13 @@ export function CountdownsTab() {
                     <p className="truncate text-sm font-semibold text-foreground">
                       {c.title}
                     </p>
-                    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-accent"
-                        style={{
-                          width: `${countdownProgressPct(
-                            c.created_at,
-                            c.target_date
-                          )}%`,
-                        }}
-                      />
-                    </div>
+                    <ProgressBar
+                      className="mt-1.5"
+                      value={countdownProgressPct(c.created_at, c.target_date)}
+                      variant={
+                        display.tone === "warning" ? "warning" : "accent"
+                      }
+                    />
                   </div>
                   <span className={cn("shrink-0 text-sm", toneClass[display.tone])}>
                     {display.label}

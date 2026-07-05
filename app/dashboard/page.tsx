@@ -6,7 +6,6 @@ import {
   Bell,
   Coffee,
   AlertCircle,
-  type LucideIcon,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
@@ -24,26 +23,10 @@ import type { Countdown, Reminder, Task } from "@/types/database";
 import { MoodWidget } from "@/components/dashboard/MoodWidget";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
-
-/**
- * SVG polyline points for a small sparkline (values oldest→newest). The 100×24
- * viewBox stretches to the container (preserveAspectRatio="none"); the caller's
- * vector-effect keeps the stroke undistorted. All-zero values → flat baseline.
- */
-function sparklinePoints(values: number[]): string {
-  const W = 100;
-  const H = 24;
-  const PAD = 3; // keeps the line off the top/bottom edges
-  const max = Math.max(...values, 1); // avoid /0; a flat-zero week sits on the baseline
-  const stepX = values.length > 1 ? W / (values.length - 1) : 0;
-  return values
-    .map((v, i) => {
-      const x = i * stepX;
-      const y = H - PAD - (v / max) * (H - 2 * PAD);
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
+import { StatCard } from "@/components/shared/StatCard";
+import { SectionHeader } from "@/components/shared/SectionHeader";
+import { ProgressBar } from "@/components/shared/ProgressBar";
+import { EmptyState } from "@/components/shared/EmptyState";
 
 export const metadata = { title: "Dashboard | Prism" };
 
@@ -187,30 +170,6 @@ export default async function DashboardHome() {
   }
   const doneSparkline = dayKeys.map((k) => doneByDay.get(k) ?? 0);
 
-  const stats: {
-    label: string;
-    value: number;
-    icon: LucideIcon;
-    sparkline?: number[];
-    variant: "due" | "done" | "cards" | "reminders";
-  }[] = [
-    { label: "Due Today", value: dueCount, icon: CalendarClock, variant: "due" },
-    {
-      label: "Done This Week",
-      value: completedCount,
-      icon: CheckCircle2,
-      sparkline: doneSparkline,
-      variant: "done",
-    },
-    { label: "Cards to Review", value: cardsCount, icon: Brain, variant: "cards" },
-    {
-      label: "Reminders Today",
-      value: remindersTodayCount,
-      icon: Bell,
-      variant: "reminders",
-    },
-  ];
-
   return (
     <div className="animate-fade-up">
       {/* Hero: the greeting anchors the page */}
@@ -236,145 +195,74 @@ export default async function DashboardHome() {
 
       {/* Stats */}
       <section className="stagger-children mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {stats.map(({ label, value, icon: Icon, sparkline, variant }) => {
-          const active = value > 0;
-          return (
-            <div
-              key={label}
-              className={cn(
-                "cursor-default rounded-xl border border-border bg-surface p-4 transition-[transform,border-color,background-color,box-shadow] duration-200 hover:scale-[1.01] hover:border-accent/30 hover:bg-surface-raised/60 hover:shadow-lift",
-                variant === "due" && active && "animate-pulse-ring",
-                variant === "cards" && active && "border-warning/25"
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                  {label}
-                </span>
-                <Icon
-                  className={cn(
-                    "h-4 w-4 shrink-0",
-                    !active && "text-muted-foreground/40",
-                    active && variant === "cards" && "animate-breathe text-accent",
-                    active &&
-                      variant === "reminders" &&
-                      "animate-bell-ring-loop text-accent",
-                    active &&
-                      (variant === "due" || variant === "done") &&
-                      "text-accent/70"
-                  )}
-                />
-              </div>
-              <p
-                className={cn(
-                  "mt-2 text-3xl font-bold tabular-nums tracking-tight",
-                  variant === "done" && active
-                    ? "bg-gradient-to-r from-accent to-emerald-400 bg-clip-text text-transparent"
-                    : "text-white"
-                )}
-              >
-                {value}
-              </p>
-              {sparkline && (
-                <svg
-                  viewBox="0 0 100 24"
-                  preserveAspectRatio="none"
-                  aria-hidden
-                  className="mt-2 h-6 w-full"
-                >
-                  <defs>
-                    <linearGradient id="spark-stroke" x1="0" y1="0" x2="1" y2="0">
-                      <stop
-                        offset="0%"
-                        style={{
-                          stopColor: "rgb(var(--accent-rgb))",
-                          stopOpacity: 0.35,
-                        }}
-                      />
-                      <stop
-                        offset="100%"
-                        style={{
-                          stopColor: "rgb(var(--accent-soft-rgb))",
-                          stopOpacity: 1,
-                        }}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <polyline
-                    points={sparklinePoints(sparkline)}
-                    fill="none"
-                    stroke="url(#spark-stroke)"
-                    strokeWidth={1.5}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </svg>
-              )}
-            </div>
-          );
-        })}
+        <StatCard
+          label="Due Today"
+          value={dueCount}
+          icon={CalendarClock}
+          pulse={dueCount > 0}
+          iconClassName={dueCount > 0 ? "text-accent/70" : undefined}
+        />
+        <StatCard
+          label="Done This Week"
+          value={completedCount}
+          icon={CheckCircle2}
+          sparkline={doneSparkline}
+          valueVariant={completedCount > 0 ? "gradient-success" : "default"}
+          iconClassName={completedCount > 0 ? "text-accent/70" : undefined}
+        />
+        <StatCard
+          label="Cards to Review"
+          value={cardsCount}
+          icon={Brain}
+          iconClassName={
+            cardsCount > 0 ? "animate-breathe text-accent" : undefined
+          }
+          className={cardsCount > 0 ? "border-warning/25" : undefined}
+        />
+        <StatCard
+          label="Reminders Today"
+          value={remindersTodayCount}
+          icon={Bell}
+          iconClassName={
+            remindersTodayCount > 0
+              ? "animate-bell-ring-loop text-accent"
+              : undefined
+          }
+        />
       </section>
 
       {/* Due Today */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="h-5 w-0.5 self-center rounded-full bg-accent"
-          />
-          <h2 className="text-gradient text-base font-semibold">Due Today</h2>
-          {dueCount > 0 && (
-            <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
-              {dueCount}
-            </span>
-          )}
-          <Link
-            href="/dashboard/tasks"
-            className="group ml-auto text-sm font-medium text-accent hover:text-accent-hover"
-          >
-            View all{" "}
-            <span
-              aria-hidden
-              className="inline-block transition-transform group-hover:translate-x-0.5"
-            >
-              →
-            </span>
-          </Link>
-        </div>
+        <SectionHeader
+          title="Due Today"
+          count={dueCount}
+          href="/dashboard/tasks"
+          accentBar
+        />
 
         {dueError ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-raised">
-              <AlertCircle className="h-5 w-5 text-danger" />
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Couldn&apos;t load today&apos;s tasks. Try refreshing.
-            </p>
-          </div>
+          <EmptyState
+            icon={AlertCircle}
+            title="Couldn't load today's tasks"
+            description="Try refreshing."
+            compact
+          />
         ) : dueTasks.length === 0 ? (
-          <div className="relative flex flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
-            {/* Ambient floating dots — pure CSS celebration of an empty list */}
-            <span aria-hidden className="particle-dot" style={{ left: "18%", bottom: "20%" }} />
-            <span aria-hidden className="particle-dot" style={{ left: "36%", bottom: "10%", animationDelay: "0.9s" }} />
-            <span aria-hidden className="particle-dot" style={{ left: "62%", bottom: "16%", animationDelay: "1.7s" }} />
-            <span aria-hidden className="particle-dot" style={{ left: "82%", bottom: "24%", animationDelay: "2.4s" }} />
-            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-raised">
-              <Coffee className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="mt-3 text-sm font-medium text-foreground">
-              All clear for today
-            </p>
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              Nothing due — a good day to get ahead.
-            </p>
-            <Link
-              href="/dashboard/tasks"
-              className="mt-3 text-xs font-medium text-accent hover:text-accent-hover"
-            >
-              Add a task →
-            </Link>
-          </div>
+          <EmptyState
+            icon={Coffee}
+            title="All clear for today"
+            description="Nothing due — a good day to get ahead."
+            particles
+            compact
+            action={
+              <Link
+                href="/dashboard/tasks"
+                className="text-xs font-medium text-accent hover:text-accent-hover"
+              >
+                Add a task →
+              </Link>
+            }
+          />
         ) : (
           <ul className="stagger-children space-y-2">
               {dueTasks.map((task) => {
@@ -393,40 +281,41 @@ export default async function DashboardHome() {
 
       {/* Upcoming countdowns */}
       <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="h-5 w-0.5 self-center rounded-full bg-accent"
-          />
-          <h2 className="text-gradient text-base font-semibold">Upcoming</h2>
-          <Link
-            href="/dashboard/reminders"
-            className="ml-auto text-sm font-medium text-accent hover:text-accent-hover"
-          >
-            + Add countdown
-          </Link>
-        </div>
+        <SectionHeader
+          title="Upcoming"
+          accentBar
+          action={
+            <Link
+              href="/dashboard/reminders"
+              className="text-sm font-medium text-accent hover:text-accent-hover"
+            >
+              + Add countdown
+            </Link>
+          }
+        />
 
         {upcomingItems.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-surface p-6 text-center">
-            <p className="mb-3 text-sm text-muted-foreground">
-              Nothing coming up
-            </p>
-            <div className="flex justify-center gap-2">
-              <Link
-                href="/dashboard/reminders"
-                className="rounded-lg bg-accent-gradient px-4 py-2 text-sm font-medium text-white shadow-glow-accent-sm hover:bg-accent-gradient-hover"
-              >
-                + Add countdown
-              </Link>
-              <Link
-                href="/dashboard/tasks"
-                className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground hover:border-accent/30 hover:bg-surface-raised"
-              >
-                + Add task
-              </Link>
-            </div>
-          </div>
+          <EmptyState
+            icon={CalendarClock}
+            title="Nothing coming up"
+            compact
+            action={
+              <div className="flex justify-center gap-2">
+                <Link
+                  href="/dashboard/reminders"
+                  className="rounded-lg bg-accent-gradient px-4 py-2 text-sm font-medium text-white shadow-glow-accent-sm hover:bg-accent-gradient-hover"
+                >
+                  + Add countdown
+                </Link>
+                <Link
+                  href="/dashboard/tasks"
+                  className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground hover:border-accent/30 hover:bg-surface-raised"
+                >
+                  + Add task
+                </Link>
+              </div>
+            }
+          />
         ) : (
           <ul className="stagger-children grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
               {upcomingItems.map((item) => {
@@ -437,7 +326,7 @@ export default async function DashboardHome() {
                     display.tone === "accent"
                       ? "text-accent font-semibold"
                       : display.tone === "warning"
-                        ? "text-amber-400 font-medium"
+                        ? "text-warning font-medium"
                         : display.tone === "dimmed"
                           ? "text-muted-foreground/50"
                           : "text-muted-foreground";
@@ -456,22 +345,16 @@ export default async function DashboardHome() {
                         <p className="truncate text-sm font-semibold text-foreground">
                           {c.title}
                         </p>
-                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={cn(
-                              "h-full rounded-full",
-                              display.tone === "warning"
-                                ? "bg-warning-gradient"
-                                : "bg-accent-gradient"
-                            )}
-                            style={{
-                              width: `${countdownProgressPct(
-                                c.created_at,
-                                c.target_date
-                              )}%`,
-                            }}
-                          />
-                        </div>
+                        <ProgressBar
+                          className="mt-1.5"
+                          value={countdownProgressPct(
+                            c.created_at,
+                            c.target_date
+                          )}
+                          variant={
+                            display.tone === "warning" ? "warning" : "accent"
+                          }
+                        />
                       </div>
                       <span className={cn("shrink-0 text-xs", toneClass)}>
                         {display.label}
@@ -488,7 +371,7 @@ export default async function DashboardHome() {
                   display.tone === "danger"
                     ? "text-danger font-medium"
                     : display.tone === "warning"
-                      ? "text-amber-400 font-medium"
+                      ? "text-warning font-medium"
                       : "text-muted-foreground";
                 return (
                   <li

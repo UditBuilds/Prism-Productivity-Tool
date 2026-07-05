@@ -87,7 +87,7 @@ function CompareTile({
       <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-bold tracking-tight text-white">
+      <p className="mt-2 text-2xl font-bold tracking-tight text-foreground">
         {format(current)}
       </p>
       <p

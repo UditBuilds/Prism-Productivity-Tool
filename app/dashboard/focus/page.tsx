@@ -30,6 +30,8 @@ import { ManageCategoriesModal } from "@/components/focus/ManageCategoriesModal"
 import { fireFocusCompletionFeedback } from "@/components/focus/FloatingTimer";
 import type { FocusCategory } from "@/types/database";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { SectionHeader } from "@/components/shared/SectionHeader";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -355,9 +357,7 @@ function IdleView() {
 
       {/* Recent sessions */}
       <div className="mt-10">
-        <h2 className="text-gradient mb-3 text-base font-semibold">
-          Recent sessions
-        </h2>
+        <SectionHeader title="Recent sessions" />
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -365,10 +365,12 @@ function IdleView() {
             ))}
           </div>
         ) : (recent?.length ?? 0) === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-muted-foreground">
-            Start your first focus session to track deep work — your history
-            will appear here.
-          </p>
+          <EmptyState
+            icon={Timer}
+            title="No sessions yet"
+            description="Start your first focus session to track deep work — your history will appear here."
+            compact
+          />
         ) : (
           <ul className="stagger-children space-y-2">
             {recent?.map((s) => {
@@ -376,7 +378,7 @@ function IdleView() {
               return (
                 <li
                   key={s.id}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm transition-colors hover:border-[#2A2A2A]"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm transition-colors hover:border-border-col"
                 >
                   <span aria-hidden>{cat?.emoji ?? "🎯"}</span>
                   <span className="font-medium text-foreground">
@@ -495,7 +497,7 @@ function RunningView() {
           )}
           <div className="flex flex-col items-center">
             <span
-              className="text-7xl font-bold tabular-nums tracking-tight text-white"
+              className="text-7xl font-bold tabular-nums tracking-tight text-foreground"
               style={{ textShadow: "0 0 32px rgb(var(--accent-rgb) / 0.45)" }}
             >
               {formatClock(elapsedSeconds)}
@@ -579,7 +581,7 @@ function RunningView() {
           <span
             className={cn(
               "absolute text-7xl font-bold tabular-nums tracking-tight",
-              lowTime ? "text-amber-300" : "text-white"
+              lowTime ? "text-amber-300" : "text-foreground"
             )}
             style={{
               textShadow: lowTime

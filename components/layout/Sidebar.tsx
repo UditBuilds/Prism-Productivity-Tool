@@ -6,9 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, type LucideIcon } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
-import { cn, getInitials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { navItems, isNavActive } from "./nav-config";
 import { NavBadge, useNavBadgeCounts } from "./NavBadges";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 
 /**
  * One sidebar nav row, memoized. Props are primitives (the specific badge
@@ -75,7 +76,7 @@ export function Sidebar({ displayName }: { displayName: string }) {
   }
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-border bg-[#0D0D0D] md:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-border bg-background md:flex">
       <div className="flex h-16 items-center border-b border-border/60 px-6">
         <Link
           href="/dashboard"
@@ -113,9 +114,7 @@ export function Sidebar({ displayName }: { displayName: string }) {
 
       <div className="mt-auto border-t border-border/60 p-3 pt-3">
         <div className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-surface-raised">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent shadow-glow-accent-sm ring-1 ring-accent/30">
-            {getInitials(displayName)}
-          </div>
+          <UserAvatar name={displayName} glow />
           <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
             {displayName}
           </p>

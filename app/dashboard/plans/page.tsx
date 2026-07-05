@@ -15,6 +15,7 @@ import { PlanList, type PlanTaskStat } from "@/components/plans/PlanList";
 import { PlanForm } from "@/components/plans/PlanForm";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
+import { PullToRefresh } from "@/components/shared/PullToRefresh";
 import { EmptyState } from "@/components/shared/EmptyState";
 
 type Filter = "all" | PlanStatus;
@@ -88,6 +89,7 @@ export default function PlansPage() {
 
   return (
     <div className="animate-fade-up">
+      <PullToRefresh onRefresh={() => refetch()}>
       <PageHeader
         title="Plans"
         subtitle="Goals and projects"
@@ -162,6 +164,7 @@ export default function PlansPage() {
       </div>
 
       <PlanForm />
+      </PullToRefresh>
     </div>
   );
 }

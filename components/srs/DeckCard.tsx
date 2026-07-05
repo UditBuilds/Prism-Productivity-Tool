@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { DeckStat } from "@/hooks/useSRS";
 import { useUIStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
+import { ProgressBar } from "@/components/shared/ProgressBar";
 
 export function DeckCard({
   deck,
@@ -73,12 +74,7 @@ export function DeckCard({
           <span>Reviewed last: {lastReviewed}</span>
           <span className="tabular-nums">{pct}%</span>
         </div>
-        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-accent-gradient transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+        <ProgressBar className="mt-1.5" value={pct} size="sm" />
       </div>
 
       <div className="mt-4">

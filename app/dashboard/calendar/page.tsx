@@ -17,6 +17,7 @@ import { useCalendarMonth } from "@/hooks/useCalendar";
 import type { CalendarDayItems } from "@/app/api/calendar/route";
 import { priorityStyles } from "@/components/tasks/task-styles";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { SectionHeader } from "@/components/shared/SectionHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -133,11 +134,11 @@ export default function CalendarPage() {
         {/* Month grid card */}
         <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
           {/* Month navigation */}
-          <div className="mb-4 flex items-center gap-1">
-            <h2 className="text-gradient text-base font-semibold">
-              {monthLabel(month)}
-            </h2>
-            <div className="ml-auto flex items-center gap-1">
+          <SectionHeader
+            title={monthLabel(month)}
+            className="mb-4"
+            action={
+              <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
@@ -162,8 +163,9 @@ export default function CalendarPage() {
               >
                 <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </button>
-            </div>
-          </div>
+              </div>
+            }
+          />
 
           {/* Weekday headers */}
           <div className="grid grid-cols-7 text-center">
@@ -219,7 +221,7 @@ export default function CalendarPage() {
                       <span
                         className={cn(
                           "h-1.5 w-1.5 rounded-full",
-                          isSelected ? "bg-accent-foreground/60" : "bg-amber-400"
+                          isSelected ? "bg-accent-foreground/60" : "bg-warning"
                         )}
                       />
                     )}
@@ -236,7 +238,7 @@ export default function CalendarPage() {
               Tasks
             </span>
             <span className="flex items-center gap-1.5">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />
               Reminders
             </span>
           </div>
@@ -295,25 +297,25 @@ function DayDetails({
       </h3>
 
       {!hasTasks && !hasReminders ? (
-        <div className="flex flex-col items-center py-8 text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-raised">
-            <CalendarIcon className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <p className="mt-3 text-sm font-medium text-foreground">
-            Nothing scheduled
-          </p>
-          <p className="mt-1 text-[13px] text-muted-foreground">
-            {monthIsEmpty
+        <EmptyState
+          icon={CalendarIcon}
+          title="Nothing scheduled"
+          description={
+            monthIsEmpty
               ? "This month is wide open."
-              : "No tasks or reminders on this day."}
-          </p>
-          <Link
-            href="/dashboard/tasks"
-            className="mt-3 text-xs font-medium text-accent hover:text-accent-hover"
-          >
-            Add a task →
-          </Link>
-        </div>
+              : "No tasks or reminders on this day."
+          }
+          compact
+          className="mt-4 border-none bg-transparent"
+          action={
+            <Link
+              href="/dashboard/tasks"
+              className="text-xs font-medium text-accent hover:text-accent-hover"
+            >
+              Add a task →
+            </Link>
+          }
+        />
       ) : (
         <div className="mt-4 space-y-5">
           {hasTasks && items && (

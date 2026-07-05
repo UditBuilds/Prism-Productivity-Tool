@@ -45,8 +45,8 @@ export function NotificationNudge() {
   if (!show) return null;
 
   return (
-    <div className="mt-4 flex animate-fade-up items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-      <Bell className="h-5 w-5 shrink-0 text-amber-400" aria-hidden />
+    <div className="mt-4 flex animate-fade-up items-center gap-3 rounded-xl border border-warning/20 bg-warning/5 px-4 py-3">
+      <Bell className="h-5 w-5 shrink-0 text-warning" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">
           Enable notifications

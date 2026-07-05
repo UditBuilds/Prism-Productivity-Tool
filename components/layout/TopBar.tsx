@@ -6,7 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { Bell, Calendar, CalendarCheck, LogOut, User } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
-import { cn, getInitials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import { useUpcomingReminders } from "@/hooks/useReminders";
 import {
   DropdownMenu,
@@ -137,9 +138,9 @@ export function TopBar({
           <DropdownMenuTrigger asChild>
             <button
               aria-label="Account menu"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent shadow-glow-accent-sm outline-none ring-1 ring-accent/30 ring-offset-background focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+              className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
             >
-              {getInitials(displayName)}
+              <UserAvatar name={displayName} glow />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">

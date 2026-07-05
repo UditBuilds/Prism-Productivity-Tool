@@ -8,6 +8,7 @@ import { useUIStore } from "@/store/ui.store";
 import { useDeletePlan } from "@/hooks/usePlans";
 import type { Plan } from "@/types/database";
 import { planStatusLabel, planStatusStyles } from "./plan-styles";
+import { ProgressBar } from "@/components/shared/ProgressBar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,28 +105,16 @@ export function PlanCard({
             </span>
           )}
         </div>
-        <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all",
-              // Completion trends violet → emerald as the plan fills up
-              pct === 100
-                ? "bg-success-gradient"
-                : pct >= 60
-                  ? "bg-gradient-to-r from-accent to-emerald-400"
-                  : "bg-accent-gradient"
-            )}
-            style={{
-              width: `${pct}%`,
-              ...(pct > 0 && {
-                boxShadow:
-                  pct === 100
-                    ? "0 0 6px rgb(16 185 129 / 0.5)"
-                    : "0 0 6px rgb(var(--accent-rgb) / 0.5)",
-              }),
-            }}
-          />
-        </div>
+        {/* Completion trends violet → emerald as the plan fills up */}
+        <ProgressBar
+          className="mt-1.5"
+          value={pct}
+          size="md"
+          glow
+          variant={
+            pct === 100 ? "success" : pct >= 60 ? "accent-emerald" : "accent"
+          }
+        />
         <p className="mt-1.5 text-xs text-muted-foreground/60">
           {taskCount === 0
             ? "No tasks linked yet"

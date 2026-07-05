@@ -21,7 +21,11 @@ import { moodOption } from "@/components/dashboard/moods";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { StatCard } from "@/components/shared/StatCard";
+import { SectionHeader } from "@/components/shared/SectionHeader";
+import { ProgressBar } from "@/components/shared/ProgressBar";
 
 function fmtMinutes(min: number): string {
   if (min < 60) return `${min}m`;
@@ -51,29 +55,16 @@ export default function WeeklyReviewPage() {
         subtitle="How your week actually went"
         icon={CalendarCheck}
         actions={
-          <div className="flex rounded-lg border border-border bg-surface p-0.5">
-            {(
-              [
-                { value: "previous", label: "Last week" },
-                { value: "current", label: "This week" },
-              ] as { value: ReviewWeek; label: string }[]
-            ).map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setWeek(opt.value)}
-                aria-pressed={week === opt.value}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium",
-                  week === opt.value
-                    ? "bg-surface-raised text-foreground shadow-sm shadow-black/40"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          <Tabs value={week} onValueChange={(v) => setWeek(v as ReviewWeek)}>
+            <TabsList className="h-9">
+              <TabsTrigger value="previous" className="px-2.5 text-xs">
+                Last week
+              </TabsTrigger>
+              <TabsTrigger value="current" className="px-2.5 text-xs">
+                This week
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         }
       />
 
@@ -173,17 +164,13 @@ function ReviewContent({
       {/* Summary strip */}
       <div className="stagger-children grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpis.map((kpi) => (
-          <div
+          <StatCard
             key={kpi.label}
-            className="rounded-xl border border-border bg-surface p-4 transition-[transform,border-color,box-shadow] duration-200 hover:scale-[1.01] hover:border-accent/30 hover:shadow-lift"
-          >
-            <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
-              {kpi.label}
-            </p>
-            <p className="text-gradient mt-2 text-2xl font-bold tabular-nums tracking-tight">
-              {kpi.value}
-            </p>
-          </div>
+            label={kpi.label}
+            value={kpi.value}
+            valueVariant="gradient"
+            size="md"
+          />
         ))}
       </div>
 
@@ -197,9 +184,7 @@ function ReviewContent({
 
       {/* Mon–Sun daily strip — the heart of the page */}
       <section>
-        <h2 className="text-gradient mb-3 border-l-2 border-accent pl-3 text-base font-semibold">
-          Day by day
-        </h2>
+        <SectionHeader title="Day by day" accentBar />
         <ul className="stagger-children space-y-2">
           {days.map((day) => {
             const isBest = bestDay?.date === day.date;
@@ -267,14 +252,11 @@ function ReviewContent({
 
                 {/* Focus bar, scaled to the week's max */}
                 {!day.isFuture && (
-                  <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted/60">
-                    <div
-                      className="h-full rounded-full bg-accent-gradient opacity-80"
-                      style={{
-                        width: `${(day.focusMinutes / maxFocus) * 100}%`,
-                      }}
-                    />
-                  </div>
+                  <ProgressBar
+                    className="mt-2 bg-muted/60"
+                    value={(day.focusMinutes / maxFocus) * 100}
+                    fillClassName="opacity-80"
+                  />
                 )}
               </li>
             );
@@ -309,15 +291,12 @@ function ReviewContent({
                     {slice.percentage}%
                   </span>
                 </div>
-                <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted/60">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${slice.percentage}%`,
-                      backgroundColor: categoryChartColor(slice.category),
-                    }}
-                  />
-                </div>
+                <ProgressBar
+                  className="mt-1.5 bg-muted/60"
+                  value={slice.percentage}
+                  variant="category"
+                  color={categoryChartColor(slice.category)}
+                />
               </li>
             ))}
           </ul>
@@ -382,7 +361,7 @@ function HighlightCard({
         )}
         {isBest ? "Strongest day" : "Quietest day"}
       </p>
-      <p className="mt-2 text-lg font-bold text-white">{day.dayLabel}</p>
+      <p className="mt-2 text-lg font-bold text-foreground">{day.dayLabel}</p>
       <p className="mt-0.5 text-[13px] text-muted-foreground">
         {stats.length > 0 ? stats.join(" · ") : "Light activity"}
       </p>

@@ -8,7 +8,6 @@ import toast from "react-hot-toast";
 import { Plus, Upload, Brain, Layers, Flame, CalendarClock, AlertCircle } from "lucide-react";
 
 import { istDayContext } from "@/lib/date";
-import { cn } from "@/lib/utils";
 import { useAllCards, useDeckStats, useAnalytics } from "@/hooks/useSRS";
 import { useNotesQuery } from "@/hooks/useNotes";
 import { useUIStore } from "@/store/ui.store";
@@ -16,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { StatCard } from "@/components/shared/StatCard";
+import { SectionHeader } from "@/components/shared/SectionHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { EmptyCards } from "@/components/shared/EmptyStates";
 import { DeckCard } from "@/components/srs/DeckCard";
@@ -102,16 +103,6 @@ export function LearnClient({ streak }: { streak: number }) {
     }
   }, [analytics?.freeze_applied, analytics?.streak_freezes]);
 
-  const stats = [
-    { label: "Total Cards", value: total, icon: Layers },
-    { label: "Due Today", value: dueToday, icon: CalendarClock },
-    {
-      label: "Streak",
-      value: streakValue === 1 ? "1 day" : `${streakValue} days`,
-      icon: Flame,
-    },
-  ];
-
   return (
     <div className="animate-fade-up">
       <PageHeader
@@ -146,54 +137,41 @@ export function LearnClient({ streak }: { streak: number }) {
         <TabsContent value="decks">
       {/* Stats banner */}
       <section className="stagger-children mt-5 grid grid-cols-3 gap-3">
-        {stats.map(({ label, value, icon: Icon }) => {
-          const isStreak = label === "Streak";
-          const streakActive = isStreak && streakValue > 0;
-          return (
-            <div
-              key={label}
-              className="rounded-xl border border-border bg-surface p-4 transition-[transform,border-color,box-shadow] duration-200 hover:scale-[1.01] hover:border-accent/30 hover:shadow-lift"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground sm:text-sm">
-                  {label}
-                </span>
-                <Icon
-                  className={cn(
-                    "h-4 w-4",
-                    streakActive
-                      ? "animate-flicker text-orange-400 drop-shadow-[0_0_6px_rgb(251_146_60/0.55)]"
-                      : "text-muted-foreground"
-                  )}
-                />
-              </div>
+        <StatCard label="Total Cards" value={total} icon={Layers} size="md" />
+        <StatCard
+          label="Due Today"
+          value={dueToday}
+          icon={CalendarClock}
+          size="md"
+        />
+        <StatCard
+          label="Streak"
+          value={streakValue === 1 ? "1 day" : `${streakValue} days`}
+          icon={Flame}
+          size="md"
+          valueVariant={streakValue > 0 ? "gradient" : "default"}
+          iconClassName={
+            streakValue > 0
+              ? "animate-flicker text-warning drop-shadow-[0_0_6px_hsl(var(--warning)/0.55)]"
+              : undefined
+          }
+          subtitle={
+            streakFreezes !== undefined && streakFreezes < 3 ? (
               <p
-                className={cn(
-                  "mt-2 text-2xl font-semibold",
-                  streakActive ? "text-gradient" : "text-foreground"
-                )}
+                className={`mt-1 text-xs ${
+                  streakFreezes === 0
+                    ? "text-destructive"
+                    : "text-accent-soft/90 drop-shadow-[0_0_5px_rgb(var(--accent-soft-rgb)/0.4)]"
+                }`}
               >
-                {value}
+                🛡️{" "}
+                {streakFreezes === 0
+                  ? "0 freezes"
+                  : `${streakFreezes} freeze left`}
               </p>
-              {isStreak &&
-                streakFreezes !== undefined &&
-                streakFreezes < 3 && (
-                  <p
-                    className={`mt-1 text-xs ${
-                      streakFreezes === 0
-                        ? "text-destructive"
-                        : "text-cyan-300/90 drop-shadow-[0_0_5px_rgb(103_232_249/0.4)]"
-                    }`}
-                  >
-                    🛡️{" "}
-                    {streakFreezes === 0
-                      ? "0 freezes"
-                      : `${streakFreezes} freeze left`}
-                  </p>
-                )}
-            </div>
-          );
-        })}
+            ) : undefined
+          }
+        />
       </section>
 
       {/* Review All Due */}
@@ -217,7 +195,7 @@ export function LearnClient({ streak }: { streak: number }) {
 
       {/* Deck list */}
       <div className="mt-8">
-        <h2 className="text-gradient mb-3 text-base font-semibold">Decks</h2>
+        <SectionHeader title="Decks" />
         {isLoading ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (

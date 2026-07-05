@@ -9,6 +9,8 @@ import { useDueCards, useSubmitReview } from "@/hooks/useSRS";
 import { useUIStore } from "@/store/ui.store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { ProgressBar } from "@/components/shared/ProgressBar";
 import { FlashCard } from "@/components/srs/FlashCard";
 import { RatingButtons } from "@/components/srs/RatingButtons";
 import { RATING_OPTIONS } from "@/components/srs/ratings";
@@ -117,41 +119,37 @@ function ReviewSession() {
 
   if (isError) {
     return (
-      <div className="mx-auto flex max-w-md flex-col items-center justify-center rounded-2xl border border-border bg-surface px-6 py-16 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-danger/30 bg-danger/10">
-          <AlertCircle className="h-6 w-6 text-danger" />
-        </div>
-        <p className="mt-5 text-base font-medium text-foreground">
-          Couldn&apos;t load cards
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Something went wrong fetching this deck.
-        </p>
-        <div className="mt-6 flex gap-2">
-          <Button variant="outline" onClick={() => refetch()}>
-            Try again
-          </Button>
-          <BackToLearn />
-        </div>
-      </div>
+      <EmptyState
+        icon={AlertCircle}
+        title="Couldn't load cards"
+        description="Something went wrong fetching this deck."
+        className="mx-auto max-w-md"
+        action={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => refetch()}>
+              Try again
+            </Button>
+            <BackToLearn />
+          </div>
+        }
+      />
     );
   }
 
   // --- Nothing due ---
   if (sessionCards.length === 0) {
     return (
-      <div className="mx-auto flex max-w-md flex-col items-center justify-center rounded-2xl border border-border bg-surface px-6 py-16 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-success/30 bg-success/10">
-          <CheckCircle2 className="h-6 w-6 text-success" />
-        </div>
-        <p className="mt-5 text-lg font-semibold text-foreground">All caught up</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {deck
+      <EmptyState
+        icon={CheckCircle2}
+        title="All caught up"
+        description={
+          deck
             ? `No cards are due in "${deck}" right now.`
-            : "You have no reviews due. Check back later."}
-        </p>
-        <BackToLearn className="mt-6" />
-      </div>
+            : "You have no reviews due. Check back later."
+        }
+        className="mx-auto max-w-md"
+        action={<BackToLearn />}
+      />
     );
   }
 
@@ -261,12 +259,12 @@ function ReviewSession() {
             </span>
           )}
         </div>
-        <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-accent via-accent-soft to-emerald-400 transition-[width] duration-300 ease-out"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
+        <ProgressBar
+          className="mt-2.5"
+          value={progressPct}
+          variant="review-gradient"
+          fillClassName="transition-[width] duration-300 ease-out"
+        />
       </div>
 
       {/* Card */}
@@ -280,7 +278,7 @@ function ReviewSession() {
       </div>
 
       {/* Controls — sticky to the thumb zone (above the bottom nav) on mobile */}
-      <div className="sticky bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-20 -mx-4 mt-6 min-h-[5rem] border-t border-[#1A1A1A] bg-background/95 px-4 py-4 backdrop-blur-sm sm:static sm:mx-0 sm:border-none sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+      <div className="sticky bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-20 -mx-4 mt-6 min-h-[5rem] border-t border-border bg-background/95 px-4 py-4 backdrop-blur-sm sm:static sm:mx-0 sm:border-none sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
         {isFlipped ? (
           <RatingButtons card={card} onRate={handleRate} />
         ) : (
