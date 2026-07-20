@@ -241,12 +241,18 @@ export function useRecurringTemplatesQuery() {
   });
 }
 
+export const stopRecurringTemplateMutationOptions = {
+  mutationKey: ["recurring-tasks", "stop"] as const,
+  mutationFn: (id: string) =>
+    requestRecurring<{ id: string }>("PATCH", { id }),
+};
+
 /** Deactivate a template by id (no task instance required, unlike the
  *  TaskCard "Stop repeating" action which goes through an instance). */
 export function useStopRecurringTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => requestRecurring<{ id: string }>("PATCH", { id }),
+    ...stopRecurringTemplateMutationOptions,
     onError: (err) =>
       toast.error(
         err instanceof Error ? err.message : "Failed to stop recurring task"

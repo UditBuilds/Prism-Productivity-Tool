@@ -4,6 +4,7 @@ import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import {
   createTaskMutationOptions,
   deleteTaskMutationOptions,
+  stopRecurringTemplateMutationOptions,
   updateTaskMutationOptions,
 } from "@/hooks/useTasks";
 import {
@@ -43,6 +44,7 @@ const RESUMABLE_MUTATION_KEYS: ReadonlyArray<MutationKey> = [
   createTaskMutationOptions.mutationKey,
   updateTaskMutationOptions.mutationKey,
   deleteTaskMutationOptions.mutationKey,
+  stopRecurringTemplateMutationOptions.mutationKey,
   createNoteMutationOptions.mutationKey,
   updateNoteMutationOptions.mutationKey,
   deleteNoteMutationOptions.mutationKey,
@@ -96,6 +98,12 @@ export function registerResumableMutations(qc: QueryClient): void {
       void qc.invalidateQueries({ queryKey: ["recurring-tasks"] });
       invalidateDerivedCaches(qc, "tasks");
     },
+  });
+
+  qc.setMutationDefaults(stopRecurringTemplateMutationOptions.mutationKey, {
+    mutationFn: stopRecurringTemplateMutationOptions.mutationFn,
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: ["recurring-tasks"] }),
   });
 
   qc.setMutationDefaults(createNoteMutationOptions.mutationKey, {
