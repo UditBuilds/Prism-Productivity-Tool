@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskList } from "@/components/tasks/TaskList";
 import { TaskForm } from "@/components/tasks/TaskForm";
+import { RecurringTasksStrip } from "@/components/tasks/RecurringTasksStrip";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { PullToRefresh } from "@/components/shared/PullToRefresh";
@@ -139,6 +140,8 @@ export default function TasksPage() {
           ))}
         </TabsList>
       </Tabs>
+
+      <RecurringTasksStrip />
 
       <div className="mt-5">
         {isLoading ? (

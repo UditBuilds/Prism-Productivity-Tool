@@ -124,6 +124,16 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
   clearCompleted: () => set({ justCompleted: false, sessionId: null }),
 }));
 
+const initialFocusState = useFocusStore.getState();
+
+/**
+ * Full reset on logout — without it, one user's still-running timer (and its
+ * focus_sessions row id) would keep ticking into the next account's session.
+ */
+export function resetFocusStore(): void {
+  useFocusStore.setState(initialFocusState, true);
+}
+
 /** mm:ss display for a seconds value. */
 export function formatClock(seconds: number): string {
   const m = Math.floor(seconds / 60);

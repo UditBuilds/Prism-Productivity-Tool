@@ -144,3 +144,13 @@ export const useUIStore = create<UIState>((set) => ({
   openPdfModal: () => set({ pdfModalOpen: true }),
   closePdfModal: () => set({ pdfModalOpen: false }),
 }));
+
+const initialUIState = useUIStore.getState();
+
+/**
+ * Back to a blank slate on logout — editingTask/editingNote/sessionCards etc.
+ * hold real user rows and must not survive into another account's session.
+ */
+export function resetUIStore(): void {
+  useUIStore.setState(initialUIState, true);
+}

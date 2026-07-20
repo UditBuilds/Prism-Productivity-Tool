@@ -104,7 +104,9 @@ export const focusCategoriesQueryOptions = {
   queryKey: FOCUS_CATEGORIES_KEY,
   queryFn: fetchOrSeed,
   staleTime: 10 * 60 * 1000,
-  gcTime: 30 * 60 * 1000,
+  // Persisted cache: match the 24h persist maxAge so a tab with no mounted
+  // observer isn't GC'd from memory before its offline snapshot expires.
+  gcTime: 24 * 60 * 60 * 1000,
 };
 
 /**

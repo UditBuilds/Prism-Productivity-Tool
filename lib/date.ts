@@ -39,6 +39,27 @@ export function istWeekday(ms: number = Date.now()): number {
   return new Date(ms + IST_OFFSET_MS).getUTCDay();
 }
 
+/**
+ * Name of the next IST day (searching from tomorrow) whose weekday number is
+ * in `days` — e.g. "Monday". Used for "first task on <Day>" recurring-task
+ * copy. Falls back to a generic phrase for an empty/invalid `days`.
+ */
+export function nextIstMatchingDayName(
+  days: number[],
+  fromMs: number = Date.now()
+): string {
+  for (let offset = 1; offset <= 7; offset++) {
+    const ms = fromMs + offset * 86_400_000;
+    if (days.includes(istWeekday(ms))) {
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        weekday: "long",
+      }).format(new Date(ms));
+    }
+  }
+  return "its next scheduled day";
+}
+
 export function greetingForHour(hour: number): string {
   if (hour < 12) return "Good morning";
   if (hour < 17) return "Good afternoon";
