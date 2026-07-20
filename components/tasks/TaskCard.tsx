@@ -5,6 +5,7 @@ import Link from "next/link";
 import toast from "react-hot-toast";
 import {
   CheckCircle2,
+  ChevronDown,
   Circle,
   MoreHorizontal,
   Pencil,
@@ -13,7 +14,12 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatDueDate, type DueTone } from "@/lib/date";
+import {
+  formatDueDate,
+  istDayLabel,
+  istDayNumber,
+  type DueTone,
+} from "@/lib/date";
 import { useUIStore } from "@/store/ui.store";
 import { useUpdateTask, useDeleteTask } from "@/hooks/useTasks";
 import type { Task } from "@/types/database";
@@ -40,13 +46,30 @@ const dueToneClass: Record<DueTone, string> = {
 const SWIPE_THRESHOLD = 80; // px to trigger an action
 const SWIPE_MAX = 120; // px clamp so the card doesn't fly off
 
-export function TaskCard({ task }: { task: Task }) {
+export function TaskCard({
+  task,
+  backlog = [],
+}: {
+  task: Task;
+  /** Older open instances of the same recurring template (oldest first) —
+   *  shown as a collapsed "N days behind" catch-up list. All primary card
+   *  actions (swipe, status, menu) act on `task` ONLY; each backlog day is
+   *  completed individually so the per-day history stays truthful. */
+  backlog?: Task[];
+}) {
   const openEditTask = useUIStore((s) => s.openEditTask);
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
+  const [showBacklog, setShowBacklog] = useState(false);
 
   const due = formatDueDate(task.due_date);
   const isDone = task.status === "done";
+  // Whole IST days from the OLDEST open instance to today — how far behind
+  // this template is (backlog rows always carry a due_date; guard anyway).
+  const oldestDue = backlog[0]?.due_date;
+  const daysBehind = oldestDue
+    ? istDayNumber(Date.now()) - istDayNumber(Date.parse(oldestDue))
+    : 0;
 
   // --- Swipe gesture (touch only): right = done, left = delete w/ undo ---
   const [dragX, setDragX] = useState(0);
@@ -259,6 +282,23 @@ export function TaskCard({ task }: { task: Task }) {
             {statusLabel[task.status]}
           </button>
 
+          {daysBehind > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowBacklog((v) => !v)}
+              aria-expanded={showBacklog}
+              className="flex items-center gap-1 rounded-full bg-danger/15 px-2 py-0.5 text-xs font-semibold text-danger transition hover:bg-danger/25 active:scale-95"
+            >
+              {daysBehind} day{daysBehind === 1 ? "" : "s"} behind
+              <ChevronDown
+                className={cn(
+                  "h-3 w-3 transition-transform",
+                  showBacklog && "rotate-180"
+                )}
+              />
+            </button>
+          )}
+
           {isDone
             ? task.completed_at && (
                 <span className="ml-auto text-xs text-muted-foreground">
@@ -283,6 +323,38 @@ export function TaskCard({ task }: { task: Task }) {
                 </span>
               )}
         </div>
+
+        {showBacklog && backlog.length > 0 && (
+          <div className="mt-3 border-t border-border pt-2.5">
+            <p className="text-[11px] text-muted-foreground">
+              Missed days — each is marked done individually
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {backlog.map((b) => (
+                <li
+                  key={b.id}
+                  className="flex items-center gap-2 text-xs text-muted-foreground"
+                >
+                  <span>{b.due_date ? istDayLabel(b.due_date) : "No date"}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateTask.mutate({ id: b.id, status: "done" })
+                    }
+                    disabled={updateTask.isPending}
+                    aria-label={`Mark ${
+                      b.due_date ? istDayLabel(b.due_date) : "this day"
+                    } done`}
+                    className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-surface-raised hover:text-success disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Mark done
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
