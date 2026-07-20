@@ -5,9 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, Calendar, CalendarCheck, LogOut, User } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/UserAvatar";
+import { useLogout } from "@/hooks/useLogout";
 import { useUpcomingReminders } from "@/hooks/useReminders";
 import {
   DropdownMenu,
@@ -83,12 +83,9 @@ export function TopBar({
     return at <= Date.now() + 24 * 60 * 60 * 1000;
   });
 
-  async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
+  // Shared logout: signs out AND wipes all client-side caches/stores so the
+  // next account on this browser can't see this one's data.
+  const handleLogout = useLogout();
 
   return (
     <header

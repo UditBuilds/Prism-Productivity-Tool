@@ -13,6 +13,7 @@ import { ChangelogModal } from "@/components/ChangelogModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
+import { PersistBoundary } from "@/components/providers/PersistBoundary";
 
 export default async function DashboardLayout({
   children,
@@ -38,23 +39,27 @@ export default async function DashboardLayout({
   const email = user.email ?? "";
 
   return (
-    <div className="min-h-screen bg-background">
-      <OfflineBanner />
-      <Sidebar displayName={displayName} />
-      <div className="md:pl-60">
-        <TopBar displayName={displayName} email={email} />
-        <main className="mx-auto max-w-6xl px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] md:px-8 md:pb-10">
-          <ErrorBoundary>{children}</ErrorBoundary>
-        </main>
+    // key: a different account remounts the boundary → fresh persister +
+    // restore for the new user (and the in-memory owner check runs first).
+    <PersistBoundary key={user.id} userId={user.id}>
+      <div className="min-h-screen bg-background">
+        <OfflineBanner />
+        <Sidebar displayName={displayName} />
+        <div className="md:pl-60">
+          <TopBar displayName={displayName} email={email} />
+          <main className="mx-auto max-w-6xl px-4 py-6 pb-[calc(6rem_+_env(safe-area-inset-bottom))] md:px-8 md:pb-10">
+            <ErrorBoundary>{children}</ErrorBoundary>
+          </main>
+        </div>
+        <MobileNav />
+        <InstallPrompt />
+        <NotificationChecker />
+        <FloatingTimer />
+        <DataPrefetcher />
+        <WelcomeWizard />
+        <ChangelogModal />
+        <KeyboardShortcuts />
       </div>
-      <MobileNav />
-      <InstallPrompt />
-      <NotificationChecker />
-      <FloatingTimer />
-      <DataPrefetcher />
-      <WelcomeWizard />
-      <ChangelogModal />
-      <KeyboardShortcuts />
-    </div>
+    </PersistBoundary>
   );
 }

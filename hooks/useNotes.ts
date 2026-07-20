@@ -45,17 +45,37 @@ export const notesQueryOptions = {
   queryKey: NOTES_KEY,
   queryFn: () => request<Note[]>("GET"),
   staleTime: 10 * 60 * 1000,
-  gcTime: 20 * 60 * 1000,
+  // Persisted cache: match the 24h persist maxAge so a tab with no mounted
+  // observer isn't GC'd from memory before its offline snapshot expires.
+  gcTime: 24 * 60 * 60 * 1000,
 };
 
 export function useNotesQuery() {
   return useQuery(notesQueryOptions);
 }
 
+// Keyed mutation options, also registered as queryClient defaults
+// (lib/offline-mutations.ts) so mutations paused offline can resume after a
+// page reload.
+export const createNoteMutationOptions = {
+  mutationKey: ["notes", "create"] as const,
+  mutationFn: (input: CreateNoteInput) => request<Note>("POST", input),
+};
+
+export const updateNoteMutationOptions = {
+  mutationKey: ["notes", "update"] as const,
+  mutationFn: (input: UpdateNoteInput) => request<Note>("PATCH", input),
+};
+
+export const deleteNoteMutationOptions = {
+  mutationKey: ["notes", "delete"] as const,
+  mutationFn: (id: string) => request<{ id: string }>("DELETE", { id }),
+};
+
 export function useCreateNote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateNoteInput) => request<Note>("POST", input),
+    ...createNoteMutationOptions,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: NOTES_KEY });
       const previous = qc.getQueryData<Note[]>(NOTES_KEY) ?? [];
@@ -84,7 +104,7 @@ export function useCreateNote() {
 export function useUpdateNote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateNoteInput) => request<Note>("PATCH", input),
+    ...updateNoteMutationOptions,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: NOTES_KEY });
       const previous = qc.getQueryData<Note[]>(NOTES_KEY) ?? [];
@@ -109,7 +129,7 @@ export function useUpdateNote() {
 export function useDeleteNote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => request<{ id: string }>("DELETE", { id }),
+    ...deleteNoteMutationOptions,
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: NOTES_KEY });
       const previous = qc.getQueryData<Note[]>(NOTES_KEY) ?? [];

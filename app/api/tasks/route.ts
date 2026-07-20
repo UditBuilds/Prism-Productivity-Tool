@@ -125,6 +125,28 @@ export async function POST(request: Request) {
   if (body.repeat_daily === true) {
     const daysOfWeek = parseDaysOfWeek(body.days_of_week);
 
+    // Duplicate guard: one ACTIVE template per (user, case-insensitive title).
+    // On a day the template isn't scheduled, creating it gives no visible task,
+    // which historically led to re-creating the same template several times —
+    // each copy then spawns its own instance every scheduled day. Backed by the
+    // partial unique index idx_recurring_tasks_active_title (schema.sql).
+    const duplicateError = `"${title}" already repeats. It only shows in your task list on its scheduled days — stop the existing one first if you want to change it.`;
+    const { data: activeTemplates, error: activeError } = await supabase
+      .from("recurring_tasks")
+      .select("title")
+      .eq("user_id", user.id)
+      .eq("is_active", true);
+    if (activeError) {
+      return json({ data: null, error: activeError.message }, 500);
+    }
+    const normalizedTitle = title.trim().toLowerCase();
+    const isDuplicate = (activeTemplates ?? []).some(
+      (t) => t.title.trim().toLowerCase() === normalizedTitle
+    );
+    if (isDuplicate) {
+      return json({ data: null, error: duplicateError }, 409);
+    }
+
     const { data: recurring, error: recurringError } = await supabase
       .from("recurring_tasks")
       .insert({
@@ -138,6 +160,11 @@ export async function POST(request: Request) {
       .single();
 
     if (recurringError || !recurring) {
+      // 23505 = a concurrent create slipped past the check above and lost the
+      // race against the unique index — same friendly message as the guard.
+      if (recurringError?.code === "23505") {
+        return json({ data: null, error: duplicateError }, 409);
+      }
       return json(
         {
           data: null,

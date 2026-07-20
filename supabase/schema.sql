@@ -291,6 +291,14 @@ create unique index if not exists idx_tasks_recurring_unique_per_day
   on tasks (recurring_task_id, due_date)
   where recurring_task_id is not null;
 
+-- One ACTIVE template per user per (case-insensitive) title — a second
+-- identical template silently doubles every scheduled day's spawns. Partial on
+-- is_active so a stopped task can be re-created later. Backs the JS duplicate
+-- check in POST /api/tasks (which maps the 23505 to a friendly 409).
+create unique index if not exists idx_recurring_tasks_active_title
+  on recurring_tasks (user_id, lower(trim(title)))
+  where is_active;
+
 -- FOCUS CATEGORIES (custom per-user focus-timer categories)
 -- name + color (hex) drive the focus timer's category chips; sort_order sets
 -- list order. Created via /api/focus/categories (auto-seeded from the static

@@ -2,11 +2,11 @@
 
 import { memo } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { LogOut, type LucideIcon } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { useLogout } from "@/hooks/useLogout";
 import { navItems, isNavActive } from "./nav-config";
 import { NavBadge, useNavBadgeCounts } from "./NavBadges";
 import { UserAvatar } from "@/components/shared/UserAvatar";
@@ -65,15 +65,11 @@ const NavItem = memo(function NavItem({
 
 export function Sidebar({ displayName }: { displayName: string }) {
   const pathname = usePathname();
-  const router = useRouter();
   const badges = useNavBadgeCounts();
 
-  async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
+  // Shared logout: signs out AND wipes all client-side caches/stores so the
+  // next account on this browser can't see this one's data.
+  const handleLogout = useLogout();
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-border bg-background md:flex">

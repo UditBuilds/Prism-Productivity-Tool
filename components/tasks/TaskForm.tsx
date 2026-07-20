@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import toast from "react-hot-toast";
 import { CalendarIcon, Repeat, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { istWeekday, nextIstMatchingDayName } from "@/lib/date";
 import { useUIStore } from "@/store/ui.store";
 import { useCreateTask, useUpdateTask } from "@/hooks/useTasks";
 import { usePlansQuery } from "@/hooks/usePlans";
@@ -64,23 +64,6 @@ const PATTERN_CAPTION: Record<RepeatPattern, string> = {
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/**
- * Name of the next upcoming day (local time) whose weekday is in `days`.
- * Informational copy only — uses browser-local time, not IST. Called only when
- * today isn't a matching day, so the search starts one day ahead.
- */
-function nextMatchingDayName(days: number[]): string {
-  const now = new Date();
-  for (let offset = 1; offset <= 7; offset++) {
-    if (days.includes((now.getDay() + offset) % 7)) {
-      const future = new Date(now);
-      future.setDate(now.getDate() + offset);
-      return future.toLocaleDateString(undefined, { weekday: "long" });
-    }
-  }
-  return "the next matching day";
-}
-
 export function TaskForm() {
   const { taskDialogOpen, editingTask, closeTaskDialog } = useUIStore();
   const createTask = useCreateTask();
@@ -132,11 +115,13 @@ export function TaskForm() {
     repeatPattern === "custom" &&
     customDays.length === 0;
 
-  // Preview only — uses the browser's local weekday (no server round-trip).
-  // The authoritative "starts today?" decision happens server-side.
-  const repeatCaption = selectedDays.includes(new Date().getDay())
+  // Preview using the same IST weekday the server decides with — so the
+  // caption and the actual create behavior can't disagree.
+  const repeatCaption = selectedDays.includes(istWeekday())
     ? `Starts today, repeats on ${PATTERN_CAPTION[repeatPattern]}`
-    : `Repeats on ${PATTERN_CAPTION[repeatPattern]}, starts on the next matching day`;
+    : `Repeats on ${PATTERN_CAPTION[repeatPattern]}, first task on ${
+        selectedDays.length > 0 ? nextIstMatchingDayName(selectedDays) : "—"
+      }`;
 
   function toggleCustomDay(day: number) {
     setCustomDays((prev) =>
@@ -167,30 +152,12 @@ export function TaskForm() {
       updateTask.mutate({ id: editingTask.id, ...payload });
     } else {
       // repeat_daily rides along on the POST body; the API creates the
-      // recurring template + today's instance. (Assigned to a var first so it's
-      // structurally assignable to CreateTaskInput without an excess-prop error.)
-      const createPayload = {
+      // recurring template + today's instance (or defers it to the next
+      // scheduled day — useCreateTask's onSuccess picks the right toast).
+      createTask.mutate({
         ...payload,
         repeat_daily: repeatDaily,
         days_of_week: selectedDays,
-      };
-      createTask.mutate(createPayload, {
-        onSuccess: (data) => {
-          const instanceCreatedToday = (
-            data as { instanceCreatedToday?: boolean }
-          ).instanceCreatedToday;
-          // A recurring task whose first instance is deferred to a later day:
-          // replace the hook's generic "Task created" (which fires first) with a
-          // message that explains why no task shows up today.
-          if (instanceCreatedToday === false) {
-            toast.dismiss();
-            toast.success(
-              `Recurring task created — first task on ${nextMatchingDayName(
-                selectedDays
-              )}`
-            );
-          }
-        },
       });
     }
     closeTaskDialog();

@@ -69,7 +69,9 @@ export const srsCardsQueryOptions = {
   queryKey: CARDS_KEY,
   queryFn: fetchAllCards,
   staleTime: 15 * 60 * 1000,
-  gcTime: 30 * 60 * 1000,
+  // Persisted cache: match the 24h persist maxAge so a tab with no mounted
+  // observer isn't GC'd from memory before its offline snapshot expires.
+  gcTime: 24 * 60 * 60 * 1000,
 };
 
 /** All cards for the user (the single source of truth for the SRS cache). */
@@ -160,11 +162,32 @@ export function useDeckStats() {
   });
 }
 
+// Keyed mutation options, also registered as queryClient defaults
+// (lib/offline-mutations.ts) so mutations paused offline can resume after a
+// page reload. Includes review submission — offline flashcard review is the
+// flagship offline flow.
+export const createCardMutationOptions = {
+  mutationKey: ["srs-cards", "create"] as const,
+  mutationFn: (input: CreateCardInput) =>
+    request<SrsCard>("/api/srs/cards", "POST", input),
+};
+
+export const updateCardMutationOptions = {
+  mutationKey: ["srs-cards", "update"] as const,
+  mutationFn: (input: UpdateCardInput) =>
+    request<SrsCard>("/api/srs/cards", "PATCH", input),
+};
+
+export const deleteCardMutationOptions = {
+  mutationKey: ["srs-cards", "delete"] as const,
+  mutationFn: (id: string) =>
+    request<{ id: string }>("/api/srs/cards", "DELETE", { id }),
+};
+
 export function useCreateCard() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateCardInput) =>
-      request<SrsCard>("/api/srs/cards", "POST", input),
+    ...createCardMutationOptions,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: CARDS_KEY });
       const previous = qc.getQueryData<SrsCard[]>(CARDS_KEY) ?? [];
@@ -199,8 +222,7 @@ export function useCreateCard() {
 export function useUpdateCard() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateCardInput) =>
-      request<SrsCard>("/api/srs/cards", "PATCH", input),
+    ...updateCardMutationOptions,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: CARDS_KEY });
       const previous = qc.getQueryData<SrsCard[]>(CARDS_KEY) ?? [];
@@ -225,8 +247,7 @@ export function useUpdateCard() {
 export function useDeleteCard() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      request<{ id: string }>("/api/srs/cards", "DELETE", { id }),
+    ...deleteCardMutationOptions,
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: CARDS_KEY });
       const previous = qc.getQueryData<SrsCard[]>(CARDS_KEY) ?? [];
@@ -256,12 +277,17 @@ export interface SubmitReviewInput {
   rating: number;
 }
 
+export const submitReviewMutationOptions = {
+  mutationKey: ["srs-cards", "review"] as const,
+  mutationFn: (input: SubmitReviewInput) =>
+    request<SrsCard>("/api/srs/review", "POST", input),
+};
+
 /** Grade a card. Server runs SM-2; we refresh the cards cache on success. */
 export function useSubmitReview() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: SubmitReviewInput) =>
-      request<SrsCard>("/api/srs/review", "POST", input),
+    ...submitReviewMutationOptions,
     onError: (err) => {
       toast.error(
         err instanceof Error ? err.message : "Failed to save review"
