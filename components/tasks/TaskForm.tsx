@@ -78,7 +78,7 @@ export function TaskForm() {
   const [planId, setPlanId] = useState<string | null>(null);
   const [repeatDaily, setRepeatDaily] = useState(false);
   const [repeatPattern, setRepeatPattern] = useState<RepeatPattern>("everyday");
-  const [customDays, setCustomDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [customDays, setCustomDays] = useState<number[]>([]);
   const [titleError, setTitleError] = useState(false);
 
   // Hydrate the form whenever the dialog opens (create vs edit).
@@ -87,7 +87,7 @@ export function TaskForm() {
     setTitleError(false);
     setRepeatDaily(false); // create-only toggle; never carried into edit
     setRepeatPattern("everyday");
-    setCustomDays([0, 1, 2, 3, 4, 5, 6]);
+    setCustomDays([]);
     if (editingTask) {
       setTitle(editingTask.title);
       setDescription(editingTask.description ?? "");
