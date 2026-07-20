@@ -173,6 +173,17 @@ export function formatDueDate(dueIso: string | null): DueDateDisplay | null {
   };
 }
 
+/** Literal IST date with weekday for an ISO instant — e.g. "Fri, Jul 11".
+ *  Used for the recurring-backlog catch-up rows. */
+export function istDayLabel(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(iso));
+}
+
 /** True when a task's due date is before today (IST) and it isn't done. */
 export function isOverdue(dueIso: string | null, done: boolean): boolean {
   if (!dueIso || done) return false;
