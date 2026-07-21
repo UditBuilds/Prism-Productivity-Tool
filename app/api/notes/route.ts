@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { markdownExcerpt } from "@/lib/markdown";
 import type { Database, Note } from "@/types/database";
 
 type NoteUpdate = Database["public"]["Tables"]["notes"]["Update"];
@@ -53,16 +54,29 @@ export async function POST(request: Request) {
     return json({ data: null, error: "Invalid JSON body" }, 400);
   }
 
-  const title = typeof body.title === "string" ? body.title.trim() : "";
-  if (!title) return json({ data: null, error: "Title is required" }, 400);
+  let title = typeof body.title === "string" ? body.title.trim() : "";
+  const content = typeof body.content === "string" ? body.content : "";
+
+  // Capture kinds (spark/revisit) don't require a title — derive one from the
+  // note text so the NOT NULL column and every title-rendering surface still
+  // work. Legacy calls (no kind) keep the original title requirement.
+  const kind =
+    body.kind === "spark" || body.kind === "revisit" ? body.kind : null;
+  if (kind) {
+    if (!title) title = markdownExcerpt(content, 60);
+    if (!title) return json({ data: null, error: "Note is empty" }, 400);
+  } else if (!title) {
+    return json({ data: null, error: "Title is required" }, 400);
+  }
 
   const { data, error } = await supabase
     .from("notes")
     .insert({
       user_id: user.id,
       title,
-      content: typeof body.content === "string" ? body.content : "",
+      content,
       tags: parseTags(body.tags),
+      kind,
     })
     .select()
     .single();

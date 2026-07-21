@@ -3,11 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { Check, Loader2, Sparkles, X } from "lucide-react";
+import {
+  BookOpen,
+  Brain,
+  Check,
+  Loader2,
+  Sparkles,
+  X,
+  Zap,
+} from "lucide-react";
 
-import { renderMarkdown } from "@/lib/markdown";
+import { markdownExcerpt, renderMarkdown } from "@/lib/markdown";
 import { getTagColor } from "@/lib/tag-colors";
 import { useCreateNote, useUpdateNote } from "@/hooks/useNotes";
+import { useCreateCard } from "@/hooks/useSRS";
 import type { Note } from "@/types/database";
 import {
   Dialog,
@@ -23,6 +32,35 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type NoteMode = "read" | "edit";
+
+/** What a new capture is FOR — chosen once at save time. */
+type CaptureKind = "spark" | "revisit" | "recall";
+
+const KIND_OPTIONS: {
+  value: CaptureKind;
+  label: string;
+  icon: typeof Zap;
+  hint: string;
+}[] = [
+  {
+    value: "spark",
+    label: "Spark",
+    icon: Zap,
+    hint: "Quick idea — stays in Notes.",
+  },
+  {
+    value: "revisit",
+    label: "Revisit",
+    icon: BookOpen,
+    hint: "Stays in Notes and resurfaces on your dashboard to re-read.",
+  },
+  {
+    value: "recall",
+    label: "Recall",
+    icon: Brain,
+    hint: "Becomes a flashcard in Learn — not kept as a note.",
+  },
+];
 
 /** Split a raw tags string ("a, b c") into a clean, de-duped list. */
 function parseTagsInput(raw: string): string[] {
@@ -53,12 +91,15 @@ export function NoteModal({
 }) {
   const createNote = useCreateNote();
   const updateNote = useUpdateNote();
+  const createCard = useCreateCard();
 
   const [mode, setMode] = useState<NoteMode>(initialMode);
+  const [kind, setKind] = useState<CaptureKind>("spark");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [titleError, setTitleError] = useState(false);
+  const [emptyError, setEmptyError] = useState(false);
   const [reformatState, setReformatState] = useState<
     "idle" | "loading" | "success"
   >("idle");
@@ -69,6 +110,8 @@ export function NoteModal({
   useEffect(() => {
     if (!open) return;
     setTitleError(false);
+    setEmptyError(false);
+    setKind("spark");
     setReformatState("idle");
     setReformatError(null);
     setMode(note ? initialMode : "edit");
@@ -86,19 +129,43 @@ export function NoteModal({
   const tags = useMemo(() => parseTagsInput(tagsInput), [tagsInput]);
   const html = useMemo(() => renderMarkdown(content), [content]);
 
-  /** Persist; returns false (and flags the error) if the title is empty. */
+  /** Persist; returns false (and flags the error) if validation fails. */
   function save(): boolean {
     const trimmed = title.trim();
-    if (!trimmed) {
-      setTitleError(true);
+
+    // Existing notes keep the legacy edit flow: title required, kind untouched.
+    if (note) {
+      if (!trimmed) {
+        setTitleError(true);
+        return false;
+      }
+      updateNote.mutate({ id: note.id, title: trimmed, content, tags });
+      return true;
+    }
+
+    // Recall never becomes a note — it goes straight to Learn through the
+    // same card-create path the Learn section uses. Title (or the note's
+    // first words) is the card front; the full text is the back.
+    if (kind === "recall") {
+      if (!content.trim()) {
+        setEmptyError(true);
+        return false;
+      }
+      createCard.mutate({
+        front: trimmed || markdownExcerpt(content, 100),
+        back: content.trim(),
+        deck_name: "Recall",
+      });
+      return true;
+    }
+
+    // Spark/Revisit: zero required fields beyond some text — the server
+    // derives a title from the content when none is given.
+    if (!trimmed && !content.trim()) {
+      setEmptyError(true);
       return false;
     }
-    const payload = { title: trimmed, content, tags };
-    if (note) {
-      updateNote.mutate({ id: note.id, ...payload });
-    } else {
-      createNote.mutate(payload);
-    }
+    createNote.mutate({ title: trimmed, content, tags, kind });
     return true;
   }
 
@@ -261,6 +328,44 @@ export function NoteModal({
               }}
               className="space-y-4"
             >
+              {!note && (
+                <div className="space-y-2">
+                  <div
+                    role="radiogroup"
+                    aria-label="Save as"
+                    className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface p-1"
+                  >
+                    {KIND_OPTIONS.map((opt) => {
+                      const Icon = opt.icon;
+                      const selected = kind === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => {
+                            setKind(opt.value);
+                            setEmptyError(false);
+                          }}
+                          className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                            selected
+                              ? "bg-surface-raised text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {KIND_OPTIONS.find((o) => o.value === kind)?.hint}
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="note-title">Title</Label>
                 <Input
@@ -269,8 +374,9 @@ export function NoteModal({
                   onChange={(e) => {
                     setTitle(e.target.value);
                     if (titleError) setTitleError(false);
+                    if (emptyError) setEmptyError(false);
                   }}
-                  placeholder="Untitled note"
+                  placeholder={note ? "Untitled note" : "Title (optional)"}
                   autoFocus
                   className="rounded-lg"
                 />
@@ -289,7 +395,10 @@ export function NoteModal({
                   <TabsContent value="write">
                     <Textarea
                       value={content}
-                      onChange={(e) => setContent(e.target.value)}
+                      onChange={(e) => {
+                        setContent(e.target.value);
+                        if (emptyError) setEmptyError(false);
+                      }}
                       placeholder="Write in markdown… # headings, **bold**, - lists, `code`"
                       rows={12}
                       className="rounded-lg font-mono text-sm"
@@ -308,8 +417,17 @@ export function NoteModal({
                     )}
                   </TabsContent>
                 </Tabs>
+                {emptyError && (
+                  <p className="text-xs text-danger">
+                    {kind === "recall" && !note
+                      ? "Recall needs some text to remember."
+                      : "Write something first."}
+                  </p>
+                )}
               </div>
 
+              {/* Cards have no tags — hide the field for a Recall capture. */}
+              {!(kind === "recall" && !note) && (
               <div className="space-y-2">
                 <Label htmlFor="note-tags">Tags</Label>
                 <Input
@@ -342,6 +460,7 @@ export function NoteModal({
                   </div>
                 )}
               </div>
+              )}
 
               <DialogFooter className="gap-2 sm:gap-2">
                 <Button type="button" variant="ghost" onClick={onClose}>
