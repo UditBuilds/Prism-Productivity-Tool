@@ -1,7 +1,14 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { MoreHorizontal, Pencil, Sparkles, Trash2 } from "lucide-react";
+import {
+  BookOpen,
+  MoreHorizontal,
+  Pencil,
+  Sparkles,
+  Trash2,
+  Zap,
+} from "lucide-react";
 
 import { markdownExcerpt } from "@/lib/markdown";
 import { getTagColor } from "@/lib/tag-colors";
@@ -129,7 +136,20 @@ export function NoteCard({
         </div>
       )}
 
-      <p className="mt-3 text-xs text-muted-foreground">Updated {updated}</p>
+      <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+        {/* Graphite kind chip — legacy notes (kind null) show nothing. */}
+        {note.kind && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2 py-0.5 text-[11px] font-medium">
+            {note.kind === "spark" ? (
+              <Zap className="h-3 w-3" />
+            ) : (
+              <BookOpen className="h-3 w-3" />
+            )}
+            {note.kind === "spark" ? "Spark" : "Revisit"}
+          </span>
+        )}
+        <span>Updated {updated}</span>
+      </div>
     </div>
   );
 }
