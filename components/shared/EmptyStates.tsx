@@ -16,10 +16,8 @@ function EmptyShell({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex animate-fade-up flex-col items-center justify-center px-6 py-16 text-center">
-      <div className="animate-float text-accent/60 [filter:drop-shadow(0_0_12px_rgb(var(--accent-rgb)/0.25))]">
-        {svg}
-      </div>
+    <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+      <div className="text-accent/60">{svg}</div>
       <p className="mt-5 text-[15px] font-medium text-muted-foreground">
         {title}
       </p>
