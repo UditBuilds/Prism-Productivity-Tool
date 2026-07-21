@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Brain,
   Bell,
+  BookOpen,
   Coffee,
   AlertCircle,
 } from "lucide-react";
@@ -19,7 +20,8 @@ import {
   countdownProgressPct,
 } from "@/lib/date";
 import { cn } from "@/lib/utils";
-import type { Countdown, Reminder, Task } from "@/types/database";
+import { renderMarkdown } from "@/lib/markdown";
+import type { Countdown, Note, Reminder, Task } from "@/types/database";
 import { MoodWidget } from "@/components/dashboard/MoodWidget";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
@@ -64,6 +66,7 @@ export default async function DashboardHome() {
     countdownsRes,
     upcomingRemindersRes,
     weekDoneRes,
+    revisitRes,
   ] = await Promise.all([
       supabase
         .from("profiles")
@@ -120,6 +123,14 @@ export default async function DashboardHome() {
         .not("completed_at", "is", null)
         .gte("completed_at", sparkWindowStartIso)
         .lte("completed_at", nowIso),
+      // Revisit-kind notes resurface here for passive re-reading. No schedule —
+      // just the three most recently touched, back in view.
+      supabase
+        .from("notes")
+        .select("*")
+        .eq("kind", "revisit")
+        .order("updated_at", { ascending: false })
+        .limit(3),
     ]);
 
   const displayName = profileRes.data?.display_name ?? "there";
@@ -131,6 +142,7 @@ export default async function DashboardHome() {
   const remindersTodayCount = remindersRes.count ?? 0;
   const countdowns: Countdown[] = countdownsRes.data ?? [];
   const upcomingReminders: Reminder[] = upcomingRemindersRes.data ?? [];
+  const revisitNotes: Note[] = revisitRes.data ?? [];
 
   // Merge countdowns + reminders into one chronological list (soonest first),
   // capped at the same 3 the countdown query uses. Countdown dates are civil
@@ -411,6 +423,48 @@ export default async function DashboardHome() {
                   </li>
                 );
               })}
+          </ul>
+        )}
+      </section>
+
+      {/* Revisit — notes saved to be re-read, shown as their full text (never
+          quizzed). When empty, a one-line placeholder keeps the section (and
+          the feature) visible without shouting. */}
+      <section className="mt-8">
+        <SectionHeader
+          title="Revisit"
+          count={revisitNotes.length}
+          href="/dashboard/notes"
+          linkLabel="All notes"
+          accentBar
+        />
+        {revisitNotes.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border bg-surface px-4 py-3.5 text-[13px] text-muted-foreground">
+            Nothing to revisit — save a note as Revisit and it resurfaces here.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {revisitNotes.map((n) => (
+              <li
+                key={n.id}
+                className="rounded-xl border border-border bg-surface px-4 py-3"
+              >
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {n.title}
+                  </p>
+                </div>
+                {n.content.trim() && (
+                  <div
+                    className="prose-preview mt-2 text-sm text-muted-foreground"
+                    dangerouslySetInnerHTML={{
+                      __html: renderMarkdown(n.content),
+                    }}
+                  />
+                )}
+              </li>
+            ))}
           </ul>
         )}
       </section>

@@ -169,6 +169,8 @@ export interface Database {
           title: string;
           content: string;
           tags: string[];
+          // null = pre-feature note (behaves as a plain Spark, never rewritten)
+          kind: "spark" | "revisit" | null;
           created_at: string;
           updated_at: string;
         };
@@ -178,6 +180,7 @@ export interface Database {
           title: string;
           content?: string;
           tags?: string[];
+          kind?: "spark" | "revisit" | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -187,6 +190,7 @@ export interface Database {
           title?: string;
           content?: string;
           tags?: string[];
+          kind?: "spark" | "revisit" | null;
           created_at?: string;
           updated_at?: string;
         };

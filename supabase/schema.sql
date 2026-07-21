@@ -41,12 +41,17 @@ create table tasks (
 );
 
 -- NOTES
+-- kind is nullable on purpose: pre-feature notes stay NULL (plain/Spark
+-- behavior) and are never rewritten. Only new captures set a kind.
+-- Migration for existing DBs:
+--   alter table notes add column kind text check (kind in ('spark','revisit'));
 create table notes (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references auth.users(id) on delete cascade not null,
   title text not null,
   content text default '',
   tags text[] default '{}',
+  kind text check (kind in ('spark','revisit')),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

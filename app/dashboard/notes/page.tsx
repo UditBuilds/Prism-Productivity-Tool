@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Search, FileText, Upload, Play, AlertCircle, X } from "lucide-react";
+import {
+  Plus,
+  Search,
+  FileText,
+  Upload,
+  Play,
+  AlertCircle,
+  X,
+} from "lucide-react";
 
 import { useNotesQuery } from "@/hooks/useNotes";
 import { useUIStore } from "@/store/ui.store";
@@ -14,6 +22,12 @@ import { GenerateCardsModal } from "@/components/srs/GenerateCardsModal";
 import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
 import { YouTubeImportModal } from "@/components/youtube/YouTubeImportModal";
 import { PageHeader } from "@/components/layout/PageHeader";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { PullToRefresh } from "@/components/shared/PullToRefresh";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -59,24 +73,36 @@ export default function NotesPage() {
         icon={FileText}
         actions={
           <>
-            <Button
-              variant="ghost"
-              onClick={openPdfModal}
-              className="rounded-lg"
-            >
-              <Upload className="mr-1.5 h-4 w-4" />
-              <span className="hidden sm:inline">Upload PDF</span>
-              <span className="sm:hidden">PDF</span>
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setYoutubeOpen(true)}
-              className="rounded-lg"
-            >
-              <Play className="mr-1.5 h-4 w-4" />
-              <span className="hidden sm:inline">YouTube</span>
-              <span className="sm:hidden">YT</span>
-            </Button>
+            {/* PDF + YouTube import live behind one quiet trigger — three
+                labeled buttons don't fit a 375px header. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Import"
+                  className="rounded-lg"
+                >
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={openPdfModal}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => setYoutubeOpen(true)}
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  YouTube
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               onClick={() => setViewer({ note: null, mode: "edit" })}
               className="rounded-lg"
@@ -94,7 +120,7 @@ export default function NotesPage() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search notes by title, content, or tag…"
+            placeholder="Search notes…"
             className="rounded-lg pl-9 pr-9"
           />
           {query && (

@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
+import { markdownExcerpt } from "@/lib/markdown";
 import type { Note } from "@/types/database";
 
 const NOTES_KEY = ["notes"] as const;
@@ -13,6 +14,7 @@ export interface CreateNoteInput {
   title: string;
   content?: string;
   tags?: string[];
+  kind?: "spark" | "revisit";
 }
 
 export interface UpdateNoteInput {
@@ -83,9 +85,16 @@ export function useCreateNote() {
       const optimistic: Note = {
         id: `optimistic-${crypto.randomUUID()}`,
         user_id: "optimistic",
-        title: input.title,
+        // Mirror the server: Revisit derives a title from the text; Spark
+        // stays untitled (its card leads with the body).
+        title:
+          input.title ||
+          (input.kind === "revisit"
+            ? markdownExcerpt(input.content ?? "", 60)
+            : ""),
         content: input.content ?? "",
         tags: input.tags ?? [],
+        kind: input.kind ?? null,
         created_at: now,
         updated_at: now,
       };
