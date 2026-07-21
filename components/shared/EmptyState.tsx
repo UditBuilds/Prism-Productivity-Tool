@@ -31,7 +31,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "relative flex animate-fade-up flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-surface text-center",
+        "relative flex flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-surface text-center",
         compact ? "px-4 py-8" : "px-6 py-14",
         className
       )}
@@ -46,7 +46,7 @@ export function EmptyState({
       )}
       <div
         className={cn(
-          "flex animate-float items-center justify-center rounded-full border border-border bg-surface-raised",
+          "flex items-center justify-center rounded-full border border-border bg-surface-raised",
           compact ? "h-11 w-11" : "h-12 w-12"
         )}
       >
