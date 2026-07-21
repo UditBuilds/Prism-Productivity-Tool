@@ -1,10 +1,11 @@
 import type { TaskPriority, TaskStatus } from "@/types/database";
 
+/* Flat semantic washes per the design system: Amber = time/priority pressure,
+   Signal = high priority, graphite for low. Gradients and glows are retired. */
 export const priorityStyles: Record<TaskPriority, string> = {
-  low: "bg-gradient-to-r from-gray-800 to-gray-700 text-gray-400 border border-gray-700/50",
-  medium:
-    "bg-gradient-to-r from-amber-900/40 to-amber-800/30 text-amber-400 border border-amber-700/30 shadow-[0_0_8px_rgb(245_158_11/0.15)]",
-  high: "bg-gradient-to-r from-red-900/40 to-red-800/30 text-red-400 border border-red-700/30 shadow-[0_0_8px_rgb(239_68_68/0.2)]",
+  low: "bg-surface-raised text-muted-foreground border border-border",
+  medium: "bg-warning/10 text-warning border border-warning/25",
+  high: "bg-danger/10 text-danger border border-danger/25",
 };
 
 /**
@@ -13,14 +14,14 @@ export const priorityStyles: Record<TaskPriority, string> = {
  * all four sides) doesn't wash out the accent.
  */
 export const priorityBorder: Record<TaskPriority, string> = {
-  low: "border-l-gray-600 hover:border-l-gray-600",
-  medium: "border-l-amber-500 hover:border-l-amber-500",
-  high: "border-l-red-500 hover:border-l-red-500",
+  low: "border-l-border-col hover:border-l-border-col",
+  medium: "border-l-warning hover:border-l-warning",
+  high: "border-l-danger hover:border-l-danger",
 };
 
 export const statusStyles: Record<TaskStatus, string> = {
   todo: "bg-muted text-muted-foreground",
-  in_progress: "bg-blue-500/15 text-blue-400",
+  in_progress: "bg-accent/15 text-accent",
   done: "bg-success/15 text-success",
 };
 

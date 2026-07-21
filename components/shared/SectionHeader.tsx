@@ -38,9 +38,9 @@ export function SectionHeader({
           className="h-5 w-0.5 self-center rounded-full bg-accent"
         />
       )}
-      <h2 className="text-gradient text-base font-semibold">{title}</h2>
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
       {count !== undefined && count > 0 && (
-        <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+        <span className="rounded-full bg-surface-raised px-2 py-0.5 font-mono text-[11px] font-medium tabular-nums text-muted-foreground">
           {count}
         </span>
       )}

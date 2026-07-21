@@ -116,7 +116,7 @@ export function DueTodayRow({
           </span>
         </div>
         {dueLabel && (
-          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
             {dueLabel}
           </span>
         )}

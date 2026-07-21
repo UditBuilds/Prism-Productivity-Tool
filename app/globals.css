@@ -3,72 +3,75 @@
 @tailwind utilities;
 
 /*
-  PRISM design system — dark mode default.
+  PRISM design system — "Graphite & Spectrum" (dark mode default).
   All tokens defined in HSL so shadcn's `hsl(var(--x))` mappings resolve cleanly.
+  The graphite scale is cool-biased (~hue 225), NOT pure gray — deliberate.
 
   Hex reference:
-    background     #0A0A0A   surface        #111111   surface-raised #1A1A1A
-    border-col     #2A2A2A   text-primary   #F5F5F5   text-muted     #888888
-    accent         #7C3AED   accent-hover   #6D28D9
-    success        #10B981   warning        #F59E0B   danger         #EF4444
+    background     #0F1012   surface        #16171B   surface-raised #1D1F24
+    border         #26282E   border-col     #34373F
+    text-primary   #EDEEF2   text-muted     #A3A7B3   text-low       #6A6E7A
+    accent (Iris)  #5B67EE   accent-hover   #6F79F0
+    success (Moss) #56B981   warning (Amber)#E9B44B   danger (Signal)#E45C55
 */
 
 @layer base {
   :root,
   .dark {
-    --background: 0 0% 4%;
-    --foreground: 0 0% 96%;
+    --background: 220 9% 6.5%;
+    --foreground: 228 16% 94%;
 
-    --card: 0 0% 7%;
-    --card-foreground: 0 0% 96%;
+    --card: 228 10% 10%;
+    --card-foreground: 228 16% 94%;
 
-    --popover: 0 0% 10%;
-    --popover-foreground: 0 0% 96%;
+    --popover: 223 11% 13%;
+    --popover-foreground: 228 16% 94%;
 
-    --primary: 262 83% 58%;
-    --primary-foreground: 0 0% 96%;
+    --primary: 235 81% 65%;
+    --primary-foreground: 228 16% 94%;
 
-    --secondary: 0 0% 10%;
-    --secondary-foreground: 0 0% 96%;
+    --secondary: 223 11% 13%;
+    --secondary-foreground: 228 16% 94%;
 
-    --muted: 0 0% 10%;
-    --muted-foreground: 0 0% 53%;
+    --muted: 223 11% 13%;
+    --muted-foreground: 225 10% 67%;
 
-    --accent: 262 83% 58%;
-    --accent-foreground: 0 0% 96%;
-    --accent-hover: 263 70% 50%;
+    --accent: 235 81% 65%;
+    --accent-foreground: 228 16% 94%;
+    --accent-hover: 235 81% 69%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 96%;
+    --destructive: 3 73% 61%;
+    --destructive-foreground: 228 16% 94%;
 
-    /* Softer default border (#1F1F1F) — hover states step up to #2A2A2A. */
-    --border: 0 0% 12%;
-    --input: 0 0% 16%;
-    --ring: 262 83% 58%;
+    /* Hairline default border (#26282E) — hover/inputs step up to #34373F. */
+    --border: 225 10% 17%;
+    --input: 224 10% 22%;
+    --ring: 235 81% 65%;
 
     /* PRISM extras */
-    --surface: 0 0% 7%;
-    --surface-raised: 0 0% 10%;
-    --border-col: 0 0% 16%;
-    --success: 160 84% 39%;
-    --warning: 38 92% 50%;
-    --danger: 0 84% 60%;
+    --surface: 228 10% 10%;
+    --surface-raised: 223 11% 13%;
+    --border-col: 224 10% 22%;
+    --success: 146 41% 53%;
+    --warning: 40 78% 60%;
+    --danger: 3 73% 61%;
 
     --radius: 0.75rem;
 
     /* Theme accent (RGB triplets for Tailwind's rgb(var()/alpha) syntax).
-       --accent-soft-rgb is the light end of the accent gradient. */
-    --accent-rgb: 124 58 237; /* violet */
-    --accent-hover-rgb: 109 40 217;
-    --accent-soft-rgb: 167 139 250;
+       --accent-soft-rgb is the tint (base mixed ~35% toward white). */
+    --accent-rgb: 91 103 238; /* Iris */
+    --accent-hover-rgb: 111 121 240;
+    --accent-soft-rgb: 148 156 244;
   }
 }
 
-/* Accent theme classes — applied to <html> by ThemeProvider */
+/* Accent theme classes — applied to <html> by ThemeProvider. The picker
+   re-points Iris only; graphite + semantic hues are fixed information. */
 html.theme-violet {
-  --accent-rgb: 124 58 237;
-  --accent-hover-rgb: 109 40 217;
-  --accent-soft-rgb: 167 139 250;
+  --accent-rgb: 91 103 238; /* legacy "violet" slot now carries brand Iris */
+  --accent-hover-rgb: 111 121 240;
+  --accent-soft-rgb: 148 156 244;
 }
 html.theme-blue {
   --accent-rgb: 59 130 246;
@@ -108,20 +111,6 @@ html.theme-cyan {
   }
 }
 
-/* Subtle accent vignette behind everything (follows the active theme).
-   z-index -1 keeps it above the canvas background but below all content. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background: radial-gradient(
-    ellipse at 50% 0%,
-    rgb(var(--accent-rgb) / 0.04) 0%,
-    transparent 60%
-  );
-  pointer-events: none;
-  z-index: -1;
-}
 
 /* ── PRISM depth & gradient helpers ────────────────────────────── */
 
@@ -408,15 +397,15 @@ body::before {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #262626;
+  background: #26282e;
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a3a3a;
+  background: #34373f;
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: #262626 transparent;
+  scrollbar-color: #26282e transparent;
 }
 
 /* Smooth page load */

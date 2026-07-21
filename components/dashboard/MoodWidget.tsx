@@ -52,11 +52,11 @@ export function MoodWidget() {
           {opt.emoji}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
             Daily check-in
           </p>
           <p className="mt-0.5 truncate text-base font-medium text-foreground">
-            Feeling <span className="text-accent">{opt.label}</span>
+            Feeling <span className="font-semibold">{opt.label}</span>
             {today.note && (
               <span className="text-muted-foreground"> · {today.note}</span>
             )}
@@ -77,13 +77,13 @@ export function MoodWidget() {
   return (
     <div className="mt-5 rounded-xl border border-border bg-surface px-4 py-3.5">
       {savedFlash ? (
-        <p className="flex animate-pop items-center justify-center gap-2 py-3 text-sm font-medium text-success">
+        <p className="flex items-center justify-center gap-2 py-3 text-sm font-medium text-success">
           <Check className="h-4 w-4" />
           Logged! ✓
         </p>
       ) : (
         <>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
+          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
             Daily check-in
           </p>
           <p className="mt-0.5 text-sm font-medium text-foreground">
@@ -97,18 +97,11 @@ export function MoodWidget() {
                 onClick={() => setSelected(m.value)}
                 aria-pressed={selected === m.value}
                 className={cn(
-                  "flex flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 transition-transform hover:scale-105 hover:bg-surface-raised",
-                  selected === m.value &&
-                    "scale-110 border-accent/60 bg-accent/10 shadow-glow-accent-sm"
+                  "flex flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 hover:bg-surface-raised",
+                  selected === m.value && "border-accent/60 bg-accent/10"
                 )}
               >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "text-2xl",
-                    selected === m.value && "animate-pop"
-                  )}
-                >
+                <span aria-hidden className="text-2xl">
                   {m.emoji}
                 </span>
                 <span className="text-[10px] text-muted-foreground">
