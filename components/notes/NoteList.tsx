@@ -13,7 +13,7 @@ export function NoteList({
   onTagClick?: (tag: string) => void;
 }) {
   return (
-    <div className="stagger-children grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-4">
+    <div className="stagger-children grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
       {notes.map((note) => (
         <NoteCard
           key={note.id}

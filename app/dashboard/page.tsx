@@ -428,17 +428,21 @@ export default async function DashboardHome() {
       </section>
 
       {/* Revisit — notes saved to be re-read, shown as their full text (never
-          quizzed). Hidden entirely when there's nothing to resurface: an empty
-          passive section would just be noise. */}
-      {revisitNotes.length > 0 && (
-        <section className="mt-8">
-          <SectionHeader
-            title="Revisit"
-            count={revisitNotes.length}
-            href="/dashboard/notes"
-            linkLabel="All notes"
-            accentBar
-          />
+          quizzed). When empty, a one-line placeholder keeps the section (and
+          the feature) visible without shouting. */}
+      <section className="mt-8">
+        <SectionHeader
+          title="Revisit"
+          count={revisitNotes.length}
+          href="/dashboard/notes"
+          linkLabel="All notes"
+          accentBar
+        />
+        {revisitNotes.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border bg-surface px-4 py-3.5 text-[13px] text-muted-foreground">
+            Nothing to revisit — save a note as Revisit and it resurfaces here.
+          </p>
+        ) : (
           <ul className="space-y-2">
             {revisitNotes.map((n) => (
               <li
@@ -462,8 +466,8 @@ export default async function DashboardHome() {
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }

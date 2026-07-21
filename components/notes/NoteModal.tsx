@@ -133,9 +133,10 @@ export function NoteModal({
   function save(): boolean {
     const trimmed = title.trim();
 
-    // Existing notes keep the legacy edit flow: title required, kind untouched.
+    // Existing notes keep the legacy edit flow: title required (except Sparks,
+    // which may be untitled), kind untouched.
     if (note) {
-      if (!trimmed) {
+      if (!trimmed && note.kind !== "spark") {
         setTitleError(true);
         return false;
       }
@@ -258,7 +259,15 @@ export function NoteModal({
             </DialogHeader>
 
             <div>
-              <DialogTitle className="mb-3 text-2xl font-bold text-foreground">
+              {/* Untitled Sparks show no visual title — the body is the note.
+                  Radix still needs a DialogTitle, so it goes sr-only. */}
+              <DialogTitle
+                className={
+                  title.trim()
+                    ? "mb-3 text-2xl font-bold text-foreground"
+                    : "sr-only"
+                }
+              >
                 {title.trim() || "Untitled note"}
               </DialogTitle>
 
