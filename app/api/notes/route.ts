@@ -57,14 +57,17 @@ export async function POST(request: Request) {
   let title = typeof body.title === "string" ? body.title.trim() : "";
   const content = typeof body.content === "string" ? body.content : "";
 
-  // Capture kinds (spark/revisit) don't require a title — derive one from the
-  // note text so the NOT NULL column and every title-rendering surface still
-  // work. Legacy calls (no kind) keep the original title requirement.
+  // Capture kinds (spark/revisit) don't require a title. Revisit derives one
+  // from the text (its dashboard card leads with a title); Spark stays
+  // untitled — the body IS the note, and a derived title would just duplicate
+  // it on the card. Legacy calls (no kind) keep the original requirement.
   const kind =
     body.kind === "spark" || body.kind === "revisit" ? body.kind : null;
   if (kind) {
-    if (!title) title = markdownExcerpt(content, 60);
-    if (!title) return json({ data: null, error: "Note is empty" }, 400);
+    if (!title && kind === "revisit") title = markdownExcerpt(content, 60);
+    if (!title && !content.trim()) {
+      return json({ data: null, error: "Note is empty" }, 400);
+    }
   } else if (!title) {
     return json({ data: null, error: "Title is required" }, 400);
   }
@@ -105,9 +108,10 @@ export async function PATCH(request: Request) {
 
   const updates: NoteUpdate = {};
   if (body.title !== undefined) {
-    const title = typeof body.title === "string" ? body.title.trim() : "";
-    if (!title) return json({ data: null, error: "Title is required" }, 400);
-    updates.title = title;
+    // Empty is allowed — untitled Sparks round-trip through the edit modal
+    // with title "". The modal still requires a title for every other kind.
+    updates.title =
+      typeof body.title === "string" ? body.title.trim() : "";
   }
   if (body.content !== undefined) {
     updates.content = typeof body.content === "string" ? body.content : "";

@@ -85,9 +85,13 @@ export function useCreateNote() {
       const optimistic: Note = {
         id: `optimistic-${crypto.randomUUID()}`,
         user_id: "optimistic",
-        // Mirror the server's title derivation for title-less captures so the
-        // optimistic card doesn't render blank.
-        title: input.title || markdownExcerpt(input.content ?? "", 60),
+        // Mirror the server: Revisit derives a title from the text; Spark
+        // stays untitled (its card leads with the body).
+        title:
+          input.title ||
+          (input.kind === "revisit"
+            ? markdownExcerpt(input.content ?? "", 60)
+            : ""),
         content: input.content ?? "",
         tags: input.tags ?? [],
         kind: input.kind ?? null,
