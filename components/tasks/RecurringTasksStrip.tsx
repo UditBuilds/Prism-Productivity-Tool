@@ -45,7 +45,7 @@ export function RecurringTasksStrip() {
 
   return (
     <div className="mt-5 rounded-lg border border-border bg-surface px-3 py-2.5">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
         Repeats
       </p>
       <ul className="mt-1.5 space-y-1">

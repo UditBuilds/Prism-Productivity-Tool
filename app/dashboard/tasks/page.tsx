@@ -90,7 +90,7 @@ export default function TasksPage() {
   }, [tasks, filter]);
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PullToRefresh onRefresh={() => refetch()}>
       <PageHeader
         title="Tasks"
@@ -128,7 +128,7 @@ export default function TasksPage() {
               </span>
               <span
                 className={cn(
-                  "rounded-full px-1.5 text-[11px] tabular-nums",
+                  "rounded-full px-1.5 font-mono text-[11px] font-medium tabular-nums",
                   filter === tab.value
                     ? "bg-accent/20 text-accent"
                     : "bg-muted text-muted-foreground"

@@ -30,6 +30,7 @@ import {
   statusLabel,
   nextStatus,
 } from "./task-styles";
+import { DayRail } from "@/components/shared/DayRail";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,12 +149,12 @@ export function TaskCard({
           className={cn(
             "absolute inset-0 flex items-center rounded-r-xl px-5",
             dragX > 0
-              ? "justify-start bg-gradient-to-r from-success/30 via-success/15 to-transparent text-success"
-              : "justify-end bg-gradient-to-l from-danger/30 via-danger/15 to-transparent text-danger"
+              ? "justify-start bg-success/15 text-success"
+              : "justify-end bg-danger/15 text-danger"
           )}
         >
           {dragX > 0 ? (
-            <CheckCircle2 className="h-5 w-5 animate-pop" />
+            <CheckCircle2 className="h-5 w-5" />
           ) : (
             <Trash2 className="h-5 w-5" />
           )}
@@ -169,7 +170,7 @@ export function TaskCard({
           touchAction: "pan-y",
         }}
         className={cn(
-          "group cursor-default rounded-l-none rounded-r-xl border border-l-2 border-[#1F1F1F] bg-[#111111] p-4 transition duration-200 hover:-translate-y-0.5 hover:border-accent/25 hover:shadow-lift active:scale-[0.99] active:opacity-90",
+          "group cursor-default rounded-l-none rounded-r-xl border border-l-2 border-border bg-surface p-4 hover:border-accent/25 active:scale-[0.99] active:opacity-90",
           dragging && "no-transition",
           priorityBorder[task.priority]
         )}
@@ -187,7 +188,7 @@ export function TaskCard({
             </Link>
             {task.recurring_task_id && (
               <Repeat
-                className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin-slow text-muted-foreground [animation-duration:12s]"
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
                 aria-label="Repeats daily"
               />
             )}
@@ -287,8 +288,18 @@ export function TaskCard({
               type="button"
               onClick={() => setShowBacklog((v) => !v)}
               aria-expanded={showBacklog}
-              className="flex items-center gap-1 rounded-full bg-danger/15 px-2 py-0.5 text-xs font-semibold text-danger transition hover:bg-danger/25 active:scale-95"
+              className="flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 py-1 pl-2 pr-2.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.04em] text-warning transition hover:bg-warning/15 active:scale-95"
             >
+              <DayRail
+                days={[
+                  ...Array.from({ length: Math.min(daysBehind, 7) }, () => ({
+                    filled: true,
+                  })),
+                  { filled: false, isToday: true },
+                ]}
+                fillClassName="bg-warning"
+                outlineClassName="border-accent"
+              />
               {daysBehind} day{daysBehind === 1 ? "" : "s"} behind
               <ChevronDown
                 className={cn(
@@ -308,7 +319,7 @@ export function TaskCard({
             : due && (
                 <span
                   className={cn(
-                    "ml-auto flex items-center gap-1.5 text-xs",
+                    "ml-auto flex items-center gap-1.5 font-mono text-xs tabular-nums",
                     dueToneClass[due.tone],
                     due.bold && "font-semibold"
                   )}
@@ -316,7 +327,7 @@ export function TaskCard({
                   {due.tone === "danger" && (
                     <span
                       aria-hidden
-                      className="h-1.5 w-1.5 animate-pulse rounded-full bg-danger"
+                      className="h-1.5 w-1.5 rounded-full bg-danger"
                     />
                   )}
                   {due.label}
@@ -329,13 +340,15 @@ export function TaskCard({
             <p className="text-[11px] text-muted-foreground">
               Missed days — each is marked done individually
             </p>
-            <ul className="mt-1.5 space-y-1">
+            <ul className="mt-1">
               {backlog.map((b) => (
                 <li
                   key={b.id}
-                  className="flex items-center gap-2 text-xs text-muted-foreground"
+                  className="flex items-center gap-2 border-b border-border py-1 text-xs last:border-b-0"
                 >
-                  <span>{b.due_date ? istDayLabel(b.due_date) : "No date"}</span>
+                  <span className="font-mono tabular-nums text-muted-foreground">
+                    {b.due_date ? istDayLabel(b.due_date) : "No date"}
+                  </span>
                   <button
                     type="button"
                     onClick={() =>
@@ -345,7 +358,7 @@ export function TaskCard({
                     aria-label={`Mark ${
                       b.due_date ? istDayLabel(b.due_date) : "this day"
                     } done`}
-                    className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-surface-raised hover:text-success disabled:opacity-50"
+                    className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-1 font-semibold text-accent transition hover:bg-accent/10 disabled:opacity-50"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     Mark done
