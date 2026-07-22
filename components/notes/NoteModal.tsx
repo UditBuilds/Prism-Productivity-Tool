@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 
 import { markdownExcerpt, renderMarkdown } from "@/lib/markdown";
-import { getTagColor } from "@/lib/tag-colors";
 import { useCreateNote, useUpdateNote } from "@/hooks/useNotes";
 import { useCreateCard } from "@/hooks/useSRS";
 import type { Note } from "@/types/database";
@@ -215,7 +214,7 @@ export function NoteModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl [&>button]:hidden">
+      <DialogContent className="border-border bg-surface-raised sm:max-w-2xl [&>button]:hidden">
         {mode === "read" ? (
           <>
             <DialogHeader className="flex-row items-center justify-between space-y-0">
@@ -223,7 +222,7 @@ export function NoteModal({
                 type="button"
                 aria-label="Close"
                 onClick={onClose}
-                className="-ml-1 rounded-md p-1 text-muted-foreground hover:bg-surface-raised hover:text-foreground active:scale-95"
+                className="-ml-1 rounded-md p-1 text-muted-foreground hover:bg-border/50 hover:text-foreground active:scale-95"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -236,7 +235,7 @@ export function NoteModal({
                   disabled={
                     content.trim().length < 20 || reformatState === "loading"
                   }
-                  className="flex items-center gap-1 text-accent transition-colors hover:text-accent-hover active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+                  className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground active:scale-95 disabled:pointer-events-none disabled:opacity-40"
                 >
                   {reformatState === "loading" ? (
                     <Loader2 size={14} className="animate-spin" />
@@ -251,7 +250,7 @@ export function NoteModal({
                   type="button"
                   onClick={() => setMode("edit")}
                   disabled={reformatState === "loading"}
-                  className="text-sm font-medium text-accent hover:text-accent-hover disabled:pointer-events-none disabled:opacity-40"
+                  className="text-[13px] font-medium text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                 >
                   Edit
                 </button>
@@ -259,12 +258,24 @@ export function NoteModal({
             </DialogHeader>
 
             <div>
+              {/* Kind eyebrow — same mono-caps treatment as NoteCard. Legacy
+                  notes (kind null) start straight at the title. */}
+              {note?.kind && (
+                <p className="mb-1.5 flex items-center gap-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  {note.kind === "spark" ? (
+                    <Zap className="h-3 w-3" aria-hidden />
+                  ) : (
+                    <BookOpen className="h-3 w-3" aria-hidden />
+                  )}
+                  {note.kind}
+                </p>
+              )}
               {/* Untitled Sparks show no visual title — the body is the note.
                   Radix still needs a DialogTitle, so it goes sr-only. */}
               <DialogTitle
                 className={
                   title.trim()
-                    ? "mb-3 text-2xl font-bold text-foreground"
+                    ? "mb-3 text-xl font-semibold leading-snug text-foreground"
                     : "sr-only"
                 }
               >
@@ -282,17 +293,14 @@ export function NoteModal({
 
               {tags.length > 0 && (
                 <div className="mb-3 flex flex-wrap gap-1.5">
-                  {tags.map((tag) => {
-                    const color = getTagColor(tag);
-                    return (
-                      <span
-                        key={tag}
-                        className={`${color.bg} ${color.text} ${color.border} rounded-full border px-2 py-0.5 text-[11px] font-medium`}
-                      >
-                        #{tag}
-                      </span>
-                    );
-                  })}
+                  {tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
                 </div>
               )}
 
@@ -302,13 +310,13 @@ export function NoteModal({
                   dangerouslySetInnerHTML={{ __html: html }}
                 />
               ) : (
-                <p className="text-sm italic text-muted-foreground/70">
+                <p className="text-[13px] italic text-muted-foreground/70">
                   This note is empty.
                 </p>
               )}
 
               {note?.updated_at && (
-                <p className="mt-6 text-xs text-muted-foreground">
+                <p className="mt-6 text-[11px] text-muted-foreground/80">
                   Updated{" "}
                   {formatDistanceToNow(new Date(note.updated_at), {
                     addSuffix: true,
@@ -324,7 +332,7 @@ export function NoteModal({
               <button
                 type="button"
                 onClick={handleDone}
-                className="text-sm font-medium text-accent hover:text-accent-hover"
+                className="text-[13px] font-medium text-muted-foreground hover:text-foreground"
               >
                 Done
               </button>
@@ -451,7 +459,7 @@ export function NoteModal({
                     {tags.map((tag) => (
                       <span
                         key={tag}
-                        className="inline-flex items-center gap-1 rounded-md bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent"
+                        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
                       >
                         #{tag}
                         <button
@@ -460,7 +468,7 @@ export function NoteModal({
                           onClick={() =>
                             setTagsInput(tags.filter((t) => t !== tag).join(", "))
                           }
-                          className="text-accent/70 hover:text-accent"
+                          className="text-muted-foreground/70 hover:text-foreground"
                         >
                           <X className="h-3 w-3" />
                         </button>
