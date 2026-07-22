@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Plus,
   Search,
@@ -8,6 +9,7 @@ import {
   Upload,
   Play,
   AlertCircle,
+  BookOpen,
   X,
 } from "lucide-react";
 
@@ -43,7 +45,13 @@ function matchesQuery(note: Note, q: string): boolean {
   );
 }
 
-export default function NotesPage() {
+function NotesPageInner() {
+  const searchParams = useSearchParams();
+  // Deep-link from the Dashboard "Revisit → View all" — filters to Revisit
+  // notes. Local state so the chip can be cleared without a navigation.
+  const [kindFilter, setKindFilter] = useState<"revisit" | null>(
+    searchParams.get("kind") === "revisit" ? "revisit" : null
+  );
   const [query, setQuery] = useState("");
   const [viewer, setViewer] = useState<{
     note: Note | null;
@@ -57,10 +65,11 @@ export default function NotesPage() {
   const { data: notes, isLoading, isError, refetch } = useNotesQuery();
 
   const visible = useMemo(() => {
-    const list = notes ?? [];
+    let list = notes ?? [];
+    if (kindFilter) list = list.filter((n) => n.kind === kindFilter);
     const q = query.trim();
     return q ? list.filter((n) => matchesQuery(n, q)) : list;
-  }, [notes, query]);
+  }, [notes, query, kindFilter]);
 
   const hasNotes = (notes?.length ?? 0) > 0;
 
@@ -136,6 +145,24 @@ export default function NotesPage() {
         </div>
       )}
 
+      {/* Active Revisit filter — mono-caps eyebrow pill, graphite, removable. */}
+      {kindFilter && hasNotes && (
+        <div className="mt-3">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            <BookOpen className="h-3 w-3" aria-hidden />
+            Revisit
+            <button
+              type="button"
+              aria-label="Clear Revisit filter"
+              onClick={() => setKindFilter(null)}
+              className="ml-0.5 text-muted-foreground/70 hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        </div>
+      )}
+
       <div className="mt-5">
         {isLoading ? (
           <LoadingSkeleton count={4} />
@@ -164,13 +191,29 @@ export default function NotesPage() {
           />
         ) : visible.length === 0 ? (
           <EmptyState
-            icon={Search}
-            title="No matches"
-            description={`No notes match “${query.trim()}”.`}
+            icon={kindFilter ? BookOpen : Search}
+            title={kindFilter && !query.trim() ? "No Revisit notes" : "No matches"}
+            description={
+              kindFilter && !query.trim()
+                ? "Save a note as Revisit and it shows up here."
+                : `No notes match “${query.trim()}”.`
+            }
             action={
-              <Button variant="outline" onClick={() => setQuery("")}>
-                Clear search
-              </Button>
+              kindFilter ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setQuery("");
+                    setKindFilter(null);
+                  }}
+                >
+                  Clear filter
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={() => setQuery("")}>
+                  Clear search
+                </Button>
+              )
             }
           />
         ) : (
@@ -201,5 +244,14 @@ export default function NotesPage() {
       />
       </PullToRefresh>
     </div>
+  );
+}
+
+// useSearchParams requires a Suspense boundary for the client route build.
+export default function NotesPage() {
+  return (
+    <Suspense fallback={null}>
+      <NotesPageInner />
+    </Suspense>
   );
 }

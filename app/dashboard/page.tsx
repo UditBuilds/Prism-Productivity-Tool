@@ -434,8 +434,8 @@ export default async function DashboardHome() {
         <SectionHeader
           title="Revisit"
           count={revisitNotes.length}
-          href="/dashboard/notes"
-          linkLabel="All notes"
+          href="/dashboard/notes?kind=revisit"
+          linkLabel="View all"
           accentBar
         />
         {revisitNotes.length === 0 ? (
