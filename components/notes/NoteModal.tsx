@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import {
   BookOpen,
   Brain,
   Check,
+  ChevronDown,
   Loader2,
   Sparkles,
   X,
@@ -91,9 +93,14 @@ export function NoteModal({
   const createNote = useCreateNote();
   const updateNote = useUpdateNote();
   const createCard = useCreateCard();
+  const router = useRouter();
 
   const [mode, setMode] = useState<NoteMode>(initialMode);
   const [kind, setKind] = useState<CaptureKind>("spark");
+  // The existing note's kind (Spark/Revisit only). null = legacy note with no
+  // kind — those keep the old flow and get no switcher.
+  const [noteKind, setNoteKind] = useState<"spark" | "revisit" | null>(null);
+  const [kindMenuOpen, setKindMenuOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [tagsInput, setTagsInput] = useState("");
@@ -111,6 +118,12 @@ export function NoteModal({
     setTitleError(false);
     setEmptyError(false);
     setKind("spark");
+    setKindMenuOpen(false);
+    setNoteKind(
+      note && (note.kind === "spark" || note.kind === "revisit")
+        ? note.kind
+        : null
+    );
     setReformatState("idle");
     setReformatError(null);
     setMode(note ? initialMode : "edit");
@@ -167,6 +180,23 @@ export function NoteModal({
     }
     createNote.mutate({ title: trimmed, content, tags, kind });
     return true;
+  }
+
+  // Switch an existing note between Spark and Revisit (the only legal move —
+  // Recall is never a note). Optimistic locally; on success bust Next's Router
+  // Cache so the server-rendered Dashboard Revisit section updates without a
+  // manual refresh. On failure, revert to match the hook's cache rollback.
+  async function switchKind(next: "spark" | "revisit") {
+    setKindMenuOpen(false);
+    if (!note || noteKind === null || next === noteKind) return;
+    const previous = noteKind;
+    setNoteKind(next);
+    try {
+      await updateNote.mutateAsync({ id: note.id, kind: next });
+      router.refresh();
+    } catch {
+      setNoteKind(previous);
+    }
   }
 
   // Done: save, then return to read for an existing note (keep reading);
@@ -258,18 +288,59 @@ export function NoteModal({
             </DialogHeader>
 
             <div>
-              {/* Kind eyebrow — same mono-caps treatment as NoteCard. Legacy
-                  notes (kind null) start straight at the title. */}
-              {note?.kind && (
-                <p className="mb-1.5 flex items-center gap-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  {note.kind === "spark" ? (
-                    <Zap className="h-3 w-3" aria-hidden />
+              {/* Kind switcher — reuses the mono-caps eyebrow from NoteCard.
+                  Tapping it reveals a Spark/Revisit toggle. Legacy notes
+                  (kind null) get no switcher and stay on the old flow. */}
+              {noteKind && (
+                <div className="mb-3">
+                  {kindMenuOpen ? (
+                    <div
+                      role="radiogroup"
+                      aria-label="Note kind"
+                      className="inline-flex gap-1 rounded-lg border border-border bg-surface p-1"
+                    >
+                      {(["spark", "revisit"] as const).map((k) => {
+                        const Icon = k === "spark" ? Zap : BookOpen;
+                        const selected = noteKind === k;
+                        return (
+                          <button
+                            key={k}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => switchKind(k)}
+                            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] transition-colors ${
+                              selected
+                                ? "bg-surface-raised text-foreground"
+                                : "text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            <Icon className="h-3 w-3" aria-hidden />
+                            {k}
+                          </button>
+                        );
+                      })}
+                    </div>
                   ) : (
-                    <BookOpen className="h-3 w-3" aria-hidden />
+                    <button
+                      type="button"
+                      aria-label={`Kind: ${noteKind}. Tap to change.`}
+                      onClick={() => setKindMenuOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-md font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {noteKind === "spark" ? (
+                        <Zap className="h-3 w-3" aria-hidden />
+                      ) : (
+                        <BookOpen className="h-3 w-3" aria-hidden />
+                      )}
+                      {noteKind}
+                      <ChevronDown className="h-3 w-3 opacity-60" aria-hidden />
+                    </button>
                   )}
-                  {note.kind}
-                </p>
+                </div>
               )}
+
+
               {/* Untitled Sparks show no visual title — the body is the note.
                   Radix still needs a DialogTitle, so it goes sr-only. */}
               <DialogTitle

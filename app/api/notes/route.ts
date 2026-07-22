@@ -119,6 +119,12 @@ export async function PATCH(request: Request) {
   if (body.tags !== undefined) {
     updates.tags = parseTags(body.tags);
   }
+  // Kind is switchable between Spark and Revisit only. Anything else (incl.
+  // "recall", which is never stored on a note) is ignored — the DB CHECK
+  // constraint is the backstop.
+  if (body.kind === "spark" || body.kind === "revisit") {
+    updates.kind = body.kind;
+  }
 
   if (Object.keys(updates).length === 0) {
     return json({ data: null, error: "No fields to update" }, 400);
