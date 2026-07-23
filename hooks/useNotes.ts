@@ -22,6 +22,9 @@ export interface UpdateNoteInput {
   title?: string;
   content?: string;
   tags?: string[];
+  // Spark ↔ Revisit only. Recall is never a note, so it can't be a target or
+  // source here (the DB CHECK constraint also rejects anything else).
+  kind?: "spark" | "revisit";
 }
 
 interface ApiResponse<T> {
