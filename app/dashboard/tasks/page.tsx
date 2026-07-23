@@ -68,7 +68,7 @@ const tabs: { value: Filter; label: string; shortLabel?: string }[] = [
 ];
 
 export default function TasksPage() {
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("todo");
   const openCreateTask = useUIStore((s) => s.openCreateTask);
   const { data: tasks, isLoading, isError, refetch } = useTasksQuery();
 
