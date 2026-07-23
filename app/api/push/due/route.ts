@@ -77,11 +77,15 @@ export async function POST(request: Request) {
       }
     }
 
-    // Delete the reminder once it has actually been delivered — sent reminders
-    // have no further value. On failure we leave the row untouched (is_sent
-    // stays false) so the next cron tick retries it.
+    // Mark the reminder as sent once it has actually been delivered. On failure
+    // we leave the row untouched (is_sent stays false) so the next cron tick
+    // retries it. Delivered reminders stay visible in the Sent tab with a
+    // "Sent" status, consistent with the client-side NotificationChecker path.
     if (delivered) {
-      await supabase.from("reminders").delete().eq("id", reminder.id);
+      await supabase
+        .from("reminders")
+        .update({ is_sent: true })
+        .eq("id", reminder.id);
       sent += 1;
     }
   }
