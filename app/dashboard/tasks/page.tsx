@@ -134,7 +134,11 @@ export default function TasksPage() {
                     : "bg-muted text-muted-foreground"
                 )}
               >
-                {counts[tab.value]}
+                {isLoading ? (
+                  <span className="inline-block h-3 w-3 animate-pulse rounded-sm bg-muted-foreground/30 align-[-1px]" />
+                ) : (
+                  counts[tab.value]
+                )}
               </span>
             </TabsTrigger>
           ))}
