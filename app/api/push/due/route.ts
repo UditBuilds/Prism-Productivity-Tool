@@ -23,8 +23,8 @@ async function logRow(
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from("push_delivery_log").insert(row);
-  } catch {
-    // Swallow — observability is best-effort.
+  } catch (err) {
+    console.error("[push-observability] write failed", err);
   }
 }
 
@@ -36,8 +36,8 @@ async function upsertHealth(
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from("push_health").upsert({ id: true, ...fields });
-  } catch {
-    // Swallow.
+  } catch (err) {
+    console.error("[push-observability] write failed", err);
   }
 }
 
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     // Log auth failure BEFORE returning — this is the row that would have
     // caught the three-week 401 outage on day one.
     const supabase = createAdminClient();
-    logRow(supabase, {
+    await logRow(supabase, {
       invocation_id: crypto.randomUUID(),
       event: "auth_fail",
     });
@@ -81,13 +81,13 @@ export async function POST(request: Request) {
   const matched = (dueReminders ?? []).length;
 
   // Log invocation + update heartbeat.
-  logRow(supabase, {
+  await logRow(supabase, {
     invocation_id: invocationId,
     event: "invocation",
     reminders_matched: matched,
     ok: true,
   });
-  upsertHealth(supabase, { last_invocation_at: new Date().toISOString() });
+  await upsertHealth(supabase, { last_invocation_at: new Date().toISOString() });
 
   let sent = 0;
 
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         delivered = true;
 
         // Log successful attempt — fire-and-forget, don't serialise the loop.
-        logRow(supabase, {
+        await logRow(supabase, {
           invocation_id: invocationId,
           event: "attempt",
           reminder_id: reminder.id,
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
           typeof body === "string" ? body.slice(0, 500) : String(body).slice(0, 500);
 
         // Log failed attempt.
-        logRow(supabase, {
+        await logRow(supabase, {
           invocation_id: invocationId,
           event: "attempt",
           reminder_id: reminder.id,
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
             .delete()
             .eq("endpoint", sub.endpoint);
 
-          logRow(supabase, {
+          await logRow(supabase, {
             invocation_id: invocationId,
             event: "prune",
             subscription_endpoint: logSafeEndpoint(sub.endpoint),
@@ -170,13 +170,13 @@ export async function POST(request: Request) {
         .eq("id", reminder.id);
 
       // Log mark_sent + update heartbeat.
-      logRow(supabase, {
+      await logRow(supabase, {
         invocation_id: invocationId,
         event: "mark_sent",
         reminder_id: reminder.id,
         ok: true,
       });
-      upsertHealth(supabase, { last_delivery_at: new Date().toISOString() });
+      await upsertHealth(supabase, { last_delivery_at: new Date().toISOString() });
 
       sent += 1;
     }
