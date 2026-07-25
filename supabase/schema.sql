@@ -329,3 +329,36 @@ create policy "focus_categories_update_own"
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "focus_categories_delete_own"
   on focus_categories for delete using (auth.uid() = user_id);
+
+-- PUSH DELIVERY LOG (observability — added post PR #11)
+-- Every failure mode of the push pipeline is logged here. Service-role only;
+-- no RLS policies — the client never reads this table directly.
+create table push_delivery_log (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  invocation_id uuid not null,
+  event text not null check (event in ('auth_fail','invocation','attempt','prune','mark_sent')),
+  reminder_id uuid,
+  subscription_endpoint text,
+  reminders_matched int,
+  status_code int,
+  ok boolean,
+  error_text text
+);
+
+create index idx_push_delivery_log_created_at on push_delivery_log (created_at desc);
+create index idx_push_delivery_log_invocation on push_delivery_log (invocation_id);
+
+alter table push_delivery_log enable row level security;
+
+-- PUSH HEALTH (heartbeat row — never grows beyond 1)
+create table push_health (
+  id boolean primary key default true check (id),
+  last_invocation_at timestamptz,
+  last_delivery_at timestamptz
+);
+
+insert into push_health (id) values (true)
+  on conflict (id) do nothing;
+
+alter table push_health enable row level security;
