@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
-import { CalendarIcon, Repeat, X } from "lucide-react";
+import { Bell, CalendarIcon, Repeat, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
   istDateString,
+  istDateTimeToIso,
   istDayContext,
+  istTimeValue,
   istWeekday,
   nextIstMatchingDayName,
 } from "@/lib/date";
 import { useUIStore } from "@/store/ui.store";
 import { useCreateTask, useUpdateTask } from "@/hooks/useTasks";
+import {
+  useCreateReminder,
+  useDeleteReminder,
+  useTaskReminder,
+  useUpdateReminder,
+} from "@/hooks/useReminders";
 import { usePlansQuery } from "@/hooks/usePlans";
 import type { TaskPriority, TaskStatus } from "@/types/database";
 import {
@@ -66,6 +74,20 @@ function localCivilKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Opening time when the reminder toggle is switched on. For a task due today,
+ * half an hour out — so the common case starts valid instead of immediately
+ * tripping the past-time hint. Anything later in the week opens at 09:00.
+ */
+function defaultRemindTime(due: Date): string {
+  const todayKey = istDateString();
+  if (localCivilKey(due) !== todayKey) return "09:00";
+  const soonMs = Date.now() + 30 * 60 * 1000;
+  // Late at night +30m spills into tomorrow; clamp so the time stays on today.
+  if (istDateString(soonMs) !== todayKey) return "23:59";
+  return istTimeValue(new Date(soonMs).toISOString());
+}
+
 type RepeatPattern = "everyday" | "weekdays" | "weekends" | "custom";
 
 const REPEAT_PATTERNS: { value: RepeatPattern; label: string }[] = [
@@ -96,6 +118,14 @@ export function TaskForm() {
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const { data: plans = [] } = usePlansQuery();
+  const createReminder = useCreateReminder();
+  const updateReminder = useUpdateReminder();
+  const deleteReminder = useDeleteReminder();
+  // The reminder this form owns for the task being edited (soonest unsent).
+  const { data: linkedReminder, isSuccess: reminderLoaded } = useTaskReminder(
+    editingTask?.id ?? null
+  );
+  const remindHydratedRef = useRef(false);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -107,6 +137,8 @@ export function TaskForm() {
   const [repeatPattern, setRepeatPattern] = useState<RepeatPattern>("everyday");
   const [customDays, setCustomDays] = useState<number[]>([]);
   const [titleError, setTitleError] = useState(false);
+  const [remindOn, setRemindOn] = useState(false);
+  const [remindTime, setRemindTime] = useState("09:00");
 
   // Hydrate the form whenever the dialog opens (create vs edit).
   useEffect(() => {
@@ -115,6 +147,8 @@ export function TaskForm() {
     setRepeatDaily(false); // create-only toggle; never carried into edit
     setRepeatPattern("everyday");
     setCustomDays([]);
+    setRemindOn(false); // turned back on below if this task already has one
+    setRemindTime("09:00");
     if (editingTask) {
       setTitle(editingTask.title);
       setDescription(editingTask.description ?? "");
@@ -146,13 +180,55 @@ export function TaskForm() {
   ];
   const currentDueKey = dueDate ? localCivilKey(dueDate) : null;
 
+  // Hydrate the reminder controls exactly once per dialog open. The linked
+  // reminder resolves from the ["reminders"] cache, which can settle after the
+  // dialog is already open — but re-running on every cache change would fight
+  // the user (toggling off would flip back on when the cache refetched).
+  useEffect(() => {
+    if (!taskDialogOpen) {
+      remindHydratedRef.current = false;
+      return;
+    }
+    if (remindHydratedRef.current || !reminderLoaded) return;
+    remindHydratedRef.current = true;
+    if (linkedReminder) {
+      setRemindOn(true);
+      setRemindTime(istTimeValue(linkedReminder.remind_at));
+    }
+  }, [taskDialogOpen, reminderLoaded, linkedReminder]);
+
+  // A reminder needs a day to hang off, and recurring tasks are out of scope
+  // (each spawned instance would need its own reminder — see the PR notes).
+  const remindAvailable = !!dueDate && !repeatDaily;
+  const remindActive = remindOn && remindAvailable;
+
+  // The instant the reminder would fire: the task's due DAY + the chosen IST
+  // wall-clock. Same helper the Reminders form uses, so "09:30" means 09:30 IST
+  // no matter what timezone the browser is in.
+  const remindAtIso =
+    remindActive && dueDate ? istDateTimeToIso(dueDate, remindTime) : null;
+  const remindInPast =
+    remindAtIso !== null && Date.parse(remindAtIso) <= Date.now();
+  // A due date in the past can never carry a reminder — say that, rather than
+  // implying some other time on that day would work.
+  const dueDayIsPast =
+    !!dueDate && localCivilKey(dueDate) < istDateString();
+  const remindError = !remindInPast
+    ? null
+    : dueDayIsPast
+      ? "That date has already passed, so a reminder can't be set for it."
+      : "That time has already passed — pick a later time.";
+
   const selectedDays =
     repeatPattern === "custom" ? customDays : PATTERN_DAYS[repeatPattern];
   const createDisabled =
-    !editingTask &&
-    repeatDaily &&
-    repeatPattern === "custom" &&
-    customDays.length === 0;
+    (!editingTask &&
+      repeatDaily &&
+      repeatPattern === "custom" &&
+      customDays.length === 0) ||
+    // POST /api/reminders rejects a past remind_at, so the form blocks it here
+    // rather than letting the save half-succeed (task saved, reminder 400s).
+    remindInPast;
 
   // Preview using the same IST weekday the server decides with — so the
   // caption and the actual create behavior can't disagree.
@@ -168,6 +244,34 @@ export function TaskForm() {
         ? prev.filter((d) => d !== day)
         : [...prev, day].sort((a, b) => a - b)
     );
+  }
+
+  /**
+   * Reconcile the task's reminder on an edit save. Three outcomes:
+   * update the row the form is showing, create one if the toggle was just
+   * switched on, or delete it when the toggle went off (which includes
+   * clearing the due date, since that makes the toggle unavailable).
+   * Only unsent reminders are touched — useTaskReminder never returns a sent
+   * one, so a delivered reminder stays put in the Sent tab.
+   */
+  function syncReminder(taskId: string, taskTitle: string) {
+    if (remindActive && remindAtIso) {
+      if (linkedReminder) {
+        updateReminder.mutate({
+          id: linkedReminder.id,
+          title: taskTitle,
+          remind_at: remindAtIso,
+        });
+      } else {
+        createReminder.mutate({
+          title: taskTitle,
+          remind_at: remindAtIso,
+          task_id: taskId,
+        });
+      }
+    } else if (linkedReminder) {
+      deleteReminder.mutate(linkedReminder.id);
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -189,15 +293,32 @@ export function TaskForm() {
 
     if (editingTask) {
       updateTask.mutate({ id: editingTask.id, ...payload });
+      syncReminder(editingTask.id, trimmed);
     } else {
       // repeat_daily rides along on the POST body; the API creates the
       // recurring template + today's instance (or defers it to the next
       // scheduled day — useCreateTask's onSuccess picks the right toast).
-      createTask.mutate({
-        ...payload,
-        repeat_daily: repeatDaily,
-        days_of_week: selectedDays,
-      });
+      createTask.mutate(
+        {
+          ...payload,
+          repeat_daily: repeatDaily,
+          days_of_week: selectedDays,
+        },
+        {
+          // The task id only exists once the server responds, and task_id is
+          // what makes the reminder deletable when the task is completed or
+          // deleted — so the reminder is created here, not optimistically.
+          onSuccess: (task) => {
+            if (remindActive && remindAtIso) {
+              createReminder.mutate({
+                title: trimmed,
+                remind_at: remindAtIso,
+                task_id: task.id,
+              });
+            }
+          },
+        }
+      );
     }
     closeTaskDialog();
   }
@@ -344,6 +465,65 @@ export function TaskForm() {
                 );
               })}
             </div>
+          </div>
+
+          {/* Reminder — needs a due date to hang off. The task's due_date keeps
+              its noon-IST anchor; the chosen time lives on the reminder. */}
+          <div className="space-y-2">
+            <label
+              htmlFor="remind-me"
+              className={cn(
+                "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 transition",
+                remindActive
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-border bg-surface",
+                remindAvailable
+                  ? "cursor-pointer hover:bg-surface-raised"
+                  : "cursor-not-allowed opacity-60"
+              )}
+            >
+              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Bell className="h-4 w-4 text-muted-foreground" />
+                Remind me
+              </span>
+              <Switch
+                id="remind-me"
+                checked={remindActive}
+                disabled={!remindAvailable}
+                onCheckedChange={(on) => {
+                  setRemindOn(on);
+                  if (on && dueDate) setRemindTime(defaultRemindTime(dueDate));
+                }}
+              />
+            </label>
+
+            {!remindAvailable && (
+              <p className="text-xs text-muted-foreground">
+                {repeatDaily
+                  ? "Reminders aren't available on repeating tasks yet."
+                  : "Set a due date to add a reminder."}
+              </p>
+            )}
+
+            {remindActive && (
+              <div className="space-y-2 rounded-lg border border-border bg-surface-raised/40 p-3">
+                <Label htmlFor="remind-time">Remind at</Label>
+                <Input
+                  id="remind-time"
+                  type="time"
+                  value={remindTime}
+                  onChange={(e) => setRemindTime(e.target.value)}
+                  className="rounded-lg font-mono"
+                />
+                {remindError ? (
+                  <p className="text-xs text-danger">{remindError}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Fires at this time, IST.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {plans.length > 0 && (

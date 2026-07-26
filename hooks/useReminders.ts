@@ -80,6 +80,35 @@ export function useUpcomingReminders() {
   });
 }
 
+/**
+ * The reminder the task form owns for a given task: the SOONEST unsent reminder
+ * linked to it, or null when there is none.
+ *
+ * Derives from the shared ["reminders"] cache via `select` — no extra request
+ * and no new endpoint, since GET /api/reminders already returns every reminder
+ * for the user (same approach as useUpcomingReminders).
+ *
+ * Nothing stops a second reminder pointing at the same task — the Reminders
+ * page's "Link a task" dropdown can create one and there is no unique index.
+ * Picking the soonest unsent row makes the task form deterministic: it edits
+ * exactly that one and leaves any others untouched.
+ */
+export function useTaskReminder(taskId: string | null) {
+  return useQuery<Reminder[], Error, Reminder | null>({
+    ...remindersQueryOptions,
+    select: (reminders) => {
+      if (!taskId) return null;
+      const linked = reminders
+        .filter((r) => r.task_id === taskId && !r.is_sent)
+        .sort(
+          (a, b) =>
+            new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime()
+        );
+      return linked[0] ?? null;
+    },
+  });
+}
+
 export function useCreateReminder() {
   const qc = useQueryClient();
   return useMutation({

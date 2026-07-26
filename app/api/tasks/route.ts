@@ -27,6 +27,31 @@ function isPriority(v: unknown): v is TaskPriority {
   return typeof v === "string" && PRIORITIES.includes(v as TaskPriority);
 }
 
+/**
+ * Remove a task's pending reminders. RLS scopes the delete to the caller, so
+ * this can never reach another user's rows.
+ *
+ * Only `is_sent = false` rows are removed — a delivered reminder is history and
+ * stays visible in the Reminders → Sent tab (PR #11). Best-effort: a failure
+ * here is logged but never fails the task operation the user actually asked
+ * for; the worst case is a stale reminder, not a lost task.
+ */
+async function deleteUnsentRemindersForTask(
+  supabase: ReturnType<typeof createClient>,
+  taskId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("reminders")
+    .delete()
+    .eq("task_id", taskId)
+    .eq("is_sent", false);
+  if (error) {
+    console.error(
+      `tasks: failed to clear reminders for task ${taskId}: ${error.message}`
+    );
+  }
+}
+
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 /** Normalise a submitted days_of_week to unique, sorted weekday numbers 0–6.
@@ -337,6 +362,15 @@ export async function PATCH(request: Request) {
 
   if (error) return json({ data: null, error: error.message }, 500);
   if (!data) return json({ data: null, error: "Task not found" }, 404);
+
+  // Completing a task retires its pending reminder — nagging about something
+  // already done is noise. Done server-side because completion arrives from
+  // several places (swipe, status pill, the dashboard row, offline resume).
+  // Sent reminders are left alone: PR #11 made them history in the Sent tab.
+  if (updates.status === "done") {
+    await deleteUnsentRemindersForTask(supabase, id);
+  }
+
   return json<Task>({ data, error: null });
 }
 
@@ -376,6 +410,11 @@ export async function DELETE(request: Request) {
     );
     if (stopError) return json({ data: null, error: stopError }, 500);
   }
+
+  // Drop pending reminders BEFORE the task row goes. The FK is ON DELETE SET
+  // NULL, so relying on it would leave an orphaned reminder with task_id null
+  // that still fires for a task the user just deleted.
+  await deleteUnsentRemindersForTask(supabase, id);
 
   const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) return json({ data: null, error: error.message }, 500);

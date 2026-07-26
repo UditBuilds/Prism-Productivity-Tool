@@ -126,10 +126,13 @@ export default async function DashboardHome() {
         .limit(UPCOMING_LIMIT),
       // Upcoming reminders (pending, now or later) — merged into "Upcoming"
       // alongside countdowns. Read-only here; created on the Reminders page.
+      // Task-linked reminders are excluded: the task's own row already
+      // represents it, so including both would list the same thing twice.
       supabase
         .from("reminders")
         .select("*", { count: "exact" })
         .eq("is_sent", false)
+        .is("task_id", null)
         .gte("remind_at", nowIso)
         .order("remind_at", { ascending: true })
         .limit(UPCOMING_LIMIT),
