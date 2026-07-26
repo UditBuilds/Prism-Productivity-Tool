@@ -24,6 +24,7 @@ import { renderMarkdown } from "@/lib/markdown";
 import type { Countdown, Note, Reminder, Task } from "@/types/database";
 import { MoodWidget } from "@/components/dashboard/MoodWidget";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
+import { PushHealthBanner } from "@/components/dashboard/PushHealthBanner";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
 import { StatCard } from "@/components/shared/StatCard";
 import { DayRail } from "@/components/shared/DayRail";
@@ -193,6 +194,9 @@ export default async function DashboardHome() {
 
   return (
     <div>
+      {/* Reminder pipeline health — renders only when something is broken */}
+      <PushHealthBanner />
+
       {/* Hero: the greeting anchors the page */}
       <header className="pt-2">
         <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
