@@ -5,7 +5,12 @@ import { format } from "date-fns";
 import { CalendarIcon, Repeat, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { istWeekday, nextIstMatchingDayName } from "@/lib/date";
+import {
+  istDateString,
+  istDayContext,
+  istWeekday,
+  nextIstMatchingDayName,
+} from "@/lib/date";
 import { useUIStore } from "@/store/ui.store";
 import { useCreateTask, useUpdateTask } from "@/hooks/useTasks";
 import { usePlansQuery } from "@/hooks/usePlans";
@@ -37,6 +42,28 @@ function pickedDateToIso(d: Date): string {
   return new Date(
     Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 6, 30, 0)
   ).toISOString();
+}
+
+/**
+ * The form's `dueDate` is a Date whose LOCAL civil fields carry the intended
+ * calendar day — that's the contract pickedDateToIso reads, and what the
+ * Calendar's `selected` highlights. These two helpers move between that
+ * representation and an IST civil date string ("YYYY-MM-DD").
+ *
+ * Which day counts as today/tomorrow is decided by the IST helpers below, never
+ * by the browser clock, so the chips stay correct on a UTC server render and
+ * across the 00:00–05:30 IST window where local time is still on yesterday.
+ */
+function istCivilToLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map((n) => Number.parseInt(n, 10));
+  return new Date(y, m - 1, d);
+}
+
+function localCivilKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 type RepeatPattern = "everyday" | "weekdays" | "weekends" | "custom";
@@ -106,6 +133,18 @@ export function TaskForm() {
       setPlanId(null);
     }
   }, [taskDialogOpen, editingTask]);
+
+  // Quick-pick chips. Recomputed every render (not memoised on mount) so a tab
+  // left open across IST midnight offers the new today, not the stale one.
+  // endOfToday IS 00:00 IST tomorrow, so its IST civil date is tomorrow's.
+  const dueDateChips = [
+    { label: "Today", key: istDateString() },
+    {
+      label: "Tomorrow",
+      key: istDateString(Date.parse(istDayContext().endOfToday)),
+    },
+  ];
+  const currentDueKey = dueDate ? localCivilKey(dueDate) : null;
 
   const selectedDays =
     repeatPattern === "custom" ? customDays : PATTERN_DAYS[repeatPattern];
@@ -279,6 +318,31 @@ export function TaskForm() {
                   <X className="h-4 w-4" />
                 </Button>
               )}
+            </div>
+
+            {/* Quick picks. Selected state is derived from the value, so a date
+                chosen in the picker lights the matching chip too. Unsetting
+                stays with the X — tapping a selected chip is a no-op. */}
+            <div className="flex flex-wrap gap-2">
+              {dueDateChips.map((chip) => {
+                const active = currentDueKey === chip.key;
+                return (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setDueDate(istCivilToLocalDate(chip.key))}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-medium transition",
+                      active
+                        ? "border-accent bg-accent/15 text-accent"
+                        : "border-border text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {chip.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
