@@ -26,6 +26,7 @@ import { MoodWidget } from "@/components/dashboard/MoodWidget";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
 import { PushHealthBanner } from "@/components/dashboard/PushHealthBanner";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
+import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
 import { StatCard } from "@/components/shared/StatCard";
 import { DayRail } from "@/components/shared/DayRail";
 import { SectionHeader } from "@/components/shared/SectionHeader";
@@ -58,6 +59,20 @@ export default async function DashboardHome() {
     Date.parse(startOfToday) - 6 * DAY_MS
   ).toISOString();
 
+  // Upcoming-task window: [00:00 IST tomorrow, 00:00 IST day+31) — i.e. the
+  // next 30 IST days, today excluded (those belong to Due Today).
+  // endOfToday is already 00:00 IST tomorrow, and IST is a fixed +05:30 with no
+  // DST, so adding whole days to that instant lands on IST midnight every time.
+  // Same instant-arithmetic pattern as sparkWindowStartIso above — never civil
+  // Date field math, which would shift back a day when the server runs in UTC.
+  const upcomingWindowEndIso = new Date(
+    Date.parse(endOfToday) + 30 * DAY_MS
+  ).toISOString();
+  // Max rows rendered in Upcoming. Each source fetches at most this many (any
+  // one of them could fill the list); the overflow count comes from the exact
+  // row counts, not the fetched page.
+  const UPCOMING_LIMIT = 5;
+
   const [
     profileRes,
     dueRes,
@@ -68,6 +83,7 @@ export default async function DashboardHome() {
     upcomingRemindersRes,
     weekDoneRes,
     revisitRes,
+    upcomingTasksRes,
   ] = await Promise.all([
       supabase
         .from("profiles")
@@ -99,23 +115,24 @@ export default async function DashboardHome() {
         .lt("remind_at", endOfToday)
         .eq("is_sent", false),
       // "Upcoming" = today or later (IST). Past countdowns sort FIRST on
-      // target_date, so without this filter they'd hog the 3 slots forever.
+      // target_date, so without this filter they'd hog the slots forever.
       // They stay visible in the Reminders → Countdowns tab.
+      // The exact count (not just the fetched page) feeds the "+N more" link.
       supabase
         .from("countdowns")
-        .select("*")
+        .select("*", { count: "exact" })
         .gte("target_date", istDateString())
         .order("target_date", { ascending: true })
-        .limit(3),
+        .limit(UPCOMING_LIMIT),
       // Upcoming reminders (pending, now or later) — merged into "Upcoming"
       // alongside countdowns. Read-only here; created on the Reminders page.
       supabase
         .from("reminders")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("is_sent", false)
         .gte("remind_at", nowIso)
         .order("remind_at", { ascending: true })
-        .limit(3),
+        .limit(UPCOMING_LIMIT),
       // Tasks completed in the last 7 IST days → the "Done This Week" sparkline.
       supabase
         .from("tasks")
@@ -132,6 +149,19 @@ export default async function DashboardHome() {
         .eq("kind", "revisit")
         .order("updated_at", { ascending: false })
         .limit(3),
+      // Future-dated open tasks → merged into "Upcoming". The window starts at
+      // 00:00 IST TOMORROW, so today's tasks stay exclusively in Due Today and
+      // never appear in both sections. Done tasks and tasks with no due_date
+      // are excluded (a null due_date fails .gte, but .neq is explicit).
+      supabase
+        .from("tasks")
+        .select("*", { count: "exact" })
+        .neq("status", "done")
+        .not("due_date", "is", null)
+        .gte("due_date", endOfToday)
+        .lt("due_date", upcomingWindowEndIso)
+        .order("due_date", { ascending: true })
+        .limit(UPCOMING_LIMIT),
     ]);
 
   const displayName = profileRes.data?.display_name ?? "there";
@@ -143,15 +173,17 @@ export default async function DashboardHome() {
   const remindersTodayCount = remindersRes.count ?? 0;
   const countdowns: Countdown[] = countdownsRes.data ?? [];
   const upcomingReminders: Reminder[] = upcomingRemindersRes.data ?? [];
+  const upcomingTasks: Task[] = upcomingTasksRes.data ?? [];
   const revisitNotes: Note[] = revisitRes.data ?? [];
 
-  // Merge countdowns + reminders into one chronological list (soonest first),
-  // capped at the same 3 the countdown query uses. Countdown dates are civil
-  // (IST midnight); reminders are instants — both reduced to a ms sortKey.
+  // Merge countdowns + reminders + future-dated tasks into one chronological
+  // list (soonest first). Countdown dates are civil (IST midnight); reminders
+  // and tasks are instants — all three reduce to a ms sortKey.
   type UpcomingItem =
     | { kind: "countdown"; sortKey: number; countdown: Countdown }
-    | { kind: "reminder"; sortKey: number; reminder: Reminder };
-  const upcomingItems: UpcomingItem[] = [
+    | { kind: "reminder"; sortKey: number; reminder: Reminder }
+    | { kind: "task"; sortKey: number; task: Task };
+  const allUpcoming: UpcomingItem[] = [
     ...countdowns.map(
       (c): UpcomingItem => ({
         kind: "countdown",
@@ -166,9 +198,24 @@ export default async function DashboardHome() {
         reminder: r,
       })
     ),
-  ]
-    .sort((a, b) => a.sortKey - b.sortKey)
-    .slice(0, 3);
+    ...upcomingTasks.map(
+      (t): UpcomingItem => ({
+        kind: "task",
+        // Non-null: the query filters out null due_date.
+        sortKey: new Date(t.due_date as string).getTime(),
+        task: t,
+      })
+    ),
+  ].sort((a, b) => a.sortKey - b.sortKey);
+
+  const upcomingItems = allUpcoming.slice(0, UPCOMING_LIMIT);
+  // Overflow counts every matching row across all three sources, not just the
+  // page we fetched — each query returns an exact count.
+  const upcomingTotal =
+    (countdownsRes.count ?? countdowns.length) +
+    (upcomingRemindersRes.count ?? upcomingReminders.length) +
+    (upcomingTasksRes.count ?? upcomingTasks.length);
+  const upcomingOverflow = Math.max(0, upcomingTotal - upcomingItems.length);
 
   // Bucket the fetched completions by IST civil day, then walk the current
   // IST week (Mon–Sun) into Day Rail cells. The rolling 7-day fetch window
@@ -332,7 +379,7 @@ export default async function DashboardHome() {
             }
           />
         ) : (
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+          <ul className="space-y-2">
               {upcomingItems.map((item) => {
                 if (item.kind === "countdown") {
                   const c = item.countdown;
@@ -382,6 +429,16 @@ export default async function DashboardHome() {
                   );
                 }
 
+                if (item.kind === "task") {
+                  return (
+                    <UpcomingTaskRow
+                      key={`task-${item.task.id}`}
+                      task={item.task}
+                      dueLabel={formatDueDate(item.task.due_date)?.label ?? null}
+                    />
+                  );
+                }
+
                 const r = item.reminder;
                 const display = formatReminderTime(r.remind_at);
                 const withinHour =
@@ -428,6 +485,15 @@ export default async function DashboardHome() {
                 );
               })}
           </ul>
+        )}
+
+        {upcomingOverflow > 0 && (
+          <Link
+            href="/dashboard/tasks"
+            className="mt-2 block rounded-xl border border-dashed border-border bg-surface px-4 py-2.5 text-center text-xs font-medium text-muted-foreground transition-colors hover:border-accent/25 hover:text-foreground"
+          >
+            +{upcomingOverflow} more
+          </Link>
         )}
       </section>
 
