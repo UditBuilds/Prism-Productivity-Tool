@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { useRouter } from "next/navigation";
 
 import pkg from "@/package.json";
 import {
@@ -41,6 +42,7 @@ export function PersistBoundary({
   children: React.ReactNode;
 }) {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   // Render-phase on purpose: children must never render (not even one frame)
   // against another account's cache. Idempotent, so Strict Mode double
@@ -57,6 +59,32 @@ export function PersistBoundary({
   useEffect(() => {
     void dropLegacySharedCache();
   }, []);
+
+  // When connectivity returns after an offline period, replay any paused
+  // mutations that were waiting at mount time (or accumulated since).  Once
+  // they land, bust the Router Cache so Server Components pick up the new
+  // data — the mount-time resumePausedMutations could not do this because
+  // its promise stays pending while offline.
+  //
+  // TanStack's own onlineManager subscriber (registered in QueryClient.mount)
+  // also calls resumePausedMutations — ours fires independently.  Whichever
+  // runs first drains the paused queue; the second finds zero paused
+  // mutations and is a no-op.  Both subscribers are cleaned up on unmount.
+  useEffect(() => {
+    const unsub = onlineManager.subscribe(async (online) => {
+      if (!online) return;
+      const hasPaused =
+        queryClient
+          .getMutationCache()
+          .getAll()
+          .filter((m) => m.state.isPaused).length > 0;
+      await queryClient.resumePausedMutations();
+      if (hasPaused) {
+        router.refresh();
+      }
+    });
+    return () => unsub();
+  }, [queryClient, router]);
 
   return (
     <PersistQueryClientProvider
@@ -83,6 +111,8 @@ export function PersistBoundary({
       }}
       onSuccess={() => {
         // After restore, fire anything that was queued before the reload.
+        // If offline, these re-pause immediately and wait for connectivity
+        // (see the onlineManager subscriber below).
         void queryClient.resumePausedMutations();
       }}
     >
