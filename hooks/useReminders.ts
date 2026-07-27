@@ -109,11 +109,16 @@ export function useTaskReminder(taskId: string | null) {
   });
 }
 
+export const createReminderMutationOptions = {
+  mutationKey: ["reminders", "create"] as const,
+  mutationFn: (input: CreateReminderInput) =>
+    request<Reminder>("POST", input),
+};
+
 export function useCreateReminder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateReminderInput) =>
-      request<Reminder>("POST", input),
+    ...createReminderMutationOptions,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: REMINDERS_KEY });
       const previous = qc.getQueryData<Reminder[]>(REMINDERS_KEY) ?? [];
@@ -150,11 +155,16 @@ export function useCreateReminder() {
   });
 }
 
+export const updateReminderMutationOptions = {
+  mutationKey: ["reminders", "update"] as const,
+  mutationFn: (input: UpdateReminderInput) =>
+    request<Reminder>("PATCH", input),
+};
+
 export function useUpdateReminder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateReminderInput) =>
-      request<Reminder>("PATCH", input),
+    ...updateReminderMutationOptions,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: REMINDERS_KEY });
       const previous = qc.getQueryData<Reminder[]>(REMINDERS_KEY) ?? [];
@@ -180,10 +190,15 @@ export function useUpdateReminder() {
   });
 }
 
+export const deleteReminderMutationOptions = {
+  mutationKey: ["reminders", "delete"] as const,
+  mutationFn: (id: string) => request<{ id: string }>("DELETE", { id }),
+};
+
 export function useDeleteReminder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => request<{ id: string }>("DELETE", { id }),
+    ...deleteReminderMutationOptions,
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: REMINDERS_KEY });
       const previous = qc.getQueryData<Reminder[]>(REMINDERS_KEY) ?? [];
