@@ -52,6 +52,106 @@ async function deleteUnsentRemindersForTask(
   }
 }
 
+/**
+ * The reminder a task "owns": the soonest UNSENT one pointing at it.
+ *
+ * Nothing enforces one reminder per task (no unique index — see PR #17), and
+ * the Reminders page can attach another. Resolving the soonest unsent row makes
+ * the behaviour deterministic, and living here means the task form, offline
+ * replay, and any future caller all agree on which row that is.
+ */
+async function findLinkedReminderId(
+  supabase: ReturnType<typeof createClient>,
+  taskId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("reminders")
+    .select("id")
+    .eq("task_id", taskId)
+    .eq("is_sent", false)
+    .order("remind_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+/**
+ * Result of reading the optional `reminder` field off a task request body.
+ * The three states are distinct on purpose — see parseReminderField.
+ */
+type ReminderIntent =
+  | { kind: "absent" }
+  | { kind: "clear" }
+  | { kind: "set"; remindAt: string };
+
+/**
+ * Read the optional `reminder` field.
+ *
+ * ABSENT must never be read as null. Status changes PATCH this route from the
+ * swipe gesture, the context menu, the status pill and the dashboard row —
+ * none of which know reminders exist. If a missing key meant "clear", every one
+ * of those would silently delete a pending reminder.
+ */
+function parseReminderField(
+  body: Record<string, unknown>
+): ReminderIntent | { error: string } {
+  if (!("reminder" in body)) return { kind: "absent" };
+  const value = body.reminder;
+  if (value === null) return { kind: "clear" };
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return { error: "reminder must be an object or null" };
+  }
+  const remindAtRaw = (value as Record<string, unknown>).remind_at;
+  if (typeof remindAtRaw !== "string") {
+    return { error: "A valid remind time is required" };
+  }
+  const ms = Date.parse(remindAtRaw);
+  if (Number.isNaN(ms)) {
+    return { error: "A valid remind time is required" };
+  }
+  // Same guard POST /api/reminders enforces, so the two creation paths can't
+  // disagree about what a valid reminder is.
+  if (ms <= Date.now()) {
+    return { error: "Remind time must be in the future" };
+  }
+  return { kind: "set", remindAt: new Date(ms).toISOString() };
+}
+
+/**
+ * Apply a parsed reminder intent to a task. Create-or-update the linked row, or
+ * clear it. Never touches is_sent = true — delivered reminders are history and
+ * stay in the Sent tab (PR #11).
+ */
+async function applyReminderIntent(
+  supabase: ReturnType<typeof createClient>,
+  intent: ReminderIntent,
+  task: { id: string; user_id: string; title: string }
+): Promise<string | null> {
+  if (intent.kind === "absent") return null;
+
+  if (intent.kind === "clear") {
+    await deleteUnsentRemindersForTask(supabase, task.id);
+    return null;
+  }
+
+  const existingId = await findLinkedReminderId(supabase, task.id);
+  if (existingId) {
+    const { error } = await supabase
+      .from("reminders")
+      .update({ title: task.title, remind_at: intent.remindAt })
+      .eq("id", existingId);
+    return error ? error.message : null;
+  }
+
+  const { error } = await supabase.from("reminders").insert({
+    user_id: task.user_id,
+    title: task.title,
+    remind_at: intent.remindAt,
+    task_id: task.id,
+  });
+  return error ? error.message : null;
+}
+
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 /** Normalise a submitted days_of_week to unique, sorted weekday numbers 0–6.
@@ -141,6 +241,23 @@ export async function POST(request: Request) {
   // Stamp completion if a task is created directly as done (the PATCH path
   // owns the done/un-done transitions for existing tasks).
   const completedAt = status === "done" ? new Date().toISOString() : null;
+
+  // Validate the reminder BEFORE inserting anything — a 400 here must not leave
+  // a task behind that the user never saw succeed.
+  const reminderIntent = parseReminderField(body);
+  if ("error" in reminderIntent) {
+    return json({ data: null, error: reminderIntent.error }, 400);
+  }
+  // Spawned instances inherit nothing from their template (the cron writes only
+  // task columns), so a reminder here would apply to today's instance alone and
+  // silently vanish tomorrow. The form disables the toggle; say so explicitly
+  // rather than accepting it and dropping it.
+  if (reminderIntent.kind !== "absent" && body.repeat_daily === true) {
+    return json(
+      { data: null, error: "Reminders aren't supported on repeating tasks" },
+      400
+    );
+  }
 
   // "Repeat daily": create a recurring template, then spawn today's instance
   // (IST) linked to it; the cron (/api/cron/recurring-tasks) handles every day
@@ -260,6 +377,17 @@ export async function POST(request: Request) {
     .single();
 
   if (error) return json({ data: null, error: error.message }, 500);
+
+  // Same request, same queue entry: an offline create replays the task and its
+  // reminder together, because the reminder was never a separate mutation.
+  const reminderError = await applyReminderIntent(supabase, reminderIntent, {
+    id: data.id,
+    user_id: user.id,
+    title: data.title,
+  });
+  if (reminderError) {
+    return json({ data: null, error: reminderError }, 500);
+  }
   return json<Task>({ data, error: null }, 201);
 }
 
@@ -302,6 +430,13 @@ export async function PATCH(request: Request) {
       }
     }
     return json<Task>({ data: task, error: null });
+  }
+
+  // Parse before mutating anything so an invalid remind_at rejects the whole
+  // save rather than leaving the task edited and the reminder not.
+  const reminderIntent = parseReminderField(body);
+  if ("error" in reminderIntent) {
+    return json({ data: null, error: reminderIntent.error }, 400);
   }
 
   const updates: TaskUpdate = {};
@@ -349,16 +484,16 @@ export async function PATCH(request: Request) {
     updates.plan_id = typeof body.plan_id === "string" ? body.plan_id : null;
   }
 
-  if (Object.keys(updates).length === 0) {
+  const hasTaskUpdates = Object.keys(updates).length > 0;
+  if (!hasTaskUpdates && reminderIntent.kind === "absent") {
     return json({ data: null, error: "No fields to update" }, 400);
   }
 
-  const { data, error } = await supabase
-    .from("tasks")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+  // A reminder-only save is valid, so fall back to reading the row when there
+  // are no task columns to write.
+  const { data, error } = hasTaskUpdates
+    ? await supabase.from("tasks").update(updates).eq("id", id).select().single()
+    : await supabase.from("tasks").select().eq("id", id).single();
 
   if (error) return json({ data: null, error: error.message }, 500);
   if (!data) return json({ data: null, error: "Task not found" }, 404);
@@ -367,8 +502,19 @@ export async function PATCH(request: Request) {
   // already done is noise. Done server-side because completion arrives from
   // several places (swipe, status pill, the dashboard row, offline resume).
   // Sent reminders are left alone: PR #11 made them history in the Sent tab.
+  // This wins over any `reminder` in the same body: a task saved as done has no
+  // pending reminder, whatever the toggle said.
   if (updates.status === "done") {
     await deleteUnsentRemindersForTask(supabase, id);
+  } else {
+    const reminderError = await applyReminderIntent(supabase, reminderIntent, {
+      id,
+      user_id: user.id,
+      title: data.title,
+    });
+    if (reminderError) {
+      return json({ data: null, error: reminderError }, 500);
+    }
   }
 
   return json<Task>({ data, error: null });

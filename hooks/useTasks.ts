@@ -18,6 +18,22 @@ const TASKS_KEY = ["tasks"] as const;
 // Active recurring templates (GET /api/tasks/recurring) — the persistent
 // "this task repeats" surface on the tasks page.
 const RECURRING_TEMPLATES_KEY = ["recurring-tasks"] as const;
+// Task saves can create/clear the task's linked reminder server-side.
+const REMINDERS_KEY = ["reminders"] as const;
+
+/**
+ * Optional task-linked reminder, carried inside the task mutation itself.
+ *
+ * `{ remind_at }` creates or updates the task's linked reminder, `null` clears
+ * it, and OMITTING the key leaves reminders alone. The three states are
+ * distinct: status-only PATCHes (swipe, status pill, dashboard row) omit it,
+ * and must never be read as "clear".
+ *
+ * It rides on the task payload rather than a second mutation so an offline save
+ * is one queue entry. A follow-up mutation fired from onSuccess cannot survive
+ * dehydration — callbacks aren't serialised — so the reminder would be lost.
+ */
+export type TaskReminderInput = { remind_at: string } | null;
 
 export interface CreateTaskInput {
   title: string;
@@ -26,6 +42,7 @@ export interface CreateTaskInput {
   priority?: TaskPriority;
   due_date?: string | null;
   plan_id?: string | null;
+  reminder?: TaskReminderInput;
   // Recurring create: the API builds a template and only spawns today's
   // instance when today (IST) is in days_of_week.
   repeat_daily?: boolean;
@@ -45,6 +62,7 @@ export interface UpdateTaskInput {
   priority?: TaskPriority;
   due_date?: string | null;
   plan_id?: string | null;
+  reminder?: TaskReminderInput;
 }
 
 interface ApiResponse<T> {
@@ -155,6 +173,10 @@ export function useCreateTask() {
       qc.invalidateQueries({ queryKey: TASKS_KEY });
       qc.invalidateQueries({ queryKey: RECURRING_TEMPLATES_KEY });
       invalidateDerivedCaches(qc, "tasks");
+      // A task save can now create/clear its linked reminder server-side, so
+      // the reminders cache (and what it feeds) is no longer independent.
+      qc.invalidateQueries({ queryKey: REMINDERS_KEY });
+      invalidateDerivedCaches(qc, "reminders");
     },
   });
 }
@@ -166,11 +188,14 @@ export function useUpdateTask() {
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: TASKS_KEY });
       const previous = qc.getQueryData<Task[]>(TASKS_KEY) ?? [];
+      // `reminder` is a request-only field, not a task column — keep it out of
+      // the cached row (it would otherwise be persisted to IndexedDB too).
+      const { reminder: _reminder, ...taskFields } = input;
       qc.setQueryData<Task[]>(
         TASKS_KEY,
         previous.map((t) =>
           t.id === input.id
-            ? { ...t, ...input, updated_at: new Date().toISOString() }
+            ? { ...t, ...taskFields, updated_at: new Date().toISOString() }
             : t
         )
       );
@@ -185,6 +210,10 @@ export function useUpdateTask() {
       // "Stop repeating" rides on PATCH — the template list may have changed.
       qc.invalidateQueries({ queryKey: RECURRING_TEMPLATES_KEY });
       invalidateDerivedCaches(qc, "tasks");
+      // Completing a task clears its pending reminder, and an edit can add or
+      // remove one — either way the reminders cache is now downstream of this.
+      qc.invalidateQueries({ queryKey: REMINDERS_KEY });
+      invalidateDerivedCaches(qc, "reminders");
     },
   });
 }
@@ -212,6 +241,9 @@ export function useDeleteTask() {
       // Deleting a recurring instance deactivates its template server-side.
       qc.invalidateQueries({ queryKey: RECURRING_TEMPLATES_KEY });
       invalidateDerivedCaches(qc, "tasks");
+      // The route also drops the task's pending reminders (PR #17).
+      qc.invalidateQueries({ queryKey: REMINDERS_KEY });
+      invalidateDerivedCaches(qc, "reminders");
     },
   });
 }

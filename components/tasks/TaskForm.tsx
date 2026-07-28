@@ -14,13 +14,14 @@ import {
   nextIstMatchingDayName,
 } from "@/lib/date";
 import { useUIStore } from "@/store/ui.store";
-import { useCreateTask, useUpdateTask } from "@/hooks/useTasks";
 import {
-  useCreateReminder,
-  useDeleteReminder,
-  useTaskReminder,
-  useUpdateReminder,
-} from "@/hooks/useReminders";
+  useCreateTask,
+  useUpdateTask,
+  type TaskReminderInput,
+} from "@/hooks/useTasks";
+// READ-only here: the toggle and time picker hydrate from the linked reminder.
+// Writes go through the task mutation, not the reminder mutations.
+import { useTaskReminder } from "@/hooks/useReminders";
 import { usePlansQuery } from "@/hooks/usePlans";
 import type { TaskPriority, TaskStatus } from "@/types/database";
 import {
@@ -118,9 +119,6 @@ export function TaskForm() {
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const { data: plans = [] } = usePlansQuery();
-  const createReminder = useCreateReminder();
-  const updateReminder = useUpdateReminder();
-  const deleteReminder = useDeleteReminder();
   // The reminder this form owns for the task being edited (soonest unsent).
   const { data: linkedReminder, isSuccess: reminderLoaded } = useTaskReminder(
     editingTask?.id ?? null
@@ -246,34 +244,6 @@ export function TaskForm() {
     );
   }
 
-  /**
-   * Reconcile the task's reminder on an edit save. Three outcomes:
-   * update the row the form is showing, create one if the toggle was just
-   * switched on, or delete it when the toggle went off (which includes
-   * clearing the due date, since that makes the toggle unavailable).
-   * Only unsent reminders are touched — useTaskReminder never returns a sent
-   * one, so a delivered reminder stays put in the Sent tab.
-   */
-  function syncReminder(taskId: string, taskTitle: string) {
-    if (remindActive && remindAtIso) {
-      if (linkedReminder) {
-        updateReminder.mutate({
-          id: linkedReminder.id,
-          title: taskTitle,
-          remind_at: remindAtIso,
-        });
-      } else {
-        createReminder.mutate({
-          title: taskTitle,
-          remind_at: remindAtIso,
-          task_id: taskId,
-        });
-      }
-    } else if (linkedReminder) {
-      deleteReminder.mutate(linkedReminder.id);
-    }
-  }
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = title.trim();
@@ -281,6 +251,17 @@ export function TaskForm() {
       setTitleError(true);
       return;
     }
+
+    // The reminder travels INSIDE the task mutation — one request, one offline
+    // queue entry. A second mutation fired from onSuccess could never survive
+    // being dehydrated (callbacks aren't serialised), so an offline create
+    // would replay the task and silently drop the reminder.
+    //
+    // `null` tells the server to clear the linked reminder; sending the key
+    // unconditionally from this form is safe because the form always knows the
+    // user's intent. Other PATCH callers omit it and are left alone.
+    const reminder: TaskReminderInput =
+      remindActive && remindAtIso ? { remind_at: remindAtIso } : null;
 
     const payload = {
       title: trimmed,
@@ -292,33 +273,19 @@ export function TaskForm() {
     };
 
     if (editingTask) {
-      updateTask.mutate({ id: editingTask.id, ...payload });
-      syncReminder(editingTask.id, trimmed);
+      updateTask.mutate({ id: editingTask.id, ...payload, reminder });
     } else {
       // repeat_daily rides along on the POST body; the API creates the
       // recurring template + today's instance (or defers it to the next
       // scheduled day — useCreateTask's onSuccess picks the right toast).
-      createTask.mutate(
-        {
-          ...payload,
-          repeat_daily: repeatDaily,
-          days_of_week: selectedDays,
-        },
-        {
-          // The task id only exists once the server responds, and task_id is
-          // what makes the reminder deletable when the task is completed or
-          // deleted — so the reminder is created here, not optimistically.
-          onSuccess: (task) => {
-            if (remindActive && remindAtIso) {
-              createReminder.mutate({
-                title: trimmed,
-                remind_at: remindAtIso,
-                task_id: task.id,
-              });
-            }
-          },
-        }
-      );
+      // Reminders and repeat_daily are mutually exclusive (the toggle is
+      // disabled), and the route 400s if both arrive.
+      createTask.mutate({
+        ...payload,
+        reminder: repeatDaily ? undefined : reminder,
+        repeat_daily: repeatDaily,
+        days_of_week: selectedDays,
+      });
     }
     closeTaskDialog();
   }
