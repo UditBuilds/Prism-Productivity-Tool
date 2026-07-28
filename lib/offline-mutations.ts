@@ -100,6 +100,11 @@ export function registerResumableMutations(qc: QueryClient): void {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       void qc.invalidateQueries({ queryKey: ["recurring-tasks"] });
       invalidateDerivedCaches(qc, "tasks");
+      // A task save can create, update or delete its linked reminder
+      // server-side (PR #19 carries `reminder` inside the task mutation), so a
+      // replayed task leaves the Reminders view stale without this.
+      void qc.invalidateQueries({ queryKey: ["reminders"] });
+      invalidateDerivedCaches(qc, "reminders");
     },
     onError: (err, variables) => {
       console.error(
@@ -118,6 +123,11 @@ export function registerResumableMutations(qc: QueryClient): void {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       void qc.invalidateQueries({ queryKey: ["recurring-tasks"] });
       invalidateDerivedCaches(qc, "tasks");
+      // A task save can create, update or delete its linked reminder
+      // server-side (PR #19 carries `reminder` inside the task mutation), so a
+      // replayed task leaves the Reminders view stale without this.
+      void qc.invalidateQueries({ queryKey: ["reminders"] });
+      invalidateDerivedCaches(qc, "reminders");
     },
     onError: (err, variables) => {
       console.error(
@@ -136,6 +146,11 @@ export function registerResumableMutations(qc: QueryClient): void {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       void qc.invalidateQueries({ queryKey: ["recurring-tasks"] });
       invalidateDerivedCaches(qc, "tasks");
+      // A task save can create, update or delete its linked reminder
+      // server-side (PR #19 carries `reminder` inside the task mutation), so a
+      // replayed task leaves the Reminders view stale without this.
+      void qc.invalidateQueries({ queryKey: ["reminders"] });
+      invalidateDerivedCaches(qc, "reminders");
     },
     onError: (err, variables) => {
       console.error(
