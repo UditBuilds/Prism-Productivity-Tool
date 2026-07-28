@@ -25,6 +25,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
           refetchOnWindowFocus: false,
           retry: 1,
         },
+        mutations: {
+          // Both of these are load-bearing for offline, and only together.
+          //
+          // The default networkMode 'online' gates on onlineManager.isOnline(),
+          // which stays TRUE on iOS in airplane mode — so the mutation ran, the
+          // fetch threw, and it settled as an error. Never paused means never
+          // persisted to IndexedDB, so the change was simply lost.
+          // 'offlineFirst' lets the attempt proceed and, when the fetch fails
+          // with no connection, hands it to the retryer instead.
+          //
+          // retry must then be > 0: at the mutation default of 0 the retryer
+          // rejects on the first failure and never reaches the branch that
+          // pauses. One retry is enough to get there.
+          networkMode: "offlineFirst",
+          retry: 1,
+        },
       },
     });
     // Default mutationFns so offline-queued mutations can resume after a
