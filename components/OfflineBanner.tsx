@@ -33,7 +33,7 @@ export function OfflineBanner() {
   return (
     <div
       role="status"
-      className="sticky top-0 z-50 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 bg-amber-500/90 px-4 py-2 text-sm font-medium text-black"
+      className="sticky top-0 z-50 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 bg-amber-500/90 px-4 pb-2 pt-[calc(0.5rem_+_env(safe-area-inset-top,0px))] text-sm font-medium text-black"
     >
       <WifiOff className="h-4 w-4" aria-hidden />
       You&apos;re offline — changes won&apos;t sync until you reconnect
