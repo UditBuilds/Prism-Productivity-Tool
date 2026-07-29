@@ -451,6 +451,50 @@ export interface Database {
         };
         Relationships: [];
       };
+      // One row per SET. Rows logged from the same capture share a capture_id
+      // and carry the same raw_input, so the original shorthand survives
+      // independently of how well it parsed. Every parsed field is nullable by
+      // design — a row can exist with raw_input alone when the AI parse fails
+      // or finds nothing, and then be corrected by hand.
+      workout_sets: {
+        Row: {
+          id: string;
+          user_id: string;
+          capture_id: string;
+          raw_input: string;
+          performed_at: string;
+          exercise: string | null;
+          weight_kg: number | null;
+          reps: number | null;
+          set_index: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          capture_id: string;
+          raw_input: string;
+          performed_at?: string;
+          exercise?: string | null;
+          weight_kg?: number | null;
+          reps?: number | null;
+          set_index?: number | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          capture_id?: string;
+          raw_input?: string;
+          performed_at?: string;
+          exercise?: string | null;
+          weight_kg?: number | null;
+          reps?: number | null;
+          set_index?: number | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       streak_freeze_logs: {
         Row: {
           id: string;
@@ -505,3 +549,4 @@ export type FocusCategory =
   Database["public"]["Tables"]["focus_categories"]["Row"];
 export type Countdown = Database["public"]["Tables"]["countdowns"]["Row"];
 export type MoodLog = Database["public"]["Tables"]["mood_logs"]["Row"];
+export type WorkoutSet = Database["public"]["Tables"]["workout_sets"]["Row"];
