@@ -43,6 +43,8 @@ Rules:
 - exercise: expand abbreviations into a conventional Title Case name
   (ohp -> Overhead Press, bb -> Barbell, db -> Dumbbell, rdl -> Romanian Deadlift,
    bp -> Bench Press, sq -> Squat, dl -> Deadlift, pd -> Pulldown).
+  Always use the SINGULAR form of the name: "Squat" not "Squats", "Pull Up" not
+  "Pull Ups", "Curl" not "Curls", "Calf Raise" not "Calf Raises".
   Never invent an exercise that is not in the input.
 - weight: the number only, no unit text. Use null for bodyweight or when no weight is stated.
 - unit: "kg" or "lb", exactly as the user stated or implied. null when weight is null.
@@ -67,6 +69,33 @@ function lbToKg(lb: number): number {
 
 function toFiniteNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Map whatever the model put in `unit` onto the two units we actually handle.
+ *
+ * The prompt asks for exactly "kg" or "lb" and the model mostly complies, but
+ * not reliably: "Squats 100 kgs 5 reps" comes back with unit "kgs" while every
+ * other kg input in the same run returns "kg". That drift is harmless on the
+ * kg side, because unrecognised units fall through to kg anyway — but the
+ * previous code compared `unit === "lb"` exactly, so the same drift on the
+ * pound side ("lbs", "pounds") would have silently stored pounds as
+ * kilograms, a 2.2x error with no failure anywhere to catch it.
+ *
+ * Measured: "Deadlift 225 lbs 5 reps 3 sets" DID return "lb" and converted
+ * correctly, so this is hardening against an observed class of drift rather
+ * than a reproduced corruption. Prefix matching costs nothing and removes the
+ * whole class. Same reasoning as not letting the model do the arithmetic.
+ *
+ * Returns null for anything unrecognised; the caller treats null as kg, which
+ * matches the prompt's "weight with no unit means kg".
+ */
+function normalizeUnit(raw: unknown): "kg" | "lb" | null {
+  if (typeof raw !== "string") return null;
+  const u = raw.trim().toLowerCase();
+  if (u.startsWith("lb") || u.startsWith("pound")) return "lb";
+  if (u.startsWith("kg") || u.startsWith("kilo")) return "kg";
+  return null;
 }
 
 /**
@@ -126,7 +155,7 @@ export async function parseWorkoutInput(
       if (!exercise) return null;
 
       const weight = toFiniteNumber(s.weight);
-      const unit = typeof s.unit === "string" ? s.unit.toLowerCase() : null;
+      const unit = normalizeUnit(s.unit);
       const reps = toFiniteNumber(s.reps);
 
       return {
