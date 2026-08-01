@@ -11,6 +11,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+/**
+ * Mirrors the "allow new users to sign up" setting in the Supabase dashboard,
+ * which is OFF for the private beta. Supabase rejects the signUp call, so the
+ * form below can only ever fail — this flag says so up front instead. Flip to
+ * true (and re-enable the dashboard setting) when signups reopen; the form is
+ * kept intact underneath so that is the only change needed.
+ */
+const SIGNUPS_OPEN: boolean = false;
+
 export default function SignupPage() {
   const router = useRouter();
   const [displayName, setDisplayName] = useState("");
@@ -42,6 +51,27 @@ export default function SignupPage() {
     // Email confirmation is disabled, so a session exists immediately.
     router.push("/dashboard");
     router.refresh();
+  }
+
+  if (!SIGNUPS_OPEN) {
+    return (
+      <AuthCard>
+        <AuthHeader subtitle="Invite-only private beta" />
+
+        <p className="text-center text-sm leading-relaxed text-muted-foreground">
+          Prism is invite-only while it&apos;s in private beta. New accounts are
+          closed right now, so there&apos;s nothing to create here yet.
+        </p>
+
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          Already have an account?
+        </p>
+
+        <Button asChild className="mt-4 w-full rounded-lg">
+          <Link href="/login">Sign in</Link>
+        </Button>
+      </AuthCard>
+    );
   }
 
   return (
