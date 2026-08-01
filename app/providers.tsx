@@ -37,9 +37,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
           //
           // retry must then be > 0: at the mutation default of 0 the retryer
           // rejects on the first failure and never reaches the branch that
-          // pauses. One retry is enough to get there.
+          // pauses. One retry is enough to get there in a lab; three retries
+          // (with TanStack's default exponential backoff — ~1s, 2s, 4s) bridge
+          // the iOS reconnect race where the online event fires before the
+          // network interface is usable, and retry 1 drains inside that window.
           networkMode: "offlineFirst",
-          retry: 1,
+          retry: 3,
         },
       },
     });
