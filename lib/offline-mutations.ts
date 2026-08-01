@@ -29,6 +29,11 @@ import {
   deleteReminderMutationOptions,
   updateReminderMutationOptions,
 } from "@/hooks/useReminders";
+import {
+  deleteWorkoutSetMutationOptions,
+  logWorkoutMutationOptions,
+  updateWorkoutSetMutationOptions,
+} from "@/hooks/useWorkouts";
 
 /**
  * Mutations paused while offline are persisted to IndexedDB alongside the
@@ -76,6 +81,12 @@ const RESUMABLE_MUTATION_KEYS: ReadonlyArray<MutationKey> = [
   createReminderMutationOptions.mutationKey,
   updateReminderMutationOptions.mutationKey,
   deleteReminderMutationOptions.mutationKey,
+  // A gym is the likeliest place in this app to have no signal, so logging a
+  // set MUST survive offline. The AI parse runs server-side inside POST, which
+  // is why one queued mutation is enough — the replay parses on arrival.
+  logWorkoutMutationOptions.mutationKey,
+  updateWorkoutSetMutationOptions.mutationKey,
+  deleteWorkoutSetMutationOptions.mutationKey,
 ];
 
 const RESUMABLE_KEY_HASHES: ReadonlySet<string> = new Set(
@@ -391,6 +402,52 @@ export function registerResumableMutations(qc: QueryClient): void {
       );
       toast.error("Couldn't sync a reminder you deleted while offline", {
         id: replayToastId("reminder", "delete"),
+      });
+    },
+  });
+
+  // ── workouts ───────────────────────────────────────────────────────
+  // No derived caches: ["workouts"] is not registered in lib/derived-caches.ts
+  // because nothing downstream reads workout sets (v1 has no analytics).
+  qc.setMutationDefaults(logWorkoutMutationOptions.mutationKey, {
+    mutationFn: logWorkoutMutationOptions.mutationFn,
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["workouts"] }),
+    onError: (err, variables) => {
+      console.error(
+        "[offline-replay] workout log failed",
+        { variables },
+        err
+      );
+      toast.error("Couldn't sync a set you logged while offline", {
+        id: replayToastId("workout", "log"),
+      });
+    },
+  });
+  qc.setMutationDefaults(updateWorkoutSetMutationOptions.mutationKey, {
+    mutationFn: updateWorkoutSetMutationOptions.mutationFn,
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["workouts"] }),
+    onError: (err, variables) => {
+      console.error(
+        "[offline-replay] workout set update failed",
+        { variables },
+        err
+      );
+      toast.error("Couldn't sync a set you edited while offline", {
+        id: replayToastId("workout", "update"),
+      });
+    },
+  });
+  qc.setMutationDefaults(deleteWorkoutSetMutationOptions.mutationKey, {
+    mutationFn: deleteWorkoutSetMutationOptions.mutationFn,
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["workouts"] }),
+    onError: (err, variables) => {
+      console.error(
+        "[offline-replay] workout set delete failed",
+        { variables },
+        err
+      );
+      toast.error("Couldn't sync a set you deleted while offline", {
+        id: replayToastId("workout", "delete"),
       });
     },
   });

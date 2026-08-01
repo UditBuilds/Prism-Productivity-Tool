@@ -26,6 +26,7 @@ import { MoodWidget } from "@/components/dashboard/MoodWidget";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
 import { PushHealthBanner } from "@/components/dashboard/PushHealthBanner";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
+import { WorkoutCard } from "@/components/dashboard/WorkoutCard";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
 import { StatCard } from "@/components/shared/StatCard";
 import { DayRail } from "@/components/shared/DayRail";
@@ -296,6 +297,9 @@ export default async function DashboardHome() {
           icon={Bell}
         />
       </section>
+
+      {/* Workout capture — client island; this page stays a Server Component */}
+      <WorkoutCard />
 
       {/* Due Today */}
       <section className="mt-8">

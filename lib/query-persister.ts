@@ -21,6 +21,10 @@ function idbKeyForUser(userId: string): string {
  * else (calendar, reminders, countdowns, mood, focus sessions, analytics,
  * push subscriptions) is time-sensitive or server-computed and stays
  * network-only on purpose.
+ *
+ * "workouts" is persisted because the gym is this app's worst-connectivity
+ * place: without it, reloading offline would show an empty card and invite
+ * the user to log the same sets twice.
  */
 export const PERSISTED_QUERY_KEYS: ReadonlySet<string> = new Set([
   "tasks",
@@ -28,6 +32,7 @@ export const PERSISTED_QUERY_KEYS: ReadonlySet<string> = new Set([
   "plans",
   "srs-cards",
   "focus-categories",
+  "workouts",
 ]);
 
 /**
