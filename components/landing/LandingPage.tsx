@@ -510,80 +510,16 @@ function Features() {
 
 /* ── Pricing (glass) ─────────────────────────────────────────────── */
 
-const FREE_FEATURES = [
-  "5 AI generations per month",
+const BETA_FEATURES = [
   "3 decks",
   "All productivity features (tasks, notes, plans, focus timer)",
   "Basic analytics",
   "PWA install",
-];
-
-const PRO_FEATURES = [
-  "Unlimited AI generations",
   "Unlimited decks",
   "Advanced analytics",
   "Priority support",
   "Custom accent themes",
 ];
-
-function PricingCard({
-  name,
-  price,
-  period,
-  features,
-  highlighted = false,
-}: {
-  name: string;
-  price: string;
-  period?: string;
-  features: string[];
-  highlighted?: boolean;
-}) {
-  return (
-    <div
-      className={
-        highlighted
-          ? "gradient-border flex flex-col rounded-2xl p-7 shadow-glow-accent backdrop-blur-xl [--gb-bg:rgb(14_14_14_/_0.72)]"
-          : "flex flex-col rounded-2xl border border-border bg-surface/60 p-7 backdrop-blur-xl"
-      }
-    >
-      <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-        {name}
-      </h3>
-      <p className="mt-3 text-4xl font-bold tracking-tight text-foreground">
-        {price}
-        {period && (
-          <span className="text-base font-normal text-muted-foreground">
-            {period}
-          </span>
-        )}
-      </p>
-      <ul className="mt-6 flex-1 space-y-2.5">
-        {features.map((f) => (
-          <li
-            key={f}
-            className="flex items-start gap-2 text-sm text-muted-foreground"
-          >
-            <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
-            {f}
-          </li>
-        ))}
-      </ul>
-      <div className="mt-7">
-        <Link
-          href="/signup"
-          className={
-            highlighted
-              ? "btn-primary-shimmer flex w-full items-center justify-center rounded-xl bg-accent-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-glow-accent-sm hover:bg-accent-gradient-hover"
-              : "flex w-full items-center justify-center rounded-xl border border-border bg-surface-raised px-4 py-2.5 text-sm font-semibold text-foreground hover:border-accent/30"
-          }
-        >
-          Start free
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 function Pricing() {
   return (
@@ -598,17 +534,25 @@ function Pricing() {
           Pricing
         </h2>
         <p className="mt-2 text-center text-sm text-muted-foreground">
-          Free to start. One paid tier. No &ldquo;contact sales.&rdquo;
+          Private beta &mdash; free while we learn.
         </p>
-        <div className="mt-10 grid gap-4 sm:grid-cols-2">
-          <PricingCard name="Free" price="$0" features={FREE_FEATURES} />
-          <PricingCard
-            name="Pro"
-            price="$8"
-            period="/month"
-            features={PRO_FEATURES}
-            highlighted
-          />
+        <div className="mt-10 flex justify-center">
+          <div className="gradient-border flex w-full max-w-md flex-col rounded-2xl p-7 shadow-glow-accent backdrop-blur-xl [--gb-bg:rgb(14_14_14_/_0.72)]">
+            <p className="text-center text-lg font-semibold text-foreground">
+              Private beta &mdash; free while we learn.
+            </p>
+            <ul className="mt-6 flex-1 space-y-2.5">
+              {BETA_FEATURES.map((f) => (
+                <li
+                  key={f}
+                  className="flex items-start gap-2 text-sm text-muted-foreground"
+                >
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </section>

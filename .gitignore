@@ -51,4 +51,7 @@ public/fallback-*.js
 /CLAUDE.md
 /.claude/
 
+# supabase local dev artifacts
+supabase/.temp/
+
 .vercel

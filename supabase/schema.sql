@@ -1,134 +1,31 @@
--- PRISM database schema — run once in the Supabase SQL editor.
--- All tables have RLS enabled; user_id on every table; profiles auto-created on signup.
 
--- Enable UUID extension
-create extension if not exists "uuid-ossp";
 
--- PROFILES
-create table profiles (
-  id uuid references auth.users(id) on delete cascade primary key,
-  display_name text,
-  avatar_url text,
-  timezone text default 'Asia/Kolkata',
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
 
--- PLANS (created before tasks so tasks can FK to it)
-create table plans (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  description text,
-  status text check (status in ('active','completed','archived')) default 'active',
-  target_date date,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
 
--- TASKS
-create table tasks (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  description text,
-  status text check (status in ('todo','in_progress','done')) default 'todo',
-  priority text check (priority in ('low','medium','high')) default 'medium',
-  due_date timestamptz,
-  plan_id uuid references plans(id) on delete set null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
 
--- NOTES
--- kind is nullable on purpose: pre-feature notes stay NULL (plain/Spark
--- behavior) and are never rewritten. Only new captures set a kind.
--- Migration for existing DBs:
---   alter table notes add column kind text check (kind in ('spark','revisit'));
-create table notes (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  content text default '',
-  tags text[] default '{}',
-  kind text check (kind in ('spark','revisit')),
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
+CREATE SCHEMA IF NOT EXISTS "public";
 
--- REMINDERS
-create table reminders (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  body text,
-  remind_at timestamptz not null,
-  is_sent boolean default false,
-  task_id uuid references tasks(id) on delete set null,
-  note_id uuid references notes(id) on delete set null,
-  created_at timestamptz default now()
-);
 
--- SRS CARDS
-create table srs_cards (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  note_id uuid references notes(id) on delete set null,
-  front text not null,
-  back text not null,
-  deck_name text default 'Default',
-  interval_days integer default 1,
-  ease_factor float default 2.5,
-  repetitions integer default 0,
-  next_review timestamptz default now(),
-  last_reviewed timestamptz,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
+ALTER SCHEMA "public" OWNER TO "pg_database_owner";
 
--- SRS REVIEW HISTORY
-create table srs_reviews (
-  id uuid default uuid_generate_v4() primary key,
-  card_id uuid references srs_cards(id) on delete cascade not null,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  rating integer check (rating >= 0 and rating <= 5) not null,
-  reviewed_at timestamptz default now()
-);
 
--- ROW LEVEL SECURITY — enable on every table
-alter table profiles enable row level security;
-alter table plans enable row level security;
-alter table tasks enable row level security;
-alter table notes enable row level security;
-alter table reminders enable row level security;
-alter table srs_cards enable row level security;
-alter table srs_reviews enable row level security;
+COMMENT ON SCHEMA "public" IS 'standard public schema';
 
--- RLS POLICIES
-create policy "own_profiles"
-  on profiles for all using (auth.uid() = id);
 
-create policy "own_plans"
-  on plans for all using (auth.uid() = user_id);
 
-create policy "own_tasks"
-  on tasks for all using (auth.uid() = user_id);
-
-create policy "own_notes"
-  on notes for all using (auth.uid() = user_id);
-
-create policy "own_reminders"
-  on reminders for all using (auth.uid() = user_id);
-
-create policy "own_srs_cards"
-  on srs_cards for all using (auth.uid() = user_id);
-
-create policy "own_srs_reviews"
-  on srs_reviews for all using (auth.uid() = user_id);
-
--- AUTO-CREATE PROFILE ON SIGNUP
-create or replace function handle_new_user()
-returns trigger as $$
+CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
 begin
   insert into public.profiles (id, display_name)
   values (
@@ -137,228 +34,920 @@ begin
   );
   return new;
 end;
-$$ language plpgsql security definer;
+$$;
 
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute procedure handle_new_user();
 
--- AUTO-UPDATE updated_at
-create or replace function update_updated_at()
-returns trigger as $$
+ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."update_updated_at"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
 begin
   new.updated_at = now();
   return new;
 end;
-$$ language plpgsql;
+$$;
 
-create trigger t_profiles before update on profiles
-  for each row execute procedure update_updated_at();
-create trigger t_plans before update on plans
-  for each row execute procedure update_updated_at();
-create trigger t_tasks before update on tasks
-  for each row execute procedure update_updated_at();
-create trigger t_notes before update on notes
-  for each row execute procedure update_updated_at();
-create trigger t_srs_cards before update on srs_cards
-  for each row execute procedure update_updated_at();
 
--- PUSH SUBSCRIPTIONS (Web Push — added in Session 8)
-create table push_subscriptions (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  endpoint text not null,
-  p256dh text not null,
-  auth text not null,
-  user_agent text,
-  created_at timestamptz default now(),
-  unique(user_id, endpoint)
+ALTER FUNCTION "public"."update_updated_at"() OWNER TO "postgres";
+
+SET default_tablespace = '';
+
+SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."applications" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "company" "text" NOT NULL,
+    "role" "text" NOT NULL,
+    "date_applied" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "reference_url" "text",
+    "status" "text" DEFAULT 'applied'::"text" NOT NULL,
+    "last_contact_date" "date",
+    "last_nudge_date" "date",
+    "last_nudge_message_id" bigint,
+    "follow_up_count" integer DEFAULT 0 NOT NULL,
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "applications_status_check" CHECK (("status" = ANY (ARRAY['applied'::"text", 'interviewing'::"text", 'rejected'::"text", 'ghosted'::"text", 'offered'::"text", 'accepted'::"text", 'withdrawn'::"text"])))
 );
 
-alter table push_subscriptions enable row level security;
 
-create policy "own_push_subscriptions"
-  on push_subscriptions for all using (auth.uid() = user_id);
+ALTER TABLE "public"."applications" OWNER TO "postgres";
 
--- STREAK FREEZE PROTECTION (auto-applied, 3 per IST week)
--- Extra columns on profiles track the weekly freeze budget. streak_freezes is
--- replenished to 3 at the start of each IST week (Monday); freeze_week_start
--- records the Monday the current budget belongs to. Both are written by
--- /api/srs/analytics, which auto-consumes at most one freeze per calculation
--- to cover a single-day gap in the SRS review streak.
-alter table profiles
-  add column if not exists streak_freezes int not null default 3,
-  add column if not exists freeze_week_start date not null default current_date;
 
--- One row per IST date a freeze covered. The unique (user_id, frozen_date)
--- constraint backs the INSERT … ON CONFLICT DO NOTHING idempotency in the
--- analytics route, so re-calling it never double-logs or double-spends.
-create table if not exists streak_freeze_logs (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  frozen_date date not null,
-  created_at timestamptz default now(),
-  unique(user_id, frozen_date)
+CREATE TABLE IF NOT EXISTS "public"."countdowns" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "target_date" "date" NOT NULL,
+    "emoji" "text" DEFAULT '🎯'::"text",
+    "created_at" timestamp with time zone DEFAULT "now"()
 );
 
-alter table streak_freeze_logs enable row level security;
 
-create policy "own_streak_freeze_logs"
-  on streak_freeze_logs for all using (auth.uid() = user_id);
+ALTER TABLE "public"."countdowns" OWNER TO "postgres";
 
--- FOCUS SESSIONS (focus timer — added in Session 10)
-create table if not exists focus_sessions (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  category text not null default 'Study',
-  duration_minutes integer not null,
-  completed boolean not null default false,
-  started_at timestamptz not null default now(),
-  ended_at timestamptz,
-  created_at timestamptz default now()
+
+CREATE TABLE IF NOT EXISTS "public"."focus_categories" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "color" "text" DEFAULT '#3b82f6'::"text" NOT NULL,
+    "sort_order" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"()
 );
 
-alter table focus_sessions enable row level security;
 
-create policy "own_focus_sessions"
-  on focus_sessions for all using (auth.uid() = user_id);
+ALTER TABLE "public"."focus_categories" OWNER TO "postgres";
 
--- COUNTDOWNS (event countdowns — added in Session 10)
-create table if not exists countdowns (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  target_date date not null,
-  emoji text not null default '🎯',
-  created_at timestamptz default now()
+
+CREATE TABLE IF NOT EXISTS "public"."focus_sessions" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "category" "text" DEFAULT 'Study'::"text" NOT NULL,
+    "duration_minutes" integer NOT NULL,
+    "completed" boolean DEFAULT false,
+    "started_at" timestamp with time zone DEFAULT "now"(),
+    "ended_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "subcategory" "text",
+    "elapsed_seconds" integer
 );
 
-alter table countdowns enable row level security;
 
-create policy "own_countdowns"
-  on countdowns for all using (auth.uid() = user_id);
+ALTER TABLE "public"."focus_sessions" OWNER TO "postgres";
 
--- MOOD LOGS (daily mood check-in — added in Session 11)
--- One row per user per IST day; the app upserts on (user_id, logged_date).
-create table if not exists mood_logs (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  mood text not null,
-  note text,
-  logged_date date not null default current_date,
-  created_at timestamptz default now(),
-  unique(user_id, logged_date)
+
+CREATE TABLE IF NOT EXISTS "public"."job_listings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "title" "text" NOT NULL,
+    "company" "text" NOT NULL,
+    "source" "text" NOT NULL,
+    "source_url" "text" NOT NULL,
+    "location" "text",
+    "description" "text",
+    "relevance_score" integer,
+    "relevance_reason" "text",
+    "discovered_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "sent_to_user" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "job_listings_relevance_score_check" CHECK ((("relevance_score" >= 1) AND ("relevance_score" <= 10))),
+    CONSTRAINT "job_listings_source_check" CHECK (("source" = ANY (ARRAY['yc'::"text", 'wellfound'::"text", 'remoteok'::"text", 'weworkremotely'::"text"])))
 );
 
-alter table mood_logs enable row level security;
 
-create policy "own_mood_logs"
-  on mood_logs for all using (auth.uid() = user_id);
+ALTER TABLE "public"."job_listings" OWNER TO "postgres";
 
--- RECURRING TASKS (daily task templates — Session: recurring tasks)
--- A template that /api/cron/recurring-tasks materialises into a real `tasks`
--- row once per IST day (the New Task form also spawns today's instance up front).
--- Stopping repetition flips is_active = false; past/today's instances are kept.
--- priority is TEXT mirroring tasks.priority's allowed values.
-create table if not exists recurring_tasks (
-  id uuid default gen_random_uuid() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  priority text not null default 'medium',
-  is_active boolean not null default true,
-  created_at timestamptz default now(),
-  -- IST weekday numbers (0=Sun … 6=Sat) the template spawns on. Added in a
-  -- later patch; live column is NOT NULL with no default (rows were backfilled).
-  days_of_week integer[] not null
+
+CREATE TABLE IF NOT EXISTS "public"."mood_logs" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "mood" "text" NOT NULL,
+    "note" "text",
+    "logged_date" "date" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "mood_logs_mood_check" CHECK (("mood" = ANY (ARRAY['great'::"text", 'good'::"text", 'neutral'::"text", 'tired'::"text", 'stressed'::"text"])))
 );
 
-alter table recurring_tasks enable row level security;
 
--- Own-rows access, split into the four commands (auth.uid() = user_id).
-create policy "recurring_tasks_select_own"
-  on recurring_tasks for select using (auth.uid() = user_id);
-create policy "recurring_tasks_insert_own"
-  on recurring_tasks for insert with check (auth.uid() = user_id);
-create policy "recurring_tasks_update_own"
-  on recurring_tasks for update
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "recurring_tasks_delete_own"
-  on recurring_tasks for delete using (auth.uid() = user_id);
+ALTER TABLE "public"."mood_logs" OWNER TO "postgres";
 
--- Link each spawned task back to its template (null for one-off tasks).
-alter table tasks
-  add column if not exists recurring_task_id uuid
-    references recurring_tasks(id) on delete set null;
 
--- One spawned task per template per day — backs the cron's idempotent spawn
--- and the form's immediate "today's instance" insert.
-create unique index if not exists idx_tasks_recurring_unique_per_day
-  on tasks (recurring_task_id, due_date)
-  where recurring_task_id is not null;
-
--- One ACTIVE template per user per (case-insensitive) title — a second
--- identical template silently doubles every scheduled day's spawns. Partial on
--- is_active so a stopped task can be re-created later. Backs the JS duplicate
--- check in POST /api/tasks (which maps the 23505 to a friendly 409).
-create unique index if not exists idx_recurring_tasks_active_title
-  on recurring_tasks (user_id, lower(trim(title)))
-  where is_active;
-
--- FOCUS CATEGORIES (custom per-user focus-timer categories)
--- name + color (hex) drive the focus timer's category chips; sort_order sets
--- list order. Created via /api/focus/categories (auto-seeded from the static
--- defaults on first use).
-create table if not exists focus_categories (
-  id uuid default gen_random_uuid() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  name text not null,
-  color text not null default '#3b82f6',
-  sort_order integer not null default 0,
-  created_at timestamptz default now()
+CREATE TABLE IF NOT EXISTS "public"."notes" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "content" "text" DEFAULT ''::"text",
+    "tags" "text"[] DEFAULT '{}'::"text"[],
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "kind" "text",
+    CONSTRAINT "notes_kind_check" CHECK (("kind" = ANY (ARRAY['spark'::"text", 'revisit'::"text"])))
 );
 
-alter table focus_categories enable row level security;
 
--- Own-rows access, split into the four commands (auth.uid() = user_id).
-create policy "focus_categories_select_own"
-  on focus_categories for select using (auth.uid() = user_id);
-create policy "focus_categories_insert_own"
-  on focus_categories for insert with check (auth.uid() = user_id);
-create policy "focus_categories_update_own"
-  on focus_categories for update
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "focus_categories_delete_own"
-  on focus_categories for delete using (auth.uid() = user_id);
+ALTER TABLE "public"."notes" OWNER TO "postgres";
 
--- PUSH DELIVERY LOG (observability — added post PR #11)
--- Every failure mode of the push pipeline is logged here. Service-role only;
--- no RLS policies — the client never reads this table directly.
-create table push_delivery_log (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  invocation_id uuid not null,
-  event text not null check (event in ('auth_fail','invocation','attempt','prune','mark_sent')),
-  reminder_id uuid,
-  subscription_endpoint text,
-  reminders_matched int,
-  status_code int,
-  ok boolean,
-  error_text text
+
+CREATE TABLE IF NOT EXISTS "public"."plans" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "description" "text",
+    "status" "text" DEFAULT 'active'::"text",
+    "target_date" "date",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "plans_status_check" CHECK (("status" = ANY (ARRAY['active'::"text", 'completed'::"text", 'archived'::"text"])))
 );
 
-create index idx_push_delivery_log_created_at on push_delivery_log (created_at desc);
-create index idx_push_delivery_log_invocation on push_delivery_log (invocation_id);
 
-alter table push_delivery_log enable row level security;
+ALTER TABLE "public"."plans" OWNER TO "postgres";
 
--- PUSH HEALTH (heartbeat row — never grows beyond 1)
-create table push_health (
-  id boolean primary key default true check (id),
-  last_invocation_at timestamptz,
-  last_delivery_at timestamptz
+
+CREATE TABLE IF NOT EXISTS "public"."profiles" (
+    "id" "uuid" NOT NULL,
+    "display_name" "text",
+    "avatar_url" "text",
+    "timezone" "text" DEFAULT 'Asia/Kolkata'::"text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "streak_freezes" integer DEFAULT 3 NOT NULL,
+    "freeze_week_start" "date" DEFAULT CURRENT_DATE
 );
 
-insert into push_health (id) values (true)
-  on conflict (id) do nothing;
 
-alter table push_health enable row level security;
+ALTER TABLE "public"."profiles" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."push_delivery_log" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "invocation_id" "uuid" NOT NULL,
+    "event" "text" NOT NULL,
+    "reminder_id" "uuid",
+    "subscription_endpoint" "text",
+    "reminders_matched" integer,
+    "status_code" integer,
+    "ok" boolean,
+    "error_text" "text",
+    CONSTRAINT "push_delivery_log_event_check" CHECK (("event" = ANY (ARRAY['auth_fail'::"text", 'invocation'::"text", 'attempt'::"text", 'prune'::"text", 'mark_sent'::"text"])))
+);
+
+
+ALTER TABLE "public"."push_delivery_log" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."push_health" (
+    "id" boolean DEFAULT true NOT NULL,
+    "last_invocation_at" timestamp with time zone,
+    "last_delivery_at" timestamp with time zone,
+    CONSTRAINT "push_health_id_check" CHECK ("id")
+);
+
+
+ALTER TABLE "public"."push_health" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."push_subscriptions" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "endpoint" "text" NOT NULL,
+    "p256dh" "text" NOT NULL,
+    "auth" "text" NOT NULL,
+    "user_agent" "text",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."push_subscriptions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."recurring_tasks" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "priority" "text" DEFAULT 'medium'::"text" NOT NULL,
+    "is_active" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "days_of_week" integer[] DEFAULT '{0,1,2,3,4,5,6}'::integer[] NOT NULL
+);
+
+
+ALTER TABLE "public"."recurring_tasks" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."reminders" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "body" "text",
+    "remind_at" timestamp with time zone NOT NULL,
+    "is_sent" boolean DEFAULT false,
+    "task_id" "uuid",
+    "note_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."reminders" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."srs_cards" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "note_id" "uuid",
+    "front" "text" NOT NULL,
+    "back" "text" NOT NULL,
+    "deck_name" "text" DEFAULT 'Default'::"text",
+    "interval_days" integer DEFAULT 1,
+    "ease_factor" double precision DEFAULT 2.5,
+    "repetitions" integer DEFAULT 0,
+    "next_review" timestamp with time zone DEFAULT "now"(),
+    "last_reviewed" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."srs_cards" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."srs_reviews" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "card_id" "uuid" NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "rating" integer NOT NULL,
+    "reviewed_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "srs_reviews_rating_check" CHECK ((("rating" >= 0) AND ("rating" <= 5)))
+);
+
+
+ALTER TABLE "public"."srs_reviews" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."streak_freeze_logs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "frozen_date" "date" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."streak_freeze_logs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."tasks" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "description" "text",
+    "status" "text" DEFAULT 'todo'::"text",
+    "priority" "text" DEFAULT 'medium'::"text",
+    "due_date" timestamp with time zone,
+    "plan_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "completed_at" timestamp with time zone,
+    "recurring_task_id" "uuid",
+    CONSTRAINT "tasks_priority_check" CHECK (("priority" = ANY (ARRAY['low'::"text", 'medium'::"text", 'high'::"text"]))),
+    CONSTRAINT "tasks_status_check" CHECK (("status" = ANY (ARRAY['todo'::"text", 'in_progress'::"text", 'done'::"text"])))
+);
+
+
+ALTER TABLE "public"."tasks" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."workout_sets" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "capture_id" "uuid" NOT NULL,
+    "raw_input" "text" NOT NULL,
+    "performed_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "exercise" "text",
+    "weight_kg" numeric,
+    "reps" integer,
+    "set_index" integer,
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."workout_sets" OWNER TO "postgres";
+
+
+ALTER TABLE ONLY "public"."applications"
+    ADD CONSTRAINT "applications_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."countdowns"
+    ADD CONSTRAINT "countdowns_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."focus_categories"
+    ADD CONSTRAINT "focus_categories_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."focus_categories"
+    ADD CONSTRAINT "focus_categories_user_id_name_key" UNIQUE ("user_id", "name");
+
+
+
+ALTER TABLE ONLY "public"."focus_sessions"
+    ADD CONSTRAINT "focus_sessions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."job_listings"
+    ADD CONSTRAINT "job_listings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."job_listings"
+    ADD CONSTRAINT "job_listings_source_url_key" UNIQUE ("source_url");
+
+
+
+ALTER TABLE ONLY "public"."mood_logs"
+    ADD CONSTRAINT "mood_logs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."mood_logs"
+    ADD CONSTRAINT "mood_logs_user_id_logged_date_key" UNIQUE ("user_id", "logged_date");
+
+
+
+ALTER TABLE ONLY "public"."notes"
+    ADD CONSTRAINT "notes_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."plans"
+    ADD CONSTRAINT "plans_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."profiles"
+    ADD CONSTRAINT "profiles_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."push_delivery_log"
+    ADD CONSTRAINT "push_delivery_log_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."push_health"
+    ADD CONSTRAINT "push_health_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."push_subscriptions"
+    ADD CONSTRAINT "push_subscriptions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."push_subscriptions"
+    ADD CONSTRAINT "push_subscriptions_user_id_endpoint_key" UNIQUE ("user_id", "endpoint");
+
+
+
+ALTER TABLE ONLY "public"."recurring_tasks"
+    ADD CONSTRAINT "recurring_tasks_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."reminders"
+    ADD CONSTRAINT "reminders_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."srs_cards"
+    ADD CONSTRAINT "srs_cards_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."srs_reviews"
+    ADD CONSTRAINT "srs_reviews_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."streak_freeze_logs"
+    ADD CONSTRAINT "streak_freeze_logs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."streak_freeze_logs"
+    ADD CONSTRAINT "streak_freeze_logs_user_id_frozen_date_key" UNIQUE ("user_id", "frozen_date");
+
+
+
+ALTER TABLE ONLY "public"."tasks"
+    ADD CONSTRAINT "tasks_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."workout_sets"
+    ADD CONSTRAINT "workout_sets_pkey" PRIMARY KEY ("id");
+
+
+
+CREATE INDEX "idx_listings_undiscovered" ON "public"."job_listings" USING "btree" ("discovered_at" DESC) WHERE ("sent_to_user" = false);
+
+
+
+CREATE INDEX "idx_nudge_candidates" ON "public"."applications" USING "btree" ("status", "date_applied") WHERE ("status" = 'applied'::"text");
+
+
+
+CREATE INDEX "idx_push_delivery_log_created_at" ON "public"."push_delivery_log" USING "btree" ("created_at" DESC);
+
+
+
+CREATE INDEX "idx_push_delivery_log_invocation" ON "public"."push_delivery_log" USING "btree" ("invocation_id");
+
+
+
+CREATE UNIQUE INDEX "idx_recurring_tasks_active_title" ON "public"."recurring_tasks" USING "btree" ("user_id", "lower"(TRIM(BOTH FROM "title"))) WHERE "is_active";
+
+
+
+CREATE UNIQUE INDEX "idx_tasks_recurring_unique_per_day" ON "public"."tasks" USING "btree" ("recurring_task_id", "due_date") WHERE ("recurring_task_id" IS NOT NULL);
+
+
+
+CREATE INDEX "workout_sets_user_performed_idx" ON "public"."workout_sets" USING "btree" ("user_id", "performed_at" DESC);
+
+
+
+CREATE OR REPLACE TRIGGER "t_notes" BEFORE UPDATE ON "public"."notes" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "t_plans" BEFORE UPDATE ON "public"."plans" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "t_profiles" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "t_srs_cards" BEFORE UPDATE ON "public"."srs_cards" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "t_tasks" BEFORE UPDATE ON "public"."tasks" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+ALTER TABLE ONLY "public"."countdowns"
+    ADD CONSTRAINT "countdowns_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."focus_categories"
+    ADD CONSTRAINT "focus_categories_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."focus_sessions"
+    ADD CONSTRAINT "focus_sessions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."mood_logs"
+    ADD CONSTRAINT "mood_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."notes"
+    ADD CONSTRAINT "notes_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."plans"
+    ADD CONSTRAINT "plans_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."profiles"
+    ADD CONSTRAINT "profiles_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."push_subscriptions"
+    ADD CONSTRAINT "push_subscriptions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."recurring_tasks"
+    ADD CONSTRAINT "recurring_tasks_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."reminders"
+    ADD CONSTRAINT "reminders_note_id_fkey" FOREIGN KEY ("note_id") REFERENCES "public"."notes"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."reminders"
+    ADD CONSTRAINT "reminders_task_id_fkey" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."reminders"
+    ADD CONSTRAINT "reminders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."srs_cards"
+    ADD CONSTRAINT "srs_cards_note_id_fkey" FOREIGN KEY ("note_id") REFERENCES "public"."notes"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."srs_cards"
+    ADD CONSTRAINT "srs_cards_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."srs_reviews"
+    ADD CONSTRAINT "srs_reviews_card_id_fkey" FOREIGN KEY ("card_id") REFERENCES "public"."srs_cards"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."srs_reviews"
+    ADD CONSTRAINT "srs_reviews_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."streak_freeze_logs"
+    ADD CONSTRAINT "streak_freeze_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."tasks"
+    ADD CONSTRAINT "tasks_plan_id_fkey" FOREIGN KEY ("plan_id") REFERENCES "public"."plans"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."tasks"
+    ADD CONSTRAINT "tasks_recurring_task_id_fkey" FOREIGN KEY ("recurring_task_id") REFERENCES "public"."recurring_tasks"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."tasks"
+    ADD CONSTRAINT "tasks_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."workout_sets"
+    ADD CONSTRAINT "workout_sets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+CREATE POLICY "Users can delete own focus categories" ON "public"."focus_categories" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can delete own recurring tasks" ON "public"."recurring_tasks" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can insert own focus categories" ON "public"."focus_categories" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can insert own freeze logs" ON "public"."streak_freeze_logs" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can insert own recurring tasks" ON "public"."recurring_tasks" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can select own focus categories" ON "public"."focus_categories" FOR SELECT USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can select own freeze logs" ON "public"."streak_freeze_logs" FOR SELECT USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can select own recurring tasks" ON "public"."recurring_tasks" FOR SELECT USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can update own focus categories" ON "public"."focus_categories" FOR UPDATE USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can update own recurring tasks" ON "public"."recurring_tasks" FOR UPDATE USING (("auth"."uid"() = "user_id"));
+
+
+
+ALTER TABLE "public"."applications" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."countdowns" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."focus_categories" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."focus_sessions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."job_listings" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."mood_logs" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."notes" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "own_countdowns" ON "public"."countdowns" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_focus_sessions" ON "public"."focus_sessions" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_mood_logs" ON "public"."mood_logs" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_notes" ON "public"."notes" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_plans" ON "public"."plans" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_profiles" ON "public"."profiles" USING (("auth"."uid"() = "id"));
+
+
+
+CREATE POLICY "own_push_subscriptions" ON "public"."push_subscriptions" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_reminders" ON "public"."reminders" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_srs_cards" ON "public"."srs_cards" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_srs_reviews" ON "public"."srs_reviews" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "own_tasks" ON "public"."tasks" USING (("auth"."uid"() = "user_id"));
+
+
+
+ALTER TABLE "public"."plans" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."push_delivery_log" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."push_health" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."push_subscriptions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."recurring_tasks" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."reminders" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."srs_cards" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."srs_reviews" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."streak_freeze_logs" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."tasks" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."workout_sets" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "workout_sets_delete_own" ON "public"."workout_sets" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "workout_sets_insert_own" ON "public"."workout_sets" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "workout_sets_select_own" ON "public"."workout_sets" FOR SELECT USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "workout_sets_update_own" ON "public"."workout_sets" FOR UPDATE USING (("auth"."uid"() = "user_id"));
+
+
+
+GRANT USAGE ON SCHEMA "public" TO "postgres";
+GRANT USAGE ON SCHEMA "public" TO "anon";
+GRANT USAGE ON SCHEMA "public" TO "authenticated";
+GRANT USAGE ON SCHEMA "public" TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "anon";
+GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."update_updated_at"() TO "anon";
+GRANT ALL ON FUNCTION "public"."update_updated_at"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_updated_at"() TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."applications" TO "anon";
+GRANT ALL ON TABLE "public"."applications" TO "authenticated";
+GRANT ALL ON TABLE "public"."applications" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."countdowns" TO "anon";
+GRANT ALL ON TABLE "public"."countdowns" TO "authenticated";
+GRANT ALL ON TABLE "public"."countdowns" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."focus_categories" TO "anon";
+GRANT ALL ON TABLE "public"."focus_categories" TO "authenticated";
+GRANT ALL ON TABLE "public"."focus_categories" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."focus_sessions" TO "anon";
+GRANT ALL ON TABLE "public"."focus_sessions" TO "authenticated";
+GRANT ALL ON TABLE "public"."focus_sessions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."job_listings" TO "anon";
+GRANT ALL ON TABLE "public"."job_listings" TO "authenticated";
+GRANT ALL ON TABLE "public"."job_listings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."mood_logs" TO "anon";
+GRANT ALL ON TABLE "public"."mood_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."mood_logs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."notes" TO "anon";
+GRANT ALL ON TABLE "public"."notes" TO "authenticated";
+GRANT ALL ON TABLE "public"."notes" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."plans" TO "anon";
+GRANT ALL ON TABLE "public"."plans" TO "authenticated";
+GRANT ALL ON TABLE "public"."plans" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."profiles" TO "anon";
+GRANT ALL ON TABLE "public"."profiles" TO "authenticated";
+GRANT ALL ON TABLE "public"."profiles" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."push_delivery_log" TO "anon";
+GRANT ALL ON TABLE "public"."push_delivery_log" TO "authenticated";
+GRANT ALL ON TABLE "public"."push_delivery_log" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."push_health" TO "anon";
+GRANT ALL ON TABLE "public"."push_health" TO "authenticated";
+GRANT ALL ON TABLE "public"."push_health" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."push_subscriptions" TO "anon";
+GRANT ALL ON TABLE "public"."push_subscriptions" TO "authenticated";
+GRANT ALL ON TABLE "public"."push_subscriptions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."recurring_tasks" TO "anon";
+GRANT ALL ON TABLE "public"."recurring_tasks" TO "authenticated";
+GRANT ALL ON TABLE "public"."recurring_tasks" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."reminders" TO "anon";
+GRANT ALL ON TABLE "public"."reminders" TO "authenticated";
+GRANT ALL ON TABLE "public"."reminders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."srs_cards" TO "anon";
+GRANT ALL ON TABLE "public"."srs_cards" TO "authenticated";
+GRANT ALL ON TABLE "public"."srs_cards" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."srs_reviews" TO "anon";
+GRANT ALL ON TABLE "public"."srs_reviews" TO "authenticated";
+GRANT ALL ON TABLE "public"."srs_reviews" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."streak_freeze_logs" TO "anon";
+GRANT ALL ON TABLE "public"."streak_freeze_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."streak_freeze_logs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."tasks" TO "anon";
+GRANT ALL ON TABLE "public"."tasks" TO "authenticated";
+GRANT ALL ON TABLE "public"."tasks" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."workout_sets" TO "anon";
+GRANT ALL ON TABLE "public"."workout_sets" TO "authenticated";
+GRANT ALL ON TABLE "public"."workout_sets" TO "service_role";
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
+
+
+
+
+
+
+
