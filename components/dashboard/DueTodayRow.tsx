@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Circle, Repeat } from "lucide-react";
 
@@ -10,20 +9,22 @@ import { hapticTap } from "@/lib/haptics";
 import { useUpdateTask } from "@/hooks/useTasks";
 import type { Task } from "@/types/database";
 import {
+  priorityBorder,
   priorityStyles,
   statusStyles,
   statusLabel,
 } from "@/components/tasks/task-styles";
+import { DashboardRow, ROW_BUBBLE } from "@/components/dashboard/DashboardRow";
 
 /**
- * A single "Due Today" row on the dashboard. The dashboard page is a Server
- * Component, so interactivity lives here in a "use client" island (mirrors the
- * MoodWidget pattern). The mark-done button is a SIBLING of the <Link> — never
- * nested inside it — so a tap on the button can't also trigger navigation and
- * we avoid the invalid interactive-inside-<a> markup.
+ * A single "Due Today" row. The dashboard page is a Server Component, so
+ * interactivity lives here in a "use client" island (mirrors the MoodWidget
+ * pattern). The mark-done button is the row's leading control and is rendered
+ * as a SIBLING of the link by DashboardRow — never nested inside it — so a tap
+ * on the button can't also navigate, and the markup stays valid.
  *
- * `dueLabel` is computed server-side via formatDueDate and passed in so the
- * IST due-date logic isn't duplicated on the client.
+ * `dueLabel` is computed server-side via formatDueDate so the IST due-date
+ * logic isn't duplicated on the client.
  */
 export function DueTodayRow({
   task,
@@ -56,48 +57,54 @@ export function DueTodayRow({
   }
 
   return (
-    <li
-      className={cn(
-        "flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/25",
-        done && "border-success/30 bg-success/[0.04]"
-      )}
-    >
-      <button
-        type="button"
-        onClick={markDone}
-        disabled={done || updateTask.isPending}
-        aria-label={done ? `${task.title} marked done` : `Mark "${task.title}" done`}
-        className={cn(
-          "shrink-0 rounded-full text-muted-foreground transition-colors hover:text-accent",
-          done && "text-success"
-        )}
-      >
-        {done ? (
-          <CheckCircle2 className="h-5 w-5 animate-pop" />
-        ) : (
-          <Circle className="h-5 w-5" />
-        )}
-      </button>
-
-      <Link
-        href={`/dashboard/tasks/${task.id}`}
-        className="flex min-w-0 flex-1 items-center gap-3"
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className={cn(
-              "min-w-0 truncate text-sm font-medium text-foreground",
-              done && "text-muted-foreground line-through"
-            )}
-          >
-            {task.title}
-          </span>
-          {task.recurring_task_id && (
-            <Repeat
-              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-              aria-label="Repeats daily"
-            />
+    <DashboardRow
+      className={cn(done && "border-success/30 bg-success/[0.04]")}
+      accentBorder={priorityBorder[task.priority]}
+      leadingInteractive
+      leading={
+        <button
+          type="button"
+          onClick={markDone}
+          disabled={done || updateTask.isPending}
+          aria-label={
+            done ? `${task.title} marked done` : `Mark "${task.title}" done`
+          }
+          className={cn(
+            ROW_BUBBLE,
+            "text-muted-foreground transition-colors hover:text-accent",
+            done && "text-success"
           )}
+        >
+          {done ? (
+            <CheckCircle2 className="h-5 w-5 animate-pop" />
+          ) : (
+            <Circle className="h-5 w-5" />
+          )}
+        </button>
+      }
+      href={`/dashboard/tasks/${task.id}`}
+      title={
+        <span className={cn(done && "text-muted-foreground line-through")}>
+          {task.title}
+        </span>
+      }
+      titleAdornment={
+        task.recurring_task_id ? (
+          <Repeat
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            aria-label="Repeats daily"
+          />
+        ) : null
+      }
+      meta={
+        dueLabel ? (
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {dueLabel}
+          </span>
+        ) : null
+      }
+      trailing={
+        <>
           <span
             className={cn(
               "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize",
@@ -114,13 +121,8 @@ export function DueTodayRow({
           >
             {statusLabel[task.status]}
           </span>
-        </div>
-        {dueLabel && (
-          <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-            {dueLabel}
-          </span>
-        )}
-      </Link>
-    </li>
+        </>
+      }
+    />
   );
 }

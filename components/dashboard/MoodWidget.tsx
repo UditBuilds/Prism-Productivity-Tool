@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useTodaysMood, useLogMood } from "@/hooks/useMood";
 import { MOODS, moodOption } from "@/components/dashboard/moods";
 import type { MoodValue } from "@/types/database";
+import { MonoLabel } from "@/components/shared/MonoLabel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -52,9 +53,7 @@ export function MoodWidget() {
           {opt.emoji}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-            Daily check-in
-          </p>
+          <MonoLabel>Daily check-in</MonoLabel>
           <p className="mt-0.5 truncate text-base font-medium text-foreground">
             Feeling <span className="font-semibold">{opt.label}</span>
             {today.note && (
@@ -83,9 +82,10 @@ export function MoodWidget() {
         </p>
       ) : (
         <>
-          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
+          {/* Keeps its /60 tint — this widget's chrome is out of scope here. */}
+          <MonoLabel className="text-muted-foreground/60">
             Daily check-in
-          </p>
+          </MonoLabel>
           <p className="mt-0.5 text-sm font-medium text-foreground">
             How are you feeling today?
           </p>
@@ -104,7 +104,7 @@ export function MoodWidget() {
                 <span aria-hidden className="text-2xl">
                   {m.emoji}
                 </span>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {m.label}
                 </span>
               </button>

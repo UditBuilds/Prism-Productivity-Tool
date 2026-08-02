@@ -28,11 +28,13 @@ import { PushHealthBanner } from "@/components/dashboard/PushHealthBanner";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
 import { WorkoutCard } from "@/components/dashboard/WorkoutCard";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
+import { DashboardRow } from "@/components/dashboard/DashboardRow";
 import { StatCard } from "@/components/shared/StatCard";
 import { DayRail } from "@/components/shared/DayRail";
 import { SectionHeader } from "@/components/shared/SectionHeader";
 import { ProgressBar } from "@/components/shared/ProgressBar";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { Button } from "@/components/ui/button";
 
 export const metadata = { title: "Dashboard | Prism" };
 
@@ -180,6 +182,17 @@ export default async function DashboardHome() {
   const upcomingTasks: Task[] = upcomingTasksRes.data ?? [];
   const revisitNotes: Note[] = revisitRes.data ?? [];
 
+  // A failed read must be visibly distinct from genuinely having no data.
+  // Without this a broken query renders as a calm "Nothing coming up".
+  // Upcoming merges three sources, so any one of them failing makes the whole
+  // list untrustworthy — a partial list would silently drop rows.
+  const upcomingError =
+    countdownsRes.error || upcomingRemindersRes.error || upcomingTasksRes.error
+      ? "Couldn't load what's coming up"
+      : null;
+  const revisitError = revisitRes.error ? "Couldn't load your revisit notes" : null;
+  const weekDoneError = weekDoneRes.error !== null;
+
   // Merge countdowns + reminders + future-dated tasks into one chronological
   // list (soonest first). Countdown dates are civil (IST midnight); reminders
   // and tasks are instants — all three reduce to a ms sortKey.
@@ -274,13 +287,23 @@ export default async function DashboardHome() {
           value={completedCount}
           icon={CheckCircle2}
           subtitle={
-            <DayRail
-              days={weekRailDays}
-              fillClassName="bg-success"
-              outlineClassName="border-success"
-              label={`${activeDayCount} of 7 days with completed tasks`}
-              className="mt-2.5"
-            />
+            // An all-empty rail would read as "no completions" — say the read
+            // failed instead. EmptyState can't live in this slot (it's a
+            // stat-card subtitle, not a section body), so this is the one
+            // error surface on the page that isn't the shared component.
+            weekDoneError ? (
+              <p className="mt-2.5 text-xs text-muted-foreground">
+                Couldn&apos;t load activity
+              </p>
+            ) : (
+              <DayRail
+                days={weekRailDays}
+                fillClassName="bg-success"
+                outlineClassName="border-success"
+                label={`${activeDayCount} of 7 days with completed tasks`}
+                className="mt-2.5"
+              />
+            )
           }
         />
         <StatCard
@@ -363,25 +386,26 @@ export default async function DashboardHome() {
           }
         />
 
-        {upcomingItems.length === 0 ? (
+        {upcomingError ? (
+          <EmptyState
+            icon={AlertCircle}
+            title={upcomingError}
+            description="Try refreshing."
+            compact
+          />
+        ) : upcomingItems.length === 0 ? (
           <EmptyState
             icon={CalendarClock}
             title="Nothing coming up"
             compact
             action={
               <div className="flex justify-center gap-2">
-                <Link
-                  href="/dashboard/reminders"
-                  className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover"
-                >
-                  + Add countdown
-                </Link>
-                <Link
-                  href="/dashboard/tasks"
-                  className="rounded-lg border border-border-col bg-surface-raised px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-raised/70"
-                >
-                  + Add task
-                </Link>
+                <Button asChild className="rounded-lg">
+                  <Link href="/dashboard/reminders">+ Add countdown</Link>
+                </Button>
+                <Button asChild variant="outline" className="rounded-lg">
+                  <Link href="/dashboard/tasks">+ Add task</Link>
+                </Button>
               </div>
             }
           />
@@ -391,28 +415,27 @@ export default async function DashboardHome() {
                 if (item.kind === "countdown") {
                   const c = item.countdown;
                   const display = formatCountdown(c.target_date);
-                  // Time pressure is Amber; everything else stays graphite.
+                  // One tone, one hue. The label used to map "accent" onto
+                  // amber while the bar below it rendered the same datum in
+                  // Iris — a countdown due today showed as two colours at once.
                   const toneClass =
-                    display.tone === "accent" || display.tone === "warning"
-                      ? "text-warning font-semibold"
-                      : display.tone === "dimmed"
-                        ? "text-muted-foreground/50"
-                        : "text-muted-foreground";
+                    display.tone === "accent"
+                      ? "text-accent font-semibold"
+                      : display.tone === "warning"
+                        ? "text-warning font-semibold"
+                        : display.tone === "dimmed"
+                          ? "text-muted-foreground/50"
+                          : "text-muted-foreground";
                   return (
-                    <li
+                    <DashboardRow
                       key={`countdown-${c.id}`}
-                      className="group flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/25"
-                    >
-                      <span
-                        aria-hidden
-                        className="text-2xl transition-transform group-hover:scale-110"
-                      >
-                        {c.emoji}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-foreground">
-                          {c.title}
-                        </p>
+                      leading={
+                        <span className="text-xl transition-transform group-hover:scale-110">
+                          {c.emoji}
+                        </span>
+                      }
+                      title={c.title}
+                      below={
                         <ProgressBar
                           className="mt-1.5"
                           value={countdownProgressPct(
@@ -423,16 +446,18 @@ export default async function DashboardHome() {
                             display.tone === "warning" ? "warning" : "accent"
                           }
                         />
-                      </div>
-                      <span
-                        className={cn(
-                          "shrink-0 font-mono text-xs tabular-nums",
-                          toneClass
-                        )}
-                      >
-                        {display.label}
-                      </span>
-                    </li>
+                      }
+                      trailing={
+                        <span
+                          className={cn(
+                            "shrink-0 font-mono text-xs tabular-nums",
+                            toneClass
+                          )}
+                        >
+                          {display.label}
+                        </span>
+                      }
+                    />
                   );
                 }
 
@@ -457,38 +482,29 @@ export default async function DashboardHome() {
                       ? "text-warning font-medium"
                       : "text-muted-foreground";
                 return (
-                  <li
+                  <DashboardRow
                     key={`reminder-${r.id}`}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/25"
-                  >
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-raised",
-                        withinHour && "ring-1 ring-warning/40"
-                      )}
-                    >
+                    bubbleClassName={cn(withinHour && "ring-1 ring-warning/40")}
+                    leading={
                       <Bell
                         className={cn(
                           "h-4 w-4",
                           withinHour ? "text-warning" : "text-muted-foreground"
                         )}
                       />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-foreground">
-                        {r.title}
-                      </p>
-                      <p
+                    }
+                    title={r.title}
+                    meta={
+                      <span
                         className={cn(
-                          "mt-0.5 truncate font-mono text-xs tabular-nums",
+                          "font-mono text-xs tabular-nums",
                           toneClass
                         )}
                       >
                         {display.label}
-                      </p>
-                    </div>
-                  </li>
+                      </span>
+                    }
+                  />
                 );
               })}
           </ul>
@@ -505,8 +521,9 @@ export default async function DashboardHome() {
       </section>
 
       {/* Revisit — notes saved to be re-read, shown as their full text (never
-          quizzed). When empty, a one-line placeholder keeps the section (and
-          the feature) visible without shouting. */}
+          quizzed). Empty and failed reads both use the shared EmptyState, so
+          "nothing saved" and "the query broke" can't be mistaken for each
+          other. */}
       <section className="mt-8">
         <SectionHeader
           title="Revisit"
@@ -515,10 +532,20 @@ export default async function DashboardHome() {
           linkLabel="View all"
           accentBar
         />
-        {revisitNotes.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-surface px-4 py-3.5 text-[13px] text-muted-foreground">
-            Nothing to revisit — save a note as Revisit and it resurfaces here.
-          </p>
+        {revisitError ? (
+          <EmptyState
+            icon={AlertCircle}
+            title={revisitError}
+            description="Try refreshing."
+            compact
+          />
+        ) : revisitNotes.length === 0 ? (
+          <EmptyState
+            icon={BookOpen}
+            title="Nothing to revisit"
+            description="Save a note as Revisit and it resurfaces here."
+            compact
+          />
         ) : (
           <ul className="space-y-2">
             {revisitNotes.map((n) => (

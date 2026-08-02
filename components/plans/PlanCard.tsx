@@ -110,7 +110,6 @@ export function PlanCard({
           className="mt-1.5"
           value={pct}
           size="md"
-          glow
           variant={
             pct === 100 ? "success" : pct >= 60 ? "accent-emerald" : "accent"
           }

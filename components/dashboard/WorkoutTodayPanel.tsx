@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Dumbbell, Loader2, Trash2 } from "lucide-react";
+import { AlertCircle, Dumbbell, Loader2, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatSetLine, groupSetsByExercise } from "@/lib/workouts";
@@ -14,6 +14,8 @@ import {
 import type { WorkoutSet } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { MonoLabel } from "@/components/shared/MonoLabel";
 
 /** Optimistic rows carry a client-generated id and no parsed fields yet. */
 function isPending(set: WorkoutSet): boolean {
@@ -23,9 +25,10 @@ function isPending(set: WorkoutSet): boolean {
 /**
  * Today's sets plus the 21-day session count.
  *
- * Client-only — WorkoutCard loads this through next/dynamic with `ssr: false`,
- * because its data can arrive before hydration finishes and would otherwise
- * break it. See the hydration note there.
+ * A "use client" island imported STATICALLY by WorkoutCard. next/dynamic with
+ * `ssr: false` was tried for the hydration race described in WorkoutCard's own
+ * note and did not fix it, so it is not used here — don't reintroduce it
+ * without reproducing that race first.
  */
 export function WorkoutTodayPanel() {
   const { data: todaySets, isLoading, isError } = useTodaysSets();
@@ -43,20 +46,24 @@ export function WorkoutTodayPanel() {
             <div className="h-8 animate-pulse rounded-lg bg-surface-raised" />
           </div>
         ) : isError ? (
-          <p className="py-1 text-[13px] text-muted-foreground">
-            Couldn&apos;t load today&apos;s sets. Logging still works.
-          </p>
+          <EmptyState
+            icon={AlertCircle}
+            title="Couldn't load today's sets"
+            description="Logging still works."
+            compact
+          />
         ) : groups.length === 0 ? (
-          <p className="py-1 text-[13px] text-muted-foreground">
-            Nothing logged today — type a set above and it saves straight away.
-          </p>
+          <EmptyState
+            icon={Dumbbell}
+            title="Nothing logged today"
+            description="Type a set above and it saves straight away."
+            compact
+          />
         ) : (
           <ul className="space-y-3">
             {groups.map((group) => (
               <li key={group.exercise ?? "__unparsed"}>
-                <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                  {group.exercise ?? "Not read yet"}
-                </p>
+                <MonoLabel>{group.exercise ?? "Not read yet"}</MonoLabel>
                 <ul className="mt-1.5 space-y-1.5">
                   {group.sets.map((set) =>
                     editingId === set.id ? (
@@ -83,7 +90,7 @@ export function WorkoutTodayPanel() {
       {/* The feature measuring its own use. Hidden until there is something to
           report, so a brand-new user isn't greeted by a zero. */}
       {(sessionCount ?? 0) > 0 && (
-        <p className="mt-3.5 border-t border-border pt-3 font-mono text-[11px] tabular-nums text-muted-foreground">
+        <p className="mt-3.5 border-t border-border pt-3 font-mono text-xs tabular-nums text-muted-foreground">
           {sessionCount} session{sessionCount === 1 ? "" : "s"} in the last 21
           days
         </p>
@@ -116,7 +123,7 @@ function SetRow({ set, onEdit }: { set: WorkoutSet; onEdit: () => void }) {
         />
         <span
           className={cn(
-            "min-w-0 flex-1 truncate font-mono text-[13px] tabular-nums",
+            "min-w-0 flex-1 truncate font-mono text-sm tabular-nums",
             set.exercise === null ? "text-muted-foreground" : "text-foreground"
           )}
         >
@@ -171,7 +178,7 @@ function SetEditor({ set, onClose }: { set: WorkoutSet; onClose: () => void }) {
         onChange={(e) => setExercise(e.target.value)}
         placeholder="Exercise"
         aria-label="Exercise"
-        className="h-8 rounded-md text-[13px]"
+        className="h-8 rounded-md text-sm"
       />
       <div className="mt-2 flex items-center gap-2">
         <Input
@@ -183,7 +190,7 @@ function SetEditor({ set, onClose }: { set: WorkoutSet; onClose: () => void }) {
           inputMode="decimal"
           min={0}
           step="0.5"
-          className="h-8 rounded-md text-[13px]"
+          className="h-8 rounded-md text-sm"
         />
         <span aria-hidden className="text-xs text-muted-foreground">
           ×
@@ -197,7 +204,7 @@ function SetEditor({ set, onClose }: { set: WorkoutSet; onClose: () => void }) {
           inputMode="numeric"
           min={0}
           step="1"
-          className="h-8 rounded-md text-[13px]"
+          className="h-8 rounded-md text-sm"
         />
       </div>
       <div className="mt-2 flex items-center gap-2">
