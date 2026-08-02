@@ -6,11 +6,13 @@ import { Bell, CalendarIcon, Repeat, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
+  istCivilToLocalDate,
   istDateString,
   istDateTimeToIso,
   istDayContext,
   istTimeValue,
   istWeekday,
+  localCivilKey,
   nextIstMatchingDayName,
 } from "@/lib/date";
 import { useUIStore } from "@/store/ui.store";
@@ -54,29 +56,7 @@ function pickedDateToIso(d: Date): string {
 }
 
 /**
- * The form's `dueDate` is a Date whose LOCAL civil fields carry the intended
- * calendar day — that's the contract pickedDateToIso reads, and what the
- * Calendar's `selected` highlights. These two helpers move between that
- * representation and an IST civil date string ("YYYY-MM-DD").
- *
- * Which day counts as today/tomorrow is decided by the IST helpers below, never
- * by the browser clock, so the chips stay correct on a UTC server render and
- * across the 00:00–05:30 IST window where local time is still on yesterday.
- */
-function istCivilToLocalDate(dateStr: string): Date {
-  const [y, m, d] = dateStr.split("-").map((n) => Number.parseInt(n, 10));
-  return new Date(y, m - 1, d);
-}
-
-function localCivilKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-/**
- * Opening time when the reminder toggle is switched on. For a task due today,
+ * Opening time when the reminder toggle is switched on.
  * half an hour out — so the common case starts valid instead of immediately
  * tripping the past-time hint. Anything later in the week opens at 09:00.
  */
