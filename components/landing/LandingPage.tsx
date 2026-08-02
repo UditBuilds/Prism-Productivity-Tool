@@ -510,10 +510,12 @@ function Features() {
 
 /* ── Pricing (glass) ─────────────────────────────────────────────── */
 
+/**
+ * One list, no tiers. Where the old Free/Pro split had a capped and an
+ * uncapped version of the same thing, only the uncapped one survives.
+ */
 const BETA_FEATURES = [
-  "3 decks",
   "All productivity features (tasks, notes, plans, focus timer)",
-  "Basic analytics",
   "PWA install",
   "Unlimited decks",
   "Advanced analytics",
@@ -539,7 +541,7 @@ function Pricing() {
         <div className="mt-10 flex justify-center">
           <div className="gradient-border flex w-full max-w-md flex-col rounded-2xl p-7 shadow-glow-accent backdrop-blur-xl [--gb-bg:rgb(14_14_14_/_0.72)]">
             <p className="text-center text-lg font-semibold text-foreground">
-              Private beta &mdash; free while we learn.
+              What&apos;s included
             </p>
             <ul className="mt-6 flex-1 space-y-2.5">
               {BETA_FEATURES.map((f) => (
