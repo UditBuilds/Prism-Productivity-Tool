@@ -53,12 +53,14 @@ export function WorkoutTodayPanel() {
             compact
           />
         ) : groups.length === 0 ? (
-          <EmptyState
-            icon={Dumbbell}
-            title="Nothing logged today"
-            description="Type a set above and it saves straight away."
-            compact
-          />
+          // One line, not the full EmptyState card. This sits on the first
+          // screen above Due Today, where a 100px dashed card costs more than
+          // the message is worth. The error branch above keeps the card — it
+          // is rare and needs to stop the reader.
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Dumbbell aria-hidden className="h-3.5 w-3.5 shrink-0" />
+            Nothing logged today — type a set above and it saves straight away.
+          </p>
         ) : (
           <ul className="space-y-3">
             {groups.map((group) => (

@@ -41,72 +41,67 @@ export function MoodWidget() {
     setEditing(true);
   }
 
+  // Both states share this wrapper — no card chrome, and therefore identical
+  // padding. They used to differ (p-4 vs px-4 py-3.5), which read as a jump
+  // when the day's mood was logged.
+  const WRAPPER = "mt-3";
+
   // State B — already logged (and not editing): calm, collapsed summary.
   if (today && !editing) {
     const opt = moodOption(today.mood);
     return (
-      <div className="mt-5 flex items-center gap-3 rounded-xl border border-border bg-surface p-4">
-        <span
-          aria-hidden
-          className="w-12 shrink-0 self-center text-center text-4xl leading-none"
-        >
-          {opt.emoji}
-        </span>
-        <div className="min-w-0 flex-1">
-          <MonoLabel>Daily check-in</MonoLabel>
-          <p className="mt-0.5 truncate text-base font-medium text-foreground">
+      <div className={WRAPPER}>
+        <MonoLabel>Daily check-in</MonoLabel>
+        <div className="mt-1 flex items-center gap-2">
+          <span aria-hidden className="shrink-0 text-2xl leading-none">
+            {opt.emoji}
+          </span>
+          <p className="min-w-0 flex-1 truncate text-sm text-foreground">
             Feeling <span className="font-semibold">{opt.label}</span>
             {today.note && (
               <span className="text-muted-foreground"> · {today.note}</span>
             )}
           </p>
+          <button
+            type="button"
+            onClick={startEdit}
+            className="shrink-0 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Edit
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={startEdit}
-          className="shrink-0 self-center text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-        >
-          Edit
-        </button>
       </div>
     );
   }
 
   // State A — not logged yet (or editing)
   return (
-    <div className="mt-5 rounded-xl border border-border bg-surface px-4 py-3.5">
+    <div className={WRAPPER}>
       {savedFlash ? (
-        <p className="flex items-center justify-center gap-2 py-3 text-sm font-medium text-success">
+        <p className="flex items-center gap-2 py-1 text-sm font-medium text-success">
           <Check className="h-4 w-4" />
           Logged! ✓
         </p>
       ) : (
         <>
-          {/* Keeps its /60 tint — this widget's chrome is out of scope here. */}
-          <MonoLabel className="text-muted-foreground/60">
-            Daily check-in
-          </MonoLabel>
-          <p className="mt-0.5 text-sm font-medium text-foreground">
-            How are you feeling today?
-          </p>
-          <div className="mt-3 flex items-start justify-between gap-1 sm:justify-start sm:gap-4">
+          <MonoLabel>Daily check-in</MonoLabel>
+          {/* The emoji ARE the question — the "How are you feeling today?"
+              line above them said nothing the row doesn't. */}
+          <div className="mt-1 flex items-center justify-between gap-1 sm:justify-start sm:gap-4">
             {MOODS.map((m) => (
               <button
                 key={m.value}
                 type="button"
                 onClick={() => setSelected(m.value)}
                 aria-pressed={selected === m.value}
+                aria-label={m.label}
+                title={m.label}
                 className={cn(
-                  "flex flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-1.5 hover:bg-surface-raised",
+                  "rounded-lg border border-transparent px-2 py-1 text-2xl leading-none hover:bg-surface-raised",
                   selected === m.value && "border-accent/60 bg-accent/10"
                 )}
               >
-                <span aria-hidden className="text-2xl">
-                  {m.emoji}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {m.label}
-                </span>
+                <span aria-hidden>{m.emoji}</span>
               </button>
             ))}
           </div>

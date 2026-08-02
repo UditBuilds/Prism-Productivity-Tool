@@ -13,6 +13,13 @@ export interface StatCardProps {
   valueVariant?: "default" | "gradient" | "gradient-success" | "warning";
   /** Value size: lg = dashboard hero cards, md = secondary strips. */
   size?: "md" | "lg";
+  /**
+   * "card" (default) is the bordered tile. "strip" drops the chrome entirely
+   * for the dashboard's four-across counter row, where a 375px viewport leaves
+   * ~83px per column — no room for a border box or the decorative icon.
+   * Learn, Weekly Review and PlanCard keep the card and are untouched.
+   */
+  variant?: "card" | "strip";
   /** Small slot under the value (Day Rail, streak-freeze indicator…). */
   subtitle?: React.ReactNode;
   className?: string;
@@ -32,9 +39,36 @@ export function StatCard({
   iconClassName,
   valueVariant = "default",
   size = "lg",
+  variant = "card",
   subtitle,
   className,
 }: StatCardProps) {
+  const valueTint = cn(
+    valueVariant === "default" && "text-foreground",
+    valueVariant === "gradient" && "text-accent",
+    valueVariant === "gradient-success" && "text-success",
+    valueVariant === "warning" && "text-warning"
+  );
+
+  if (variant === "strip") {
+    return (
+      <div className={cn("min-w-0", className)}>
+        <MonoLabel as="span" className="block truncate">
+          {label}
+        </MonoLabel>
+        <p
+          className={cn(
+            "mt-0.5 font-mono text-2xl font-semibold tabular-nums tracking-tight",
+            valueTint
+          )}
+        >
+          {value}
+        </p>
+        {subtitle}
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -59,10 +93,7 @@ export function StatCard({
         className={cn(
           "mt-2 font-mono font-semibold tabular-nums tracking-tight",
           size === "lg" ? "text-3xl" : "text-2xl",
-          valueVariant === "default" && "text-foreground",
-          valueVariant === "gradient" && "text-accent",
-          valueVariant === "gradient-success" && "text-success",
-          valueVariant === "warning" && "text-warning"
+          valueTint
         )}
       >
         {value}

@@ -94,9 +94,18 @@ export function TopBar({
         scrolled && "shadow-lg shadow-black/30"
       )}
     >
-      <h1 className="text-gradient text-base font-semibold tracking-tight">
-        {title}
-      </h1>
+      <div className="flex min-w-0 items-baseline gap-2">
+        <h1 className="text-gradient shrink-0 text-base font-semibold tracking-tight">
+          {title}
+        </h1>
+        {/* The dashboard's greeting block used to carry this date. Mobile only:
+            at sm: and up the chip on the right already shows it (with the
+            clock), and this bar's height is pinned by h-[calc(4rem+...)], so
+            nothing here can make it taller. */}
+        <span className="truncate text-xs text-muted-foreground sm:hidden">
+          {today}
+        </span>
+      </div>
 
       <div className="flex items-center gap-2.5">
         <span className="hidden items-center rounded-lg border border-border/70 bg-surface px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent/30 sm:flex">
