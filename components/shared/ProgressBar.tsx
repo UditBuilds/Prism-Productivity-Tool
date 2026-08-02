@@ -26,8 +26,6 @@ export interface ProgressBarProps {
   /** Hex fill for the `category` variant. */
   color?: string;
   size?: keyof typeof HEIGHTS;
-  /** No-op (glows are retired by the design system); kept for caller compat. */
-  glow?: boolean;
   /** Extra classes on the fill (e.g. opacity-80 for weekly day bars). */
   fillClassName?: string;
   /** Extra classes on the track. */

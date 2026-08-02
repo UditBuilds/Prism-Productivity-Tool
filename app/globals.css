@@ -513,7 +513,8 @@ body {
    is HSL components, not a usable color, so a literal var(--accent) would be
    invalid CSS. */
 .prose-preview {
-  font-size: 0.9375rem;
+  /* 14px — on the dashboard type scale (30/24/16/14/12). */
+  font-size: 0.875rem;
   line-height: 1.75;
   color: inherit;
 }

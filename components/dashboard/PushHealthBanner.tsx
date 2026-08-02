@@ -2,6 +2,7 @@
 
 import { usePushHealth } from "@/hooks/usePushHealth";
 import { pushHealthWarnings } from "@/lib/push-health";
+import { MonoLabel } from "@/components/shared/MonoLabel";
 
 /**
  * Surfaces reminder-push pipeline failures at the top of the dashboard.
@@ -23,9 +24,7 @@ export function PushHealthBanner() {
       role="status"
       className="mt-4 rounded-xl border border-warning/30 bg-surface-raised px-4 py-3"
     >
-      <p className="font-mono text-[11px] uppercase tracking-wider text-warning">
-        Reminder delivery
-      </p>
+      <MonoLabel className="text-warning">Reminder delivery</MonoLabel>
       <ul className="mt-1.5 space-y-1">
         {warnings.map((w) => (
           <li key={w} className="text-sm text-foreground">

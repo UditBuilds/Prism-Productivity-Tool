@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { MonoLabel } from "@/components/shared/MonoLabel";
 
 export interface StatCardProps {
   label: string;
@@ -12,8 +13,6 @@ export interface StatCardProps {
   valueVariant?: "default" | "gradient" | "gradient-success" | "warning";
   /** Value size: lg = dashboard hero cards, md = secondary strips. */
   size?: "md" | "lg";
-  /** Pulsing accent ring around the card (attention state). */
-  pulse?: boolean;
   /** Small slot under the value (Day Rail, streak-freeze indicator…). */
   subtitle?: React.ReactNode;
   className?: string;
@@ -33,7 +32,6 @@ export function StatCard({
   iconClassName,
   valueVariant = "default",
   size = "lg",
-  pulse = false,
   subtitle,
   className,
 }: StatCardProps) {
@@ -41,14 +39,13 @@ export function StatCard({
     <div
       className={cn(
         "cursor-default rounded-xl border border-border bg-surface p-4 hover:border-border-col",
-        pulse && "animate-pulse-ring",
         className
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+        <MonoLabel as="span" className="truncate">
           {label}
-        </span>
+        </MonoLabel>
         {Icon && (
           <Icon
             className={cn(

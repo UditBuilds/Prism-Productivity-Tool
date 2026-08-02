@@ -40,7 +40,7 @@ export function SectionHeader({
       )}
       <h2 className="text-base font-semibold text-foreground">{title}</h2>
       {count !== undefined && count > 0 && (
-        <span className="rounded-full bg-surface-raised px-2 py-0.5 font-mono text-[11px] font-medium tabular-nums text-muted-foreground">
+        <span className="rounded-full bg-surface-raised px-2 py-0.5 font-mono text-xs font-medium tabular-nums text-muted-foreground">
           {count}
         </span>
       )}

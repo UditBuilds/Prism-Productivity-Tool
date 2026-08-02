@@ -9,8 +9,6 @@ export interface EmptyStateProps {
   action?: React.ReactNode;
   /** Tighter paddings for inline panel slots (calendar day panel, widgets). */
   compact?: boolean;
-  /** Ambient floating accent dots (dashboard "all clear" celebration). */
-  particles?: boolean;
   className?: string;
 }
 
@@ -25,7 +23,6 @@ export function EmptyState({
   description,
   action,
   compact = false,
-  particles = false,
   className,
 }: EmptyStateProps) {
   return (
@@ -36,14 +33,6 @@ export function EmptyState({
         className
       )}
     >
-      {particles && (
-        <>
-          <span aria-hidden className="particle-dot" style={{ left: "18%", bottom: "20%" }} />
-          <span aria-hidden className="particle-dot" style={{ left: "36%", bottom: "10%", animationDelay: "0.9s" }} />
-          <span aria-hidden className="particle-dot" style={{ left: "62%", bottom: "16%", animationDelay: "1.7s" }} />
-          <span aria-hidden className="particle-dot" style={{ left: "82%", bottom: "24%", animationDelay: "2.4s" }} />
-        </>
-      )}
       <div
         className={cn(
           "flex items-center justify-center rounded-full border border-border bg-surface-raised",
@@ -56,7 +45,7 @@ export function EmptyState({
         {title}
       </p>
       {description && (
-        <p className="mt-1 max-w-xs text-[13px] leading-relaxed text-muted-foreground">
+        <p className="mt-1 max-w-xs text-sm leading-relaxed text-muted-foreground">
           {description}
         </p>
       )}
