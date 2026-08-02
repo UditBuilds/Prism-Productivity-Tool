@@ -100,6 +100,29 @@ export function istDateString(ms: number = Date.now()): string {
 }
 
 /**
+ * Bridge between an IST civil date ("YYYY-MM-DD") and the Date shape the date
+ * pickers speak: a Date whose LOCAL civil fields carry the intended calendar
+ * day. That is the contract istDateTimeToIso reads and what the Calendar's
+ * `selected` highlights — so WHICH day is today always comes from the IST
+ * helpers above, never from the browser clock.
+ *
+ * TaskForm still carries private copies of these two (components/tasks/
+ * TaskForm.tsx); it was out of scope to re-point it here.
+ */
+export function istCivilToLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map((n) => Number.parseInt(n, 10));
+  return new Date(y, m - 1, d);
+}
+
+/** Inverse of istCivilToLocalDate: the local civil day as "YYYY-MM-DD". */
+export function localCivilKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Whole IST days from today until a civil date ("YYYY-MM-DD").
  * 0 = today, 1 = tomorrow, negative = past.
  */
