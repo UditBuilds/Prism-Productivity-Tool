@@ -58,7 +58,7 @@ export function StatCard({
         </MonoLabel>
         <p
           className={cn(
-            "mt-0.5 font-mono text-2xl font-semibold tabular-nums tracking-tight",
+            "mt-0.5 font-mono text-3xl font-semibold tabular-nums tracking-tight",
             valueTint
           )}
         >
