@@ -6,7 +6,7 @@ import { Loader2, Plus } from "lucide-react";
 import { useLogWorkout } from "@/hooks/useWorkouts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SectionHeader } from "@/components/shared/SectionHeader";
+import { SectionPanel } from "@/components/dashboard/SectionPanel";
 import { WorkoutTodayPanel } from "@/components/dashboard/WorkoutTodayPanel";
 
 const PLACEHOLDER = "bench 3x5 @ 80kg, squat 100x5";
@@ -46,42 +46,38 @@ export function WorkoutCard() {
   }
 
   return (
-    <section className="mt-8">
-      <SectionHeader title="Workout" accentBar />
-
-      <div className="rounded-xl border border-border bg-surface px-4 py-3.5">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-          className="flex items-center gap-2"
+    <SectionPanel title="Workout">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+        className="flex items-center gap-2"
+      >
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={PLACEHOLDER}
+          aria-label="Log a set in gym shorthand"
+          enterKeyHint="done"
+          className="h-9 rounded-md font-mono text-sm"
+        />
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!input.trim() || logWorkout.isPending}
+          className="shrink-0 rounded-md"
         >
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={PLACEHOLDER}
-            aria-label="Log a set in gym shorthand"
-            enterKeyHint="done"
-            className="h-9 rounded-lg font-mono text-sm"
-          />
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!input.trim() || logWorkout.isPending}
-            className="shrink-0 rounded-lg"
-          >
-            {logWorkout.isPending ? (
-              <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus aria-hidden className="h-4 w-4" />
-            )}
-            <span className="sr-only">Log set</span>
-          </Button>
-        </form>
+          {logWorkout.isPending ? (
+            <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+          ) : (
+            <Plus aria-hidden className="h-4 w-4" />
+          )}
+          <span className="sr-only">Log set</span>
+        </Button>
+      </form>
 
-        <WorkoutTodayPanel />
-      </div>
-    </section>
+      <WorkoutTodayPanel />
+    </SectionPanel>
   );
 }

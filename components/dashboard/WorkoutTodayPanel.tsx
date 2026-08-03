@@ -39,11 +39,11 @@ export function WorkoutTodayPanel() {
 
   return (
     <>
-      <div className="mt-3.5">
+      <div className="mt-4">
         {isLoading ? (
           <div className="space-y-2">
             <div className="h-4 w-24 animate-pulse rounded bg-surface-raised" />
-            <div className="h-8 animate-pulse rounded-lg bg-surface-raised" />
+            <div className="h-8 animate-pulse rounded-md bg-surface-raised" />
           </div>
         ) : isError ? (
           <EmptyState
@@ -62,11 +62,13 @@ export function WorkoutTodayPanel() {
             Nothing logged today — type a set above and it saves straight away.
           </p>
         ) : (
-          <ul className="space-y-3">
+          // 16 between exercise groups (two sub-groups), 8 from a group's
+          // label to its sets and between the sets (one object). Was 12 / 6.
+          <ul className="space-y-4">
             {groups.map((group) => (
               <li key={group.exercise ?? "__unparsed"}>
                 <MonoLabel>{group.exercise ?? "Not read yet"}</MonoLabel>
-                <ul className="mt-1.5 space-y-1.5">
+                <ul className="mt-2 space-y-2">
                   {group.sets.map((set) =>
                     editingId === set.id ? (
                       <SetEditor
@@ -92,7 +94,7 @@ export function WorkoutTodayPanel() {
       {/* The feature measuring its own use. Hidden until there is something to
           report, so a brand-new user isn't greeted by a zero. */}
       {(sessionCount ?? 0) > 0 && (
-        <p className="mt-3.5 border-t border-border pt-3 font-mono text-xs tabular-nums text-muted-foreground">
+        <p className="mt-4 border-t border-border pt-4 font-mono text-xs tabular-nums text-muted-foreground">
           {sessionCount} session{sessionCount === 1 ? "" : "s"} in the last 21
           days
         </p>
@@ -113,7 +115,10 @@ function SetRow({ set, onEdit }: { set: WorkoutSet; onEdit: () => void }) {
         onClick={onEdit}
         disabled={pending}
         className={cn(
-          "flex w-full items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-left transition-colors",
+          // Tier 2 inside the Workout panel — same treatment as a dashboard
+          // row: surface-raised, transparent border reserved for hover, 16
+          // padding, nested radius.
+          "flex w-full items-center gap-2 rounded-md border border-transparent bg-surface-raised p-4 text-left transition-colors",
           pending
             ? "cursor-default opacity-60"
             : "hover:border-accent/25 hover:bg-surface-raised/70"
@@ -174,7 +179,7 @@ function SetEditor({ set, onClose }: { set: WorkoutSet; onClose: () => void }) {
   }
 
   return (
-    <li className="rounded-lg border border-accent/30 bg-surface-raised p-2.5">
+    <li className="rounded-md border border-accent/30 bg-surface-raised p-4">
       <Input
         value={exercise}
         onChange={(e) => setExercise(e.target.value)}
