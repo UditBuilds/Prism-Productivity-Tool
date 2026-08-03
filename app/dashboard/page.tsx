@@ -298,9 +298,6 @@ export default async function DashboardHome() {
         />
       </section>
 
-      {/* Workout capture — client island; this page stays a Server Component */}
-      <WorkoutCard />
-
       {/* Due Today */}
       <section className="mt-8">
         <SectionHeader
@@ -347,6 +344,11 @@ export default async function DashboardHome() {
           </ul>
         )}
       </section>
+
+      {/* Workout capture — client island; this page stays a Server Component.
+          Sits below Due Today: above it, its 148px cost the first screen the
+          three task rows that are the point of this page. */}
+      <WorkoutCard />
 
       {/* Upcoming countdowns */}
       <section className="mt-8">
