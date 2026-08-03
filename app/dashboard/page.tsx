@@ -1,8 +1,6 @@
 import Link from "next/link";
 import {
   CalendarClock,
-  CheckCircle2,
-  Brain,
   Bell,
   BookOpen,
   Coffee,
@@ -13,7 +11,6 @@ import { createClient } from "@/lib/supabase/server";
 import {
   istDayContext,
   istDateString,
-  greetingForHour,
   formatDueDate,
   formatCountdown,
   formatReminderTime,
@@ -38,15 +35,6 @@ import { Button } from "@/components/ui/button";
 
 export const metadata = { title: "Dashboard | Prism" };
 
-// IST-anchored hero date line (same Intl convention as TopBar — local time
-// would render the wrong day on UTC Vercel between 00:00–05:30 IST).
-const istHeroDateFmt = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "Asia/Kolkata",
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-});
-
 export default async function DashboardHome() {
   const supabase = createClient();
   const {
@@ -54,7 +42,7 @@ export default async function DashboardHome() {
   } = await supabase.auth.getUser();
   if (!user) return null; // layout already redirects unauthenticated users
 
-  const { startOfToday, endOfToday, startOfWeek, hour } = istDayContext();
+  const { startOfToday, endOfToday, startOfWeek } = istDayContext();
   const nowIso = new Date().toISOString();
   const DAY_MS = 86_400_000;
   // Sparkline window: IST midnight 6 days ago → covers today + 6 days back.
@@ -76,8 +64,9 @@ export default async function DashboardHome() {
   // row counts, not the fetched page.
   const UPCOMING_LIMIT = 5;
 
+  // The profiles read that fed the greeting's display name is gone with it —
+  // the TopBar gets that name from the layout, not from here.
   const [
-    profileRes,
     dueRes,
     completedRes,
     cardsRes,
@@ -88,11 +77,6 @@ export default async function DashboardHome() {
     revisitRes,
     upcomingTasksRes,
   ] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("id", user.id)
-        .single(),
       supabase
         .from("tasks")
         .select("*", { count: "exact" })
@@ -170,7 +154,6 @@ export default async function DashboardHome() {
         .limit(UPCOMING_LIMIT),
     ]);
 
-  const displayName = profileRes.data?.display_name ?? "there";
   const dueTasks: Task[] = dueRes.data ?? [];
   const dueCount = dueRes.count ?? 0;
   const dueError = dueRes.error?.message ?? null;
@@ -261,15 +244,9 @@ export default async function DashboardHome() {
       {/* Reminder pipeline health — renders only when something is broken */}
       <PushHealthBanner />
 
-      {/* Hero: the greeting anchors the page */}
-      <header className="pt-2">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          {greetingForHour(hour)}, {displayName}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {istHeroDateFmt.format(new Date())}
-        </p>
-      </header>
+      {/* No greeting block. It cost 68px of the first screen and said nothing
+          actionable; its date now rides in the sticky TopBar beside the page
+          title, where it costs nothing. */}
 
       {/* Notification permission nudge (renders only while undecided) */}
       <NotificationNudge />
@@ -277,23 +254,25 @@ export default async function DashboardHome() {
       {/* Daily mood check-in */}
       <MoodWidget />
 
-      {/* Stats — graphite tiles; color appears only where the number carries
-          urgency (amber = review debt). The Done This Week rail is the design
-          system's signature Day Rail: Mon–Sun, moss-filled for active days. */}
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard label="Due Today" value={dueCount} icon={CalendarClock} />
+      {/* Stats — one four-across strip, no card chrome. At 375px each column
+          is ~83px, which is what the 81px Day Rail needs and leaves no room
+          for a border box, an icon, or a label longer than ~9 characters:
+          hence gap-1 and the shortened labels. Colour still appears only
+          where the number carries urgency (amber = review debt). */}
+      <section className="mt-4 grid grid-cols-4 gap-1">
+        <StatCard variant="strip" label="Due today" value={dueCount} />
         <StatCard
-          label="Done This Week"
+          variant="strip"
+          label="Done"
           value={completedCount}
-          icon={CheckCircle2}
           subtitle={
             // An all-empty rail would read as "no completions" — say the read
             // failed instead. EmptyState can't live in this slot (it's a
             // stat-card subtitle, not a section body), so this is the one
             // error surface on the page that isn't the shared component.
             weekDoneError ? (
-              <p className="mt-2.5 text-xs text-muted-foreground">
-                Couldn&apos;t load activity
+              <p className="mt-1.5 truncate text-xs text-muted-foreground">
+                Load failed
               </p>
             ) : (
               <DayRail
@@ -301,28 +280,23 @@ export default async function DashboardHome() {
                 fillClassName="bg-success"
                 outlineClassName="border-success"
                 label={`${activeDayCount} of 7 days with completed tasks`}
-                className="mt-2.5"
+                className="mt-1.5"
               />
             )
           }
         />
         <StatCard
-          label="Cards to Review"
+          variant="strip"
+          label="Review"
           value={cardsCount}
-          icon={Brain}
           valueVariant={cardsCount > 0 ? "warning" : "default"}
-          iconClassName={cardsCount > 0 ? "text-warning" : undefined}
-          className={cardsCount > 0 ? "border-warning/30" : undefined}
         />
         <StatCard
-          label="Reminders Today"
+          variant="strip"
+          label="Reminders"
           value={remindersTodayCount}
-          icon={Bell}
         />
       </section>
-
-      {/* Workout capture — client island; this page stays a Server Component */}
-      <WorkoutCard />
 
       {/* Due Today */}
       <section className="mt-8">
@@ -370,6 +344,11 @@ export default async function DashboardHome() {
           </ul>
         )}
       </section>
+
+      {/* Workout capture — client island; this page stays a Server Component.
+          Sits below Due Today: above it, its 148px cost the first screen the
+          three task rows that are the point of this page. */}
+      <WorkoutCard />
 
       {/* Upcoming countdowns */}
       <section className="mt-8">

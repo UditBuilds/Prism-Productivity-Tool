@@ -5,7 +5,6 @@ import toast from "react-hot-toast";
 import { Bell, Loader2 } from "lucide-react";
 
 import { usePushSubscription } from "@/hooks/usePushSubscription";
-import { Button } from "@/components/ui/button";
 
 /**
  * Dashboard banner nudging toward browser notifications. Client island (the
@@ -44,26 +43,24 @@ export function NotificationNudge() {
 
   if (!show) return null;
 
+  // One line, one inline action: this is a one-time setup prompt, not a
+  // standing feature of the dashboard, and it sits on the first screen where
+  // space belongs to the user's actual tasks.
   return (
-    <div className="mt-4 flex items-center gap-3 rounded-xl border border-warning/20 bg-warning/5 px-4 py-3">
-      <Bell className="h-5 w-5 shrink-0 text-warning" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">
-          Enable notifications
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Get reminded about tasks and reviews on time.
-        </p>
-      </div>
-      <Button
-        size="sm"
-        className="shrink-0 rounded-lg"
+    <div className="mt-3 flex h-8 items-center gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3">
+      <Bell className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
+      <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+        Get reminded on time
+      </p>
+      <button
+        type="button"
         disabled={busy}
         onClick={enable}
+        className="flex shrink-0 items-center gap-1 text-xs font-semibold text-accent hover:text-accent-hover disabled:opacity-60"
       >
-        {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+        {busy && <Loader2 aria-hidden className="h-3 w-3 animate-spin" />}
         Enable
-      </Button>
+      </button>
     </div>
   );
 }
