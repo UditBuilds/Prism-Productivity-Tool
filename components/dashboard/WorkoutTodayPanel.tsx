@@ -50,7 +50,7 @@ export function WorkoutTodayPanel() {
             icon={AlertCircle}
             title="Couldn't load today's sets"
             description="Logging still works."
-            compact
+            density="compact"
           />
         ) : groups.length === 0 ? (
           // One line, not the full EmptyState card. This sits on the first

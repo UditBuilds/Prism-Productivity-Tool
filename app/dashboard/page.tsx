@@ -258,13 +258,24 @@ export default async function DashboardHome() {
           is ~83px, which is what the 81px Day Rail needs and leaves no room
           for a border box, an icon, or a label longer than ~9 characters:
           hence gap-1 and the shortened labels. Colour still appears only
-          where the number carries urgency (amber = review debt). */}
+          where the number carries urgency (amber = review debt).
+
+          Each counter links to where its number can be acted on. "REVIEW 16"
+          is routinely the most actionable thing on the page and used to be
+          inert; the tap target is the whole column, and the link adds no
+          padding, so the geometry above is unchanged. */}
       <section className="mt-4 grid grid-cols-4 gap-1">
-        <StatCard variant="strip" label="Due today" value={dueCount} />
+        <StatCard
+          variant="strip"
+          label="Due today"
+          value={dueCount}
+          href="/dashboard/tasks"
+        />
         <StatCard
           variant="strip"
           label="Done"
           value={completedCount}
+          href="/dashboard/tasks?filter=done"
           subtitle={
             // An all-empty rail would read as "no completions" — say the read
             // failed instead. EmptyState can't live in this slot (it's a
@@ -285,16 +296,21 @@ export default async function DashboardHome() {
             )
           }
         />
+        {/* Straight into the review session, not the Learn index — the number
+            IS the due-card count, so the tap should start reviewing them.
+            No deck param = every due card, which is what this counts. */}
         <StatCard
           variant="strip"
           label="Review"
           value={cardsCount}
           valueVariant={cardsCount > 0 ? "warning" : "default"}
+          href="/dashboard/learn/review"
         />
         <StatCard
           variant="strip"
           label="Reminders"
           value={remindersTodayCount}
+          href="/dashboard/reminders"
         />
       </section>
 
@@ -312,14 +328,18 @@ export default async function DashboardHome() {
             icon={AlertCircle}
             title="Couldn't load today's tasks"
             description="Try refreshing."
-            compact
+            density="compact"
           />
         ) : dueTasks.length === 0 ? (
+          // One row, not a card. A user who usually has nothing due was
+          // getting the largest element on the first screen — a 205px
+          // announcement that there is nothing to do — sitting exactly where
+          // PRs #28/#29 had just made room for the tasks. The error branch
+          // above keeps the card: that one is rare and worth the space.
           <EmptyState
             icon={Coffee}
             title="All clear for today"
-            description="Nothing due — a good day to get ahead."
-            compact
+            density="inline"
             action={
               <Link
                 href="/dashboard/tasks"
@@ -370,13 +390,13 @@ export default async function DashboardHome() {
             icon={AlertCircle}
             title={upcomingError}
             description="Try refreshing."
-            compact
+            density="compact"
           />
         ) : upcomingItems.length === 0 ? (
           <EmptyState
             icon={CalendarClock}
             title="Nothing coming up"
-            compact
+            density="compact"
             action={
               <div className="flex justify-center gap-2">
                 <Button asChild className="rounded-lg">
@@ -516,14 +536,14 @@ export default async function DashboardHome() {
             icon={AlertCircle}
             title={revisitError}
             description="Try refreshing."
-            compact
+            density="compact"
           />
         ) : revisitNotes.length === 0 ? (
           <EmptyState
             icon={BookOpen}
             title="Nothing to revisit"
             description="Save a note as Revisit and it resurfaces here."
-            compact
+            density="compact"
           />
         ) : (
           <ul className="space-y-2">

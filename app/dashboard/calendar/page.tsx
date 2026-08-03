@@ -305,7 +305,7 @@ function DayDetails({
               ? "This month is wide open."
               : "No tasks or reminders on this day."
           }
-          compact
+          density="compact"
           className="mt-4 border-none bg-transparent"
           action={
             <Link
