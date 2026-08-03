@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Plus,
   ListTodo,
@@ -67,8 +68,20 @@ const tabs: { value: Filter; label: string; shortLabel?: string }[] = [
   { value: "done", label: "Done" },
 ];
 
-export default function TasksPage() {
-  const [filter, setFilter] = useState<Filter>("todo");
+function isFilter(value: string | null): value is Filter {
+  return tabs.some((t) => t.value === value);
+}
+
+/**
+ * `?filter=` seeds the initial tab so the dashboard's DONE counter can land on
+ * the Done list. It seeds only — the tabs stay locally controlled after mount,
+ * so switching tabs doesn't churn the URL.
+ */
+function TasksPageContent() {
+  const paramFilter = useSearchParams().get("filter");
+  const [filter, setFilter] = useState<Filter>(() =>
+    isFilter(paramFilter) ? paramFilter : "todo"
+  );
   const openCreateTask = useUIStore((s) => s.openCreateTask);
   const { data: tasks, isLoading, isError, refetch } = useTasksQuery();
 
@@ -186,5 +199,15 @@ export default function TasksPage() {
       <TaskForm />
       </PullToRefresh>
     </div>
+  );
+}
+
+// useSearchParams needs a Suspense boundary in a client route — same wrapper
+// the learn/review page uses for the same reason.
+export default function TasksPage() {
+  return (
+    <Suspense fallback={<LoadingSkeleton count={3} />}>
+      <TasksPageContent />
+    </Suspense>
   );
 }

@@ -369,7 +369,7 @@ function IdleView() {
             icon={Timer}
             title="No sessions yet"
             description="Start your first focus session to track deep work — your history will appear here."
-            compact
+            density="compact"
           />
         ) : (
           <ul className="stagger-children space-y-2">

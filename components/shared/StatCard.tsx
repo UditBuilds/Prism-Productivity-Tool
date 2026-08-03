@@ -1,7 +1,16 @@
+import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { MonoLabel } from "@/components/shared/MonoLabel";
+
+/**
+ * Tap affordance for a linked tile, borrowed wholesale from the TopBar icon
+ * buttons — muted label brightening to foreground on hover, the standard
+ * focus ring, and the same press-scale. No new hover or press style.
+ */
+const LINKED =
+  "outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring active:scale-95";
 
 export interface StatCardProps {
   label: string;
@@ -20,6 +29,12 @@ export interface StatCardProps {
    * Learn, Weekly Review and PlanCard keep the card and are untouched.
    */
   variant?: "card" | "strip";
+  /**
+   * Makes the whole tile a link to where the number can be acted on. The
+   * counter is often the most actionable thing on the screen ("REVIEW 16"),
+   * and it was previously inert.
+   */
+  href?: string;
   /** Small slot under the value (Day Rail, streak-freeze indicator…). */
   subtitle?: React.ReactNode;
   className?: string;
@@ -40,6 +55,7 @@ export function StatCard({
   valueVariant = "default",
   size = "lg",
   variant = "card",
+  href,
   subtitle,
   className,
 }: StatCardProps) {
@@ -51,9 +67,15 @@ export function StatCard({
   );
 
   if (variant === "strip") {
-    return (
-      <div className={cn("min-w-0", className)}>
-        <MonoLabel as="span" className="block truncate">
+    // The strip lives in a grid-cols-4 gap-1 row that leaves ~83px per column,
+    // 81px of which the Day Rail needs. The link adds no padding of its own so
+    // the column geometry is exactly what it was.
+    const body = (
+      <>
+        <MonoLabel
+          as="span"
+          className={cn("block truncate", href && "group-hover:text-foreground")}
+        >
           {label}
         </MonoLabel>
         <p
@@ -65,17 +87,20 @@ export function StatCard({
           {value}
         </p>
         {subtitle}
-      </div>
+      </>
+    );
+
+    return href ? (
+      <Link href={href} className={cn("group block min-w-0 rounded-lg", LINKED, className)}>
+        {body}
+      </Link>
+    ) : (
+      <div className={cn("min-w-0", className)}>{body}</div>
     );
   }
 
-  return (
-    <div
-      className={cn(
-        "cursor-default rounded-xl border border-border bg-surface p-4 hover:border-border-col",
-        className
-      )}
-    >
+  const cardBody = (
+    <>
       <div className="flex items-center justify-between gap-2">
         <MonoLabel as="span" className="truncate">
           {label}
@@ -99,6 +124,20 @@ export function StatCard({
         {value}
       </p>
       {subtitle}
-    </div>
+    </>
+  );
+
+  const cardClass = cn(
+    "rounded-xl border border-border bg-surface p-4 hover:border-border-col",
+    href ? LINKED : "cursor-default",
+    className
+  );
+
+  return href ? (
+    <Link href={href} className={cn("block", cardClass)}>
+      {cardBody}
+    </Link>
+  ) : (
+    <div className={cardClass}>{cardBody}</div>
   );
 }
