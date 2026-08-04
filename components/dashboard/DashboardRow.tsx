@@ -96,22 +96,35 @@ export function DashboardRow({
         // which is why nothing on this page receded. Separation is the parent
         // <ul>'s `divide-y`; hover raises the row to tier 2 rather than
         // outlining it, so nothing shifts.
-        "group flex items-center transition-colors hover:bg-surface-raised",
-        accentBorder && "border-l-2",
-        accentBorder,
+        "group transition-colors hover:bg-surface-raised",
         className
       )}
     >
-      {leadingInteractive && leading && (
-        <div className="flex shrink-0 items-center py-4 pl-4">{leading}</div>
-      )}
-      {href ? (
-        <Link href={href} className={bodyClass}>
-          {body}
-        </Link>
-      ) : (
-        <div className={bodyClass}>{body}</div>
-      )}
+      {/* The priority accent lives on an INNER wrapper, not on the <li>.
+          As a sibling border of the <li>'s own border-top, CSS miters the two
+          at the corner and the hairline never crosses the 2px bar — so a run
+          of same-priority rows rendered as one unbroken rail down the panel,
+          which reads as an alarm rather than as N items. One level in, the
+          <li>'s divider spans the full row width and cuts the bar into one
+          segment per row. */}
+      <div
+        className={cn(
+          "flex items-center",
+          accentBorder && "border-l-2",
+          accentBorder
+        )}
+      >
+        {leadingInteractive && leading && (
+          <div className="flex shrink-0 items-center py-4 pl-4">{leading}</div>
+        )}
+        {href ? (
+          <Link href={href} className={bodyClass}>
+            {body}
+          </Link>
+        ) : (
+          <div className={bodyClass}>{body}</div>
+        )}
+      </div>
     </li>
   );
 }
