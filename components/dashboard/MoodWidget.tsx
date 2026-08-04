@@ -44,7 +44,11 @@ export function MoodWidget() {
   // Both states share this wrapper — no card chrome, and therefore identical
   // padding. They used to differ (p-4 vs px-4 py-3.5), which read as a jump
   // when the day's mood was logged.
-  const WRAPPER = "mt-3";
+  //
+  // No margin of its own: this is a group INSIDE the status band, and the band
+  // owns the space between its groups. A widget that sets its own outer
+  // spacing is how the page ended up with six unrelated section gaps.
+  const WRAPPER = "";
 
   // State B — already logged (and not editing): calm, collapsed summary.
   if (today && !editing) {
@@ -52,7 +56,7 @@ export function MoodWidget() {
     return (
       <div className={WRAPPER}>
         <MonoLabel>Daily check-in</MonoLabel>
-        <div className="mt-1 flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2">
           <span aria-hidden className="shrink-0 text-2xl leading-none">
             {opt.emoji}
           </span>
@@ -78,7 +82,7 @@ export function MoodWidget() {
   return (
     <div className={WRAPPER}>
       {savedFlash ? (
-        <p className="flex items-center gap-2 py-1 text-sm font-medium text-success">
+        <p className="flex items-center gap-2 py-2 text-sm font-medium text-success">
           <Check className="h-4 w-4" />
           Logged! ✓
         </p>
@@ -87,7 +91,7 @@ export function MoodWidget() {
           <MonoLabel>Daily check-in</MonoLabel>
           {/* The emoji ARE the question — the "How are you feeling today?"
               line above them said nothing the row doesn't. */}
-          <div className="mt-1 flex items-center justify-between gap-1 sm:justify-start sm:gap-4">
+          <div className="mt-2 flex items-center justify-between gap-1 sm:justify-start sm:gap-4">
             {MOODS.map((m) => (
               <button
                 key={m.value}
@@ -97,7 +101,7 @@ export function MoodWidget() {
                 aria-label={m.label}
                 title={m.label}
                 className={cn(
-                  "rounded-lg border border-transparent px-2 py-1 text-2xl leading-none hover:bg-surface-raised",
+                  "rounded-md border border-transparent p-2 text-2xl leading-none hover:bg-surface-raised",
                   selected === m.value && "border-accent/60 bg-accent/10"
                 )}
               >
@@ -106,19 +110,19 @@ export function MoodWidget() {
             ))}
           </div>
           {selected && (
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-4 flex items-center gap-2">
               <Input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="What's on your mind? (optional)"
-                className="h-9 rounded-lg text-sm"
+                className="h-9 rounded-md text-sm"
                 onKeyDown={(e) => e.key === "Enter" && handleSave()}
               />
               <Button
                 size="sm"
                 onClick={handleSave}
                 disabled={logMood.isPending}
-                className="shrink-0 rounded-lg"
+                className="shrink-0 rounded-md"
               >
                 Save
               </Button>

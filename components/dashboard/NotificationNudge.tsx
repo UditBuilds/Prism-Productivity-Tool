@@ -47,7 +47,7 @@ export function NotificationNudge() {
   // standing feature of the dashboard, and it sits on the first screen where
   // space belongs to the user's actual tasks.
   return (
-    <div className="mt-3 flex h-8 items-center gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3">
+    <div className="mb-8 flex items-center gap-2 rounded-xl border border-warning/20 bg-warning/5 p-4">
       <Bell className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
       <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
         Get reminded on time

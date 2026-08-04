@@ -22,10 +22,10 @@ export function PushHealthBanner() {
   return (
     <div
       role="status"
-      className="mt-4 rounded-xl border border-warning/30 bg-surface-raised px-4 py-3"
+      className="mb-8 rounded-xl border border-warning/30 bg-surface-raised p-4"
     >
       <MonoLabel className="text-warning">Reminder delivery</MonoLabel>
-      <ul className="mt-1.5 space-y-1">
+      <ul className="mt-2 space-y-2">
         {warnings.map((w) => (
           <li key={w} className="text-sm text-foreground">
             {w}

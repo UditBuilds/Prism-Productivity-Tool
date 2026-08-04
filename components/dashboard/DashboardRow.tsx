@@ -72,7 +72,8 @@ export function DashboardRow({
           </span>
           {titleAdornment}
         </div>
-        {meta && <div className="mt-0.5 truncate">{meta}</div>}
+        {/* space-inside (8): the title and its meta line are one object. */}
+        {meta && <div className="mt-2 truncate">{meta}</div>}
         {below}
       </div>
       {trailing && (
@@ -81,30 +82,49 @@ export function DashboardRow({
     </>
   );
 
-  const bodyClass = cn(
-    "flex min-w-0 flex-1 items-center gap-3 py-3 pr-4",
-    leadingInteractive ? "pl-3" : "pl-4"
-  );
+  // space-around (16) on every side. The old 12/16 split — and the 12px inset
+  // that only the interactive-leading variant used — were two of the three
+  // padding regimes on this page.
+  const bodyClass = "flex min-w-0 flex-1 items-center gap-4 py-4 pr-4 pl-4";
 
   return (
     <li
       className={cn(
-        "group flex items-center rounded-xl border border-border bg-surface transition-colors hover:border-accent/25",
-        accentBorder && "border-l-2",
-        accentBorder,
+        // A partition of the section's tier-1 card, not a card of its own.
+        // It used to be tier-1 (bg-surface + hairline) sitting directly on the
+        // page — the same depth as the Workout card that CONTAINS things —
+        // which is why nothing on this page receded. Separation is the parent
+        // <ul>'s `divide-y`; hover raises the row to tier 2 rather than
+        // outlining it, so nothing shifts.
+        "group transition-colors hover:bg-surface-raised",
         className
       )}
     >
-      {leadingInteractive && leading && (
-        <div className="flex shrink-0 items-center py-3 pl-4">{leading}</div>
-      )}
-      {href ? (
-        <Link href={href} className={bodyClass}>
-          {body}
-        </Link>
-      ) : (
-        <div className={bodyClass}>{body}</div>
-      )}
+      {/* The priority accent lives on an INNER wrapper, not on the <li>.
+          As a sibling border of the <li>'s own border-top, CSS miters the two
+          at the corner and the hairline never crosses the 2px bar — so a run
+          of same-priority rows rendered as one unbroken rail down the panel,
+          which reads as an alarm rather than as N items. One level in, the
+          <li>'s divider spans the full row width and cuts the bar into one
+          segment per row. */}
+      <div
+        className={cn(
+          "flex items-center",
+          accentBorder && "border-l-2",
+          accentBorder
+        )}
+      >
+        {leadingInteractive && leading && (
+          <div className="flex shrink-0 items-center py-4 pl-4">{leading}</div>
+        )}
+        {href ? (
+          <Link href={href} className={bodyClass}>
+            {body}
+          </Link>
+        ) : (
+          <div className={bodyClass}>{body}</div>
+        )}
+      </div>
     </li>
   );
 }

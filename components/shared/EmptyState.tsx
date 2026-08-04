@@ -51,8 +51,11 @@ export function EmptyState({
       <div
         className={cn(
           // Same padding as the dashboard row primitive, so an empty section
-          // occupies exactly the space one row would.
-          "flex items-center gap-2 rounded-xl border border-dashed border-border bg-surface px-4 py-3",
+          // occupies exactly the space one row would. Both moved 12 -> 16 with
+          // the spacing scale; they stay in step. The gap stays 8, not the
+          // row's 16: this leading icon is a bare glyph, where the row's is a
+          // 36px bubble — a container, and containers take space-around.
+          "flex items-center gap-2 rounded-xl border border-dashed border-border bg-surface p-4",
           className
         )}
       >
@@ -83,15 +86,16 @@ export function EmptyState({
       >
         <Icon className="h-5 w-5 text-muted-foreground" />
       </div>
-      <p className={cn("text-sm font-medium text-foreground", compact ? "mt-3" : "mt-4")}>
-        {title}
-      </p>
+      {/* On the scale: 16 between the icon and the title block (two sub-groups),
+          8 between the title and its own description (one object), 16 before
+          the action. Was 12/16, 4, 12/20. */}
+      <p className="mt-4 text-sm font-medium text-foreground">{title}</p>
       {description && (
-        <p className="mt-1 max-w-xs text-sm leading-relaxed text-muted-foreground">
+        <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
           {description}
         </p>
       )}
-      {action && <div className={compact ? "mt-3" : "mt-5"}>{action}</div>}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

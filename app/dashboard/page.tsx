@@ -26,9 +26,10 @@ import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
 import { WorkoutCard } from "@/components/dashboard/WorkoutCard";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
 import { DashboardRow } from "@/components/dashboard/DashboardRow";
+import { StatusBand } from "@/components/dashboard/StatusBand";
+import { SectionPanel } from "@/components/dashboard/SectionPanel";
 import { StatCard } from "@/components/shared/StatCard";
 import { DayRail } from "@/components/shared/DayRail";
-import { SectionHeader } from "@/components/shared/SectionHeader";
 import { ProgressBar } from "@/components/shared/ProgressBar";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -251,78 +252,89 @@ export default async function DashboardHome() {
       {/* Notification permission nudge (renders only while undecided) */}
       <NotificationNudge />
 
-      {/* Daily mood check-in */}
-      <MoodWidget />
-
-      {/* Stats — one four-across strip, no card chrome. At 375px each column
-          is ~83px, which is what the 81px Day Rail needs and leaves no room
-          for a border box, an icon, or a label longer than ~9 characters:
-          hence gap-1 and the shortened labels. Colour still appears only
-          where the number carries urgency (amber = review debt).
+      {/* Status band — the day's check-in and the four counters in ONE tier-1
+          container. Both describe today's state rather than being things to
+          act on, and both used to sit directly on the page background with no
+          container at all. See StatusBand for why this one section bleeds to
+          the viewport edge instead of taking the usual 16px insets.
 
           Each counter links to where its number can be acted on. "REVIEW 16"
           is routinely the most actionable thing on the page and used to be
           inert; the tap target is the whole column, and the link adds no
-          padding, so the geometry above is unchanged. */}
-      <section className="mt-4 grid grid-cols-4 gap-1">
-        <StatCard
-          variant="strip"
-          label="Due today"
-          value={dueCount}
-          href="/dashboard/tasks"
-        />
-        <StatCard
-          variant="strip"
-          label="Done"
-          value={completedCount}
-          href="/dashboard/tasks?filter=done"
-          subtitle={
-            // An all-empty rail would read as "no completions" — say the read
-            // failed instead. EmptyState can't live in this slot (it's a
-            // stat-card subtitle, not a section body), so this is the one
-            // error surface on the page that isn't the shared component.
-            weekDoneError ? (
-              <p className="mt-1.5 truncate text-xs text-muted-foreground">
-                Load failed
-              </p>
-            ) : (
-              <DayRail
-                days={weekRailDays}
-                fillClassName="bg-success"
-                outlineClassName="border-success"
-                label={`${activeDayCount} of 7 days with completed tasks`}
-                className="mt-1.5"
-              />
-            )
-          }
-        />
-        {/* Straight into the review session, not the Learn index — the number
-            IS the due-card count, so the tap should start reviewing them.
-            No deck param = every due card, which is what this counts. */}
-        <StatCard
-          variant="strip"
-          label="Review"
-          value={cardsCount}
-          valueVariant={cardsCount > 0 ? "warning" : "default"}
-          href="/dashboard/learn/review"
-        />
-        <StatCard
-          variant="strip"
-          label="Reminders"
-          value={remindersTodayCount}
-          href="/dashboard/reminders"
-        />
-      </section>
+          padding, so the column geometry is unchanged.
 
-      {/* Due Today */}
-      <section className="mt-8">
-        <SectionHeader
-          title="Due Today"
-          count={dueCount}
-          href="/dashboard/tasks"
-          accentBar
-        />
+          Zero reads muted, non-zero reads foreground: on a normal day three of
+          these are 0 and one is not, and rendering all four at the same weight
+          made the page's only live number look like decoration. */}
+      <StatusBand
+        checkIn={<MoodWidget />}
+        counters={
+          <div className="grid grid-cols-4 gap-1">
+            <StatCard
+              variant="strip"
+              label="Due today"
+              value={dueCount}
+              valueVariant={dueCount > 0 ? "default" : "muted"}
+              href="/dashboard/tasks"
+            />
+            <StatCard
+              variant="strip"
+              label="Done"
+              value={completedCount}
+              valueVariant={completedCount > 0 ? "default" : "muted"}
+              href="/dashboard/tasks?filter=done"
+              subtitle={
+                // An all-empty rail would read as "no completions" — say the
+                // read failed instead. EmptyState can't live in this slot
+                // (it's a stat-card subtitle, not a section body), so this is
+                // the one error surface on the page that isn't the shared
+                // component.
+                weekDoneError ? (
+                  <p className="mt-2 truncate text-xs text-muted-foreground">
+                    Load failed
+                  </p>
+                ) : (
+                  <DayRail
+                    days={weekRailDays}
+                    fillClassName="bg-success"
+                    outlineClassName="border-success"
+                    label={`${activeDayCount} of 7 days with completed tasks`}
+                    className="mt-2"
+                  />
+                )
+              }
+            />
+            {/* Straight into the review session, not the Learn index — the
+                number IS the due-card count, so the tap should start reviewing
+                them. No deck param = every due card, which is what this
+                counts. */}
+            <StatCard
+              variant="strip"
+              label="Review"
+              value={cardsCount}
+              valueVariant={cardsCount > 0 ? "warning" : "muted"}
+              href="/dashboard/learn/review"
+            />
+            <StatCard
+              variant="strip"
+              label="Reminders"
+              value={remindersTodayCount}
+              valueVariant={remindersTodayCount > 0 ? "default" : "muted"}
+              href="/dashboard/reminders"
+            />
+          </div>
+        }
+      />
 
+      {/* Due Today. Empty and error branches are `bare` — an EmptyState draws
+          its own dashed tier-1 card, and nesting that inside the panel's solid
+          one is two boxes saying one thing. */}
+      <SectionPanel
+        title="Due Today"
+        count={dueCount}
+        href="/dashboard/tasks"
+        variant={dueError !== null || dueTasks.length === 0 ? "bare" : "list"}
+      >
         {dueError ? (
           <EmptyState
             icon={AlertCircle}
@@ -350,20 +362,20 @@ export default async function DashboardHome() {
             }
           />
         ) : (
-          <ul className="space-y-2">
-              {dueTasks.map((task) => {
-                const due = formatDueDate(task.due_date);
-                return (
-                  <DueTodayRow
-                    key={task.id}
-                    task={task}
-                    dueLabel={due?.label ?? null}
-                  />
-                );
-              })}
+          <ul className="divide-y">
+            {dueTasks.map((task) => {
+              const due = formatDueDate(task.due_date);
+              return (
+                <DueTodayRow
+                  key={task.id}
+                  task={task}
+                  dueLabel={due?.label ?? null}
+                />
+              );
+            })}
           </ul>
         )}
-      </section>
+      </SectionPanel>
 
       {/* Workout capture — client island; this page stays a Server Component.
           Sits below Due Today: above it, its 148px cost the first screen the
@@ -371,20 +383,20 @@ export default async function DashboardHome() {
       <WorkoutCard />
 
       {/* Upcoming countdowns */}
-      <section className="mt-8">
-        <SectionHeader
-          title="Upcoming"
-          accentBar
-          action={
-            <Link
-              href="/dashboard/reminders"
-              className="text-sm font-medium text-accent hover:text-accent-hover"
-            >
-              + Add countdown
-            </Link>
-          }
-        />
-
+      <SectionPanel
+        title="Upcoming"
+        variant={
+          upcomingError !== null || upcomingItems.length === 0 ? "bare" : "list"
+        }
+        action={
+          <Link
+            href="/dashboard/reminders"
+            className="text-sm font-medium text-accent hover:text-accent-hover"
+          >
+            + Add countdown
+          </Link>
+        }
+      >
         {upcomingError ? (
           <EmptyState
             icon={AlertCircle}
@@ -409,7 +421,7 @@ export default async function DashboardHome() {
             }
           />
         ) : (
-          <ul className="space-y-2">
+          <ul className="divide-y">
               {upcomingItems.map((item) => {
                 if (item.kind === "countdown") {
                   const c = item.countdown;
@@ -429,14 +441,18 @@ export default async function DashboardHome() {
                     <DashboardRow
                       key={`countdown-${c.id}`}
                       leading={
-                        <span className="text-xl transition-transform group-hover:scale-110">
+                        // 24, not the 20 this used to be. text-xl was the only
+                        // off-scale size on the page, and it hid from the font
+                        // census whenever there were no countdowns. 24 is the
+                        // Glyph rank — the same size as the mood emoji.
+                        <span className="text-2xl transition-transform group-hover:scale-110">
                           {c.emoji}
                         </span>
                       }
                       title={c.title}
                       below={
                         <ProgressBar
-                          className="mt-1.5"
+                          className="mt-2"
                           value={countdownProgressPct(
                             c.created_at,
                             c.target_date
@@ -509,28 +525,31 @@ export default async function DashboardHome() {
           </ul>
         )}
 
+        {/* Inside the panel now, as the list's last partition: it belongs to
+            the list it overflows, not to the page. */}
         {upcomingOverflow > 0 && (
           <Link
             href="/dashboard/tasks"
-            className="mt-2 block rounded-xl border border-dashed border-border bg-surface px-4 py-2.5 text-center text-xs font-medium text-muted-foreground transition-colors hover:border-accent/25 hover:text-foreground"
+            className="block border-t border-border p-4 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground"
           >
             +{upcomingOverflow} more
           </Link>
         )}
-      </section>
+      </SectionPanel>
 
       {/* Revisit — notes saved to be re-read, shown as their full text (never
           quizzed). Empty and failed reads both use the shared EmptyState, so
           "nothing saved" and "the query broke" can't be mistaken for each
           other. */}
-      <section className="mt-8">
-        <SectionHeader
-          title="Revisit"
-          count={revisitNotes.length}
-          href="/dashboard/notes?kind=revisit"
-          linkLabel="View all"
-          accentBar
-        />
+      <SectionPanel
+        title="Revisit"
+        count={revisitNotes.length}
+        href="/dashboard/notes?kind=revisit"
+        linkLabel="View all"
+        variant={
+          revisitError !== null || revisitNotes.length === 0 ? "bare" : "list"
+        }
+      >
         {revisitError ? (
           <EmptyState
             icon={AlertCircle}
@@ -546,12 +565,10 @@ export default async function DashboardHome() {
             density="compact"
           />
         ) : (
-          <ul className="space-y-2">
+          <ul className="divide-y">
             {revisitNotes.map((n) => (
-              <li
-                key={n.id}
-                className="rounded-xl border border-border bg-surface px-4 py-3"
-              >
+              // A partition of the panel, same as every other row on the page.
+              <li key={n.id} className="p-4">
                 <div className="flex items-center gap-2">
                   <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <p className="truncate text-sm font-semibold text-foreground">
@@ -570,7 +587,7 @@ export default async function DashboardHome() {
             ))}
           </ul>
         )}
-      </section>
+      </SectionPanel>
     </div>
   );
 }

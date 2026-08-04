@@ -18,8 +18,17 @@ export interface StatCardProps {
   icon?: LucideIcon;
   /** Extra classes on the icon — tint variants (e.g. amber urgency). */
   iconClassName?: string;
-  /** Value tint. Default is solid foreground; accent/success/warning are semantic. */
-  valueVariant?: "default" | "gradient" | "gradient-success" | "warning";
+  /**
+   * Value tint. Default is solid foreground; accent/success/warning are
+   * semantic. `muted` is for a counter reading ZERO — an absence of work
+   * should recede, not compete with the one number that is actually owed.
+   */
+  valueVariant?:
+    | "default"
+    | "muted"
+    | "gradient"
+    | "gradient-success"
+    | "warning";
   /** Value size: lg = dashboard hero cards, md = secondary strips. */
   size?: "md" | "lg";
   /**
@@ -61,6 +70,7 @@ export function StatCard({
 }: StatCardProps) {
   const valueTint = cn(
     valueVariant === "default" && "text-foreground",
+    valueVariant === "muted" && "text-muted-foreground",
     valueVariant === "gradient" && "text-accent",
     valueVariant === "gradient-success" && "text-success",
     valueVariant === "warning" && "text-warning"
@@ -78,9 +88,12 @@ export function StatCard({
         >
           {label}
         </MonoLabel>
+        {/* space-inside (8): a label and its figure are one object. Was 2px,
+            which read as the label sitting ON the number rather than above
+            it — a large part of why the strip felt cramped. */}
         <p
           className={cn(
-            "mt-0.5 font-mono text-3xl font-semibold tabular-nums tracking-tight",
+            "mt-2 font-mono text-3xl font-semibold tabular-nums tracking-tight",
             valueTint
           )}
         >
