@@ -19,8 +19,8 @@ export const MAX_RAW_INPUT_LENGTH = 2000;
 const LB_TO_KG = 0.45359237;
 
 /**
- * The prompt is verbatim what was validated against 14 gym-shorthand inputs
- * before this feature was built. Two rules carry most of the weight:
+ * The prompt started as the text validated against 14 gym-shorthand inputs
+ * before this feature was built. Three rules carry most of the weight:
  *
  * 1. "One object per SET" — the model expands "3x5" into three rows itself.
  *    Asking for {sets: 3, reps: 5} and expanding in code was rejected because
@@ -28,6 +28,18 @@ const LB_TO_KG = 0.45359237;
  * 2. "NEVER convert between units" — the model reports the number and unit as
  *    written and lbToKg() does the arithmetic. LLM unit conversion is the
  *    single most likely place for a silently wrong number.
+ * 3. "Modifiers are PART OF THE EXERCISE NAME" — added after the model logged
+ *    "Assisted pullup and chinups 3 sets till failure" as plain `Pull Up`,
+ *    which claims unassisted work that was not done. The behaviour was
+ *    INCONSISTENT, not uniformly wrong: the same run kept "Close grip row" as
+ *    `Close Grip Row`, so the model was classifying some modifiers as part of
+ *    the name and others as droppable adjectives. The rule removes the
+ *    judgement call rather than listing every modifier — the enumeration is
+ *    illustrative, and the first line is the instruction.
+ *
+ * Note groupSetsByExercise keys on the lowercased exact string, so
+ * `Assisted Pull Up` and `Pull Up` form SEPARATE groups. That is intended:
+ * they are different exercises.
  */
 const SYSTEM_PROMPT = `You convert gym shorthand into structured workout sets. You return JSON only.
 
@@ -46,6 +58,22 @@ Rules:
   Always use the SINGULAR form of the name: "Squat" not "Squats", "Pull Up" not
   "Pull Ups", "Curl" not "Curls", "Calf Raise" not "Calf Raises".
   Never invent an exercise that is not in the input.
+- Grip, stance, assistance and angle modifiers are PART OF THE EXERCISE NAME.
+  Never drop one. They are not adjectives, notes, or intensity descriptions.
+  Includes (not exhaustive): assisted, weighted, incline, decline, close grip,
+  wide grip, neutral grip, reverse grip, single-arm, one-arm, seated, standing,
+  paused, tempo.
+  "assisted pullup" is "Assisted Pull Up", NEVER "Pull Up".
+  "incline db press" is "Incline Dumbbell Press", NEVER "Dumbbell Press".
+  "single arm row" is "Single Arm Row", NEVER "Row".
+  The singular rule above applies to the whole name: "Assisted Pull Up", not
+  "Assisted Pull Ups".
+- A modifier stated ONCE before a list of exercises applies to EVERY exercise
+  in that list. "assisted pullup and chinups" is two exercises,
+  "Assisted Pull Up" AND "Assisted Chin Up" — not "Assisted Pull Up" and
+  "Chin Up". Every name in a list gets the full Title Case singular treatment;
+  never leave one in the user's raw spelling
+  (pullup -> Pull Up, chinup -> Chin Up, pushup -> Push Up, situp -> Sit Up).
 - weight: the number only, no unit text. Use null for bodyweight or when no weight is stated.
 - unit: "kg" or "lb", exactly as the user stated or implied. null when weight is null.
   When a weight is given with no unit, use "kg".

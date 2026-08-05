@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { AlertCircle, Dumbbell, Loader2, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatSetLine, groupSetsByExercise } from "@/lib/workouts";
+import {
+  collapseConsecutiveSets,
+  formatSetLine,
+  groupSetsByExercise,
+  type SetRun,
+} from "@/lib/workouts";
 import {
   useDeleteWorkoutSet,
   useSessionCount,
@@ -34,6 +39,14 @@ export function WorkoutTodayPanel() {
   const { data: todaySets, isLoading, isError } = useTodaysSets();
   const { data: sessionCount } = useSessionCount();
   const [editingId, setEditingId] = useState<string | null>(null);
+  /**
+   * Run keys the user has opened. Expand-only: once a run is open its members
+   * are ordinary rows whose tap target is the editor, so there is nothing left
+   * to tap to re-collapse and no invented control to do it. Keyed by the run's
+   * first set id, which survives a refetch — an unrelated log elsewhere on the
+   * page doesn't snap an opened run shut.
+   */
+  const [expandedRuns, setExpandedRuns] = useState<string[]>([]);
 
   const groups = groupSetsByExercise(todaySets ?? []);
 
@@ -69,19 +82,36 @@ export function WorkoutTodayPanel() {
               <li key={group.exercise ?? "__unparsed"}>
                 <MonoLabel>{group.exercise ?? "Not read yet"}</MonoLabel>
                 <ul className="mt-2 space-y-2">
-                  {group.sets.map((set) =>
-                    editingId === set.id ? (
-                      <SetEditor
-                        key={set.id}
-                        set={set}
-                        onClose={() => setEditingId(null)}
+                  {collapseConsecutiveSets(group.sets).map((run) =>
+                    run.sets.length > 1 &&
+                    expandedRuns.indexOf(run.key) === -1 ? (
+                      <CollapsedRun
+                        key={run.key}
+                        run={run}
+                        onExpand={() =>
+                          setExpandedRuns((prev) => prev.concat(run.key))
+                        }
                       />
                     ) : (
-                      <SetRow
-                        key={set.id}
-                        set={set}
-                        onEdit={() => setEditingId(set.id)}
-                      />
+                      // Expanded (or never collapsed) — the individual rows,
+                      // in their stored set_index order.
+                      <Fragment key={run.key}>
+                        {run.sets.map((set) =>
+                          editingId === set.id ? (
+                            <SetEditor
+                              key={set.id}
+                              set={set}
+                              onClose={() => setEditingId(null)}
+                            />
+                          ) : (
+                            <SetRow
+                              key={set.id}
+                              set={set}
+                              onEdit={() => setEditingId(set.id)}
+                            />
+                          )
+                        )}
+                      </Fragment>
                     )
                   )}
                 </ul>
@@ -100,6 +130,52 @@ export function WorkoutTodayPanel() {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * N identical consecutive sets as one row. Tapping it expands the run in place
+ * into its individual rows, each of which opens the existing editor — the
+ * correction path stays reachable, one tap deeper.
+ *
+ * The "×3" badge is the SET count, and everything about it is chosen so it
+ * cannot be misread as reps: 12 mono (the meta rank) against the title's 14,
+ * muted against the title's foreground, hard right where the title never
+ * reaches, and the × LEADS the number where the title's × sits between two
+ * ("70 kg × 8"). It is deliberately not a pill — the row is already tier 2, so
+ * a surface-raised pill on it would be invisible, and a bordered one would
+ * need a padding value that isn't on the 8/16/32 scale.
+ */
+function CollapsedRun({ run, onExpand }: { run: SetRun; onExpand: () => void }) {
+  const count = run.sets.length;
+  // Every set in a run is identical by construction, so the first one speaks
+  // for all of them.
+  const label = formatSetLine(run.sets[0]);
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-expanded={false}
+        aria-label={`${label}, ${count} sets. Show each set`}
+        className="flex w-full items-center gap-2 rounded-md border border-transparent bg-surface-raised p-4 text-left transition-colors hover:border-accent/25 hover:bg-surface-raised/70"
+      >
+        <Dumbbell
+          aria-hidden
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+        />
+        <span className="min-w-0 flex-1 truncate font-mono text-sm tabular-nums text-foreground">
+          {label}
+        </span>
+        <span
+          aria-hidden
+          className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
+        >
+          ×{count}
+        </span>
+      </button>
+    </li>
   );
 }
 
