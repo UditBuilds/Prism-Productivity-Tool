@@ -6,16 +6,14 @@ YouTube videos into review-ready cards.
 
 ## Screenshots
 
-<!--
-  Replace with real screenshots. Suggested captures:
-  - dashboard.png — the main dashboard with Due Today, Upcoming, and stats
-  - srs-review.png — the flashcard review UI (flip card with rating buttons)
-  - ai-generation.png — the AI flashcard generation modal (notes, PDF, or YouTube)
--->
+Captured on a 375×812 mobile viewport at 2×, against a production build.
 
-| Dashboard | SRS review | AI generation |
-|:--:|:--:|:--:|
-| *(screenshot needed)* | *(screenshot needed)* | *(screenshot needed)* |
+| | |
+|:--|:--|
+| <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="330"> | <img src="docs/screenshots/tasks-list.png" alt="Tasks" width="330"> |
+| **Dashboard** — the day's mood check-in, counters for what is due, and today's tasks, workout, and upcoming items. | **Tasks** — status filter tabs above task rows carrying priority, status, and due date. |
+| <img src="docs/screenshots/workout-logging.png" alt="Workout logging" width="330"> | <img src="docs/screenshots/srs-review.png" alt="Flashcard review" width="330"> |
+| **Workout** — gym shorthand parsed into individual sets; identical consecutive sets collapse into one row with a set count. | **Review** — the answer side of a due card with the four SM-2 grades and the interval each one would schedule. |
 
 ## What it does
 
@@ -33,6 +31,12 @@ YouTube videos into review-ready cards.
   and reminders by time.
 - **Focus timer** with categories, a global floating timer that survives
   navigation, and session history feeding analytics.
+- **Workout log** written as typed shorthand ("Lat pulldown 3 set 70 kgs"),
+  parsed server-side by an LLM into individual set rows — exercise, weight,
+  reps, set index — with the raw input stored verbatim on every row, so a bad
+  parse is correctable rather than permanent. The parse runs inside the POST,
+  so it rides the offline mutation queue. Identical consecutive sets collapse
+  into one display row.
 - **Countdowns** and **daily mood check-ins**.
 
 ### Spaced repetition
