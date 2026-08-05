@@ -1,7 +1,8 @@
 # Security
 
-PRISM is a private, two-user application. Security is enforced primarily at the
-**database layer**, so that an application bug cannot expose another user's data.
+PRISM is a single-user private beta (signups are closed). Security is enforced
+primarily at the **database layer**, so that an application bug cannot expose
+another user's data.
 
 ## Data isolation model
 

@@ -120,13 +120,15 @@ inserted-row check) and surfaces the protection in the UI.
 - **Background**: a custom service worker (`worker/index.ts`) handles Web Push.
   `pg_cron` calls `/api/push/due` every minute with a `CRON_SECRET` header; the
   endpoint uses the admin client to find due reminders, sends pushes via VAPID,
-  prunes dead subscriptions, and **deletes each reminder once delivered**.
+  prunes dead subscriptions, and marks each reminder `is_sent = true` on
+  successful delivery.
 
 ## Conventions
 
 - **`{ data, error }`** response envelope everywhere; hooks throw on `error`.
-- **No `any`**, strict TypeScript, ES5-safe iteration (`Array.from()` over
-  iterators).
+- **TypeScript strict mode** with three documented `as any` escapes (each with
+  an eslint-disable comment) for tables intentionally absent from
+  `types/database.ts`. ES5-safe iteration (`Array.from()` over iterators).
 - **Dark mode only**; the accent color is themeable via CSS variables.
 - New features follow the existing shape: a route under `app/api/<x>/`, a typed
   hook in `hooks/use<X>.ts`, and a page under `app/dashboard/<x>/`.
