@@ -88,11 +88,16 @@ The `recurring_tasks` table and the `tasks.recurring_task_id` column must exist
 first. Verify the job with `select * from cron.job;` and inspect runs via
 `select * from cron.job_run_details order by start_time desc;`.
 
-## 5. Invite your collaborator
+## 5. Adding another user
 
-PRISM is built for two users. Share the URL; they sign up at `/signup` (email
-confirmation is off, so they land on the dashboard immediately). Their data is
-fully private — every table has RLS keyed on `user_id`.
+PRISM is a single-user private beta. Signups are closed — `/signup` renders
+an invite-only notice behind a `SIGNUPS_OPEN` flag, and new signups are
+disabled in the Supabase dashboard. There is no user-limit enforced in code.
+
+To add a user, temporarily enable signups in Supabase, have them sign up
+(email confirmation is off, so they land on the dashboard immediately), then
+disable signups again. Each user's data is fully private — every table has
+RLS keyed on `user_id`.
 
 ## Troubleshooting
 
