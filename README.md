@@ -123,11 +123,14 @@ Service Worker ──▶ Web Push  ◀── pg_cron → POST /api/push/due (cro
 
 ## 📸 Screenshots
 
-Screenshots live in **[`docs/screenshots/`](docs/screenshots/)**. A capture checklist (which screens, filenames, and sizing) is in **[docs/screenshots/README.md](docs/screenshots/README.md)** — drop the PNGs in and they render here.
+Captured on mobile (375×812, 2×) against a production build. Remaining screens are listed in **[docs/screenshots/README.md](docs/screenshots/README.md)**.
 
-| Dashboard | SRS review | AI flashcard generation |
-|:--:|:--:|:--:|
-| _add `dashboard.png`_ | _add `srs-review.png`_ | _add `ai-generation.png`_ |
+| | |
+|:--|:--|
+| <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="290"> | <img src="docs/screenshots/tasks-list.png" alt="Tasks" width="290"> |
+| **Dashboard** — the day's mood check-in, counts of what is due, and the tasks due today. | **Tasks** — tasks filtered by status, each showing its priority, status and due date. |
+| <img src="docs/screenshots/workout-logging.png" alt="Workout logging" width="290"> | <img src="docs/screenshots/srs-review.png" alt="Review session" width="290"> |
+| **Workout** — typed gym shorthand parsed into sets; identical consecutive sets collapse to one row carrying a set count. | **Review** — the answer side of a due card with the four SM-2 grades and the interval each one would schedule. |
 
 ---
 
