@@ -50,6 +50,7 @@ public/fallback-*.js
 # AI agent working files — kept locally, not part of the published repo
 /CLAUDE.md
 /.claude/
+/.hermes/
 
 # supabase local dev artifacts
 supabase/.temp/
