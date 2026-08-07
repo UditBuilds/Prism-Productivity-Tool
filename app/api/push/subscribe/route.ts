@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { validatePushEndpoint } from "@/lib/push/endpoint";
 import type { PushSubscriptionRow } from "@/types/database";
+
+// validatePushEndpoint resolves DNS via node:dns. Declared explicitly so the
+// route can never be moved onto the edge runtime, where that import fails.
+export const runtime = "nodejs";
 
 type ApiResponse<T> = { data: T | null; error: string | null };
 
@@ -34,6 +39,15 @@ export async function POST(request: Request) {
     );
   }
 
+  // SSRF gate. /api/push/due sends an outbound request to whatever this column
+  // holds, so an unvalidated endpoint is a stored request-forgery primitive.
+  // Rejecting here — before the row exists — means a bad endpoint never gets
+  // stored at all, rather than being caught (or not) by every future sender.
+  const validation = await validatePushEndpoint(endpoint);
+  if (!validation.ok) {
+    return json({ data: null, error: validation.error }, 400);
+  }
+
   const userAgent =
     typeof body.userAgent === "string" ? body.userAgent : null;
 
@@ -44,7 +58,7 @@ export async function POST(request: Request) {
     .upsert(
       {
         user_id: user.id,
-        endpoint,
+        endpoint: validation.endpoint,
         p256dh,
         auth,
         user_agent: userAgent,

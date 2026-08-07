@@ -27,6 +27,14 @@ const CHUNK_CHARS = 8000;
 // generateFlashcardsFromNote rejects content under 100 chars.
 const MIN_TRANSCRIPT_CHARS = 100;
 const PER_CHUNK_CAP = 15;
+/**
+ * The request body carries no free text for the model — the transcript is
+ * fetched server-side and chunked — so `url` is the only unbounded field.
+ * Capped because extractVideoId runs five unanchored regexes over it; a
+ * multi-megabyte string is pure scanning cost before anything else rejects it.
+ * Real YouTube URLs are well under 200 characters.
+ */
+const MAX_URL_CHARS = 500;
 
 type SuccessBody = { data: YoutubeAnalyzeSuccess; error: null };
 type ErrorBody = { data: null; error: YoutubeAnalyzeError };
@@ -63,6 +71,9 @@ export async function POST(request: Request) {
   }
 
   const url = typeof body.url === "string" ? body.url : "";
+  if (url.length > MAX_URL_CHARS) {
+    return fail("INVALID_URL", "That doesn't look like a YouTube URL", 400);
+  }
   const videoId = extractVideoId(url);
   if (!videoId) {
     return fail("INVALID_URL", "That doesn't look like a YouTube URL", 400);

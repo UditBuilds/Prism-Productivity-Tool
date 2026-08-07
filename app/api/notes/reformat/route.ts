@@ -9,6 +9,29 @@ import { createClient } from "@/lib/supabase/server";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 const MODEL = "llama-3.3-70b-versatile";
 
+/**
+ * Longest `content` this route will accept.
+ *
+ * This is the one Groq path whose free text arrives straight from the request
+ * body with no upstream bound — /api/srs/generate reads the note from the DB,
+ * and the PDF and YouTube routes chunk before generating. So the cap belongs
+ * here, at the door.
+ *
+ * REJECTED, never truncated. The system prompt's contract is "preserve every
+ * single word" and the result is written back over the note, so trimming the
+ * input would delete the tail of the user's note under the guise of
+ * formatting it. Sized from the live database — the largest note is 18,656
+ * characters — so no existing note is turned away.
+ */
+const MAX_CONTENT_CHARS = 24000;
+
+/**
+ * Output ceiling. Reformatting returns the input plus markdown syntax, so the
+ * completion tracks the input's size: 24,000 chars in is roughly 6,000 tokens,
+ * and 8,000 leaves room for the added headers, bullets and blank lines.
+ */
+const MAX_TOKENS = 8000;
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -59,6 +82,15 @@ export async function POST(request: Request) {
   if (!content.trim()) {
     return json({ data: null, error: "Note has no content to reformat" }, 400);
   }
+  if (content.length > MAX_CONTENT_CHARS) {
+    return json(
+      {
+        data: null,
+        error: `Note is too long to reformat (${content.length.toLocaleString()} characters, max ${MAX_CONTENT_CHARS.toLocaleString()}). Split it into smaller notes first.`,
+      },
+      413
+    );
+  }
 
   // --- Groq first: never touch the DB unless formatting succeeds ----------
   let formatted: string;
@@ -70,7 +102,22 @@ export async function POST(request: Request) {
         { role: "user", content },
       ],
       temperature: 0.3,
+      max_tokens: MAX_TOKENS,
     });
+    // A completion that stopped at the token ceiling is a PARTIAL note, and
+    // the next statement writes this over the user's content. Bail out — the
+    // note is worth more than the formatting. This check is why adding
+    // max_tokens here is safe at all.
+    if (completion.choices[0]?.finish_reason === "length") {
+      return json(
+        {
+          data: null,
+          error:
+            "The formatted note came back incomplete, so nothing was saved. Try a shorter note.",
+        },
+        502
+      );
+    }
     formatted = stripCodeFence(completion.choices[0]?.message?.content ?? "");
   } catch (err) {
     console.error("Note reformat (Groq) failed:", err);

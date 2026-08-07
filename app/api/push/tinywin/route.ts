@@ -52,8 +52,16 @@ function buildTinyWinsMessage(stats: TinyWinsStats): string {
   return parts.join(" · ");
 }
 
+/** Socket timeout on the outbound push request — see /api/push/due. */
+const PUSH_SEND_TIMEOUT_MS = 5000;
+
 // POST /api/push/tinywin — cron-triggered daily wins summary (9 PM IST).
 export async function POST(request: Request) {
+  // Secret check happens before any DB call, and a failure writes NOTHING —
+  // unauthenticated callers control how often this runs, so any per-request
+  // write here would be unbounded. /api/push/due samples its auth_fail row
+  // because that row is its outage signal; this route has no such signal to
+  // preserve, so it stays silent. Don't add logging to this branch.
   if (request.headers.get("x-cron-secret") !== process.env.CRON_SECRET) {
     return json({ data: null, error: "Unauthorized" }, 401);
   }
@@ -134,7 +142,8 @@ export async function POST(request: Request) {
             endpoint: sub.endpoint,
             keys: { p256dh: sub.p256dh, auth: sub.auth },
           },
-          payload
+          payload,
+          { timeout: PUSH_SEND_TIMEOUT_MS }
         );
         delivered = true;
       } catch (err) {

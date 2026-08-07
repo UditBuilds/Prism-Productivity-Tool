@@ -34,6 +34,10 @@ const MIN_TOTAL_CHARS = 250;
 // Under ~15 chars/page across parsed pages → almost certainly image-only.
 const SCANNED_AVG_CHARS_PER_PAGE = 15;
 const RESPONSE_TEXT_CAP = 40000;
+// Longest filename accepted. Comfortably past any real one (the storage path
+// is already length-bounded by the bucket) and short enough that it can't be
+// used to pad the generation prompt.
+const MAX_FILENAME_CHARS = 300;
 
 type ApiResponse<T> = { data: T | null; error: string | null; code?: string };
 
@@ -82,10 +86,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const filename =
-    typeof body.filename === "string" && body.filename.trim()
-      ? body.filename.trim()
-      : "document.pdf";
+  // filename becomes the prompt's title, so it is attacker-controlled text on
+  // the model path. The extracted text is already bounded (chunk size x chunk
+  // count); this is the one field of the body that was not.
+  const rawFilename =
+    typeof body.filename === "string" ? body.filename.trim() : "";
+  if (rawFilename.length > MAX_FILENAME_CHARS) {
+    return json(
+      { data: null, error: "Filename is too long", code: "STORAGE_FAILED" },
+      400
+    );
+  }
+  const filename = rawFilename || "document.pdf";
 
   const mode: AnalyzeMode = isMode(body.mode) ? body.mode : "quick";
 

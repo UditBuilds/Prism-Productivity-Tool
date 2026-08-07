@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { generateFlashcardsFromNote } from "@/lib/ai/client";
+import { generateFlashcardsFromNote, MAX_SOURCE_CHARS } from "@/lib/ai/client";
 
 type GeneratedCard = { front: string; back: string };
 type ApiResponse<T> = { data: T | null; error: string | null };
@@ -47,9 +47,15 @@ export async function POST(request: Request) {
   }
 
   try {
+    // The free text here comes from the DATABASE, not the request body — notes
+    // have no length limit on write, so this is the bound on what reaches the
+    // model. Truncated rather than rejected: the note is already saved and the
+    // user can't shorten it from this screen, and cards from the first
+    // MAX_SOURCE_CHARS are more useful than an error. At 32,000 chars nothing
+    // in the current database is affected (largest note: 18,656).
     const cards = await generateFlashcardsFromNote(
       note.title,
-      note.content,
+      note.content.slice(0, MAX_SOURCE_CHARS),
       cardCount
     );
     return json<GeneratedCard[]>({ data: cards, error: null });
