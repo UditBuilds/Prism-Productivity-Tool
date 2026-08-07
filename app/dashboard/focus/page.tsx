@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsRestoring, useQueryClient } from "@tanstack/react-query";
 import {
   Timer,
   Play,
@@ -39,6 +39,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 const RING_RADIUS = 130;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
+// Widths only — five placeholder pills roughly the size of the seeded
+// categories, so the row doesn't visibly resize when the real chips arrive.
+const CATEGORY_SKELETON_WIDTHS = ["w-24", "w-20", "w-28", "w-16", "w-14"];
+
 export default function FocusPage() {
   const isRunning = useFocusStore((s) => s.isRunning);
   const justCompleted = useFocusStore((s) => s.justCompleted);
@@ -61,8 +65,16 @@ function IdleView() {
   const setSessionId = useFocusStore((s) => s.setSessionId);
   const createSession = useCreateFocusSession();
   const { data: recent, isLoading } = useRecentFocusSessions();
-  const { categories } = useFocusCategories();
+  const { categories, isLoading: categoriesLoading } = useFocusCategories();
   const qc = useQueryClient();
+
+  // ["focus-categories"] is persisted, so its IndexedDB snapshot can land
+  // mid-hydration and turn an empty chip row into five chips against server
+  // HTML that had none. isLoading reads false for the whole restore (the query
+  // never fetches), so only isRestoring — true on the server render and the
+  // first client render — closes the window. ["focus-sessions"] below is NOT
+  // persisted and keeps its plain isLoading guard.
+  const categoriesRestoring = useIsRestoring() || categoriesLoading;
 
   const [manageOpen, setManageOpen] = useState(false);
   const [showNewCategory, setShowNewCategory] = useState(false);
@@ -161,22 +173,33 @@ function IdleView() {
         </button>
       </div>
       <div className="scrollbar-none -mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
-        {categories.map((c) => (
-          <button
-            key={c.label}
-            type="button"
-            onClick={() => setCategory(c.label)}
-            className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-transform",
-              category === c.label
-                ? cn(c.activeClass, "scale-[1.04]")
-                : "border-border bg-surface text-muted-foreground hover:scale-[1.02] hover:text-foreground"
-            )}
-          >
-            <span aria-hidden>{c.emoji}</span>
-            {c.label}
-          </button>
-        ))}
+        {/* No loading state existed for this row before — a restore just
+            popped the chips in. Pill-shaped placeholders at the chip's own
+            height (py-1.5 + 20px line box = 32px) hold the row's space
+            without asserting how many categories there turn out to be. */}
+        {categoriesRestoring
+          ? CATEGORY_SKELETON_WIDTHS.map((w, i) => (
+              <Skeleton
+                key={i}
+                className={cn("h-8 shrink-0 rounded-full", w)}
+              />
+            ))
+          : categories.map((c) => (
+              <button
+                key={c.label}
+                type="button"
+                onClick={() => setCategory(c.label)}
+                className={cn(
+                  "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-transform",
+                  category === c.label
+                    ? cn(c.activeClass, "scale-[1.04]")
+                    : "border-border bg-surface text-muted-foreground hover:scale-[1.02] hover:text-foreground"
+                )}
+              >
+                <span aria-hidden>{c.emoji}</span>
+                {c.label}
+              </button>
+            ))}
         <button
           type="button"
           onClick={() => setShowNewCategory((v) => !v)}

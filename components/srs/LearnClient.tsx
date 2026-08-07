@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsRestoring, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import toast from "react-hot-toast";
@@ -50,6 +50,18 @@ const AnalyticsPanel = dynamic(
   }
 );
 
+/**
+ * Placeholder sized to the md StatCard value line (text-2xl → 32px) so the
+ * banner can't jump. A <span>, not the shared <Skeleton> div: StatCard renders
+ * `value` inside a <p>, and a div there is invalid nesting — the browser
+ * reparents it and the hydration mismatch comes straight back.
+ */
+function StatFigureSkeleton() {
+  return (
+    <span className="skeleton-shimmer inline-block h-8 w-10 rounded-md bg-primary/10 align-middle" />
+  );
+}
+
 export function LearnClient({ streak }: { streak: number }) {
   const qc = useQueryClient();
   const openCreateCard = useUIStore((s) => s.openCreateCard);
@@ -57,6 +69,16 @@ export function LearnClient({ streak }: { streak: number }) {
   const { data: cards, isLoading, isError, refetch } = useAllCards();
   const { data: decks } = useDeckStats();
   const { data: notes } = useNotesQuery();
+
+  // ["srs-cards"] (the banner figures + the deck list) and ["notes"] (the deck
+  // "From: <note>" chip) are both persisted, and their IndexedDB snapshots land
+  // at an unpredictable point relative to hydration. isLoading reads false for
+  // the whole restore because no fetch happens, which is why gating on it never
+  // fixed this; isRestoring is true on the server render and the first client
+  // render alike. The streak card below is NOT gated — its value comes from a
+  // server prop and the non-persisted ["srs-analytics"] query, so it cannot
+  // mismatch and there is no reason to hide a number we already have.
+  const restoring = useIsRestoring() || isLoading;
 
   const noteTitleById = useMemo(() => {
     const map = new Map<string, string>();
@@ -137,10 +159,18 @@ export function LearnClient({ streak }: { streak: number }) {
         <TabsContent value="decks">
       {/* Stats banner */}
       <section className="stagger-children mt-5 grid grid-cols-3 gap-3">
-        <StatCard label="Total Cards" value={total} icon={Layers} size="md" />
+        {/* The card chrome and label stay put; only the FIGURE waits. A
+            skeleton the height of the md value line (text-2xl → 32px) keeps
+            the three-column banner exactly the size it will settle at. */}
+        <StatCard
+          label="Total Cards"
+          value={restoring ? <StatFigureSkeleton /> : total}
+          icon={Layers}
+          size="md"
+        />
         <StatCard
           label="Due Today"
-          value={dueToday}
+          value={restoring ? <StatFigureSkeleton /> : dueToday}
           icon={CalendarClock}
           size="md"
         />
@@ -174,8 +204,9 @@ export function LearnClient({ streak }: { streak: number }) {
         />
       </section>
 
-      {/* Review All Due */}
-      {dueNow > 0 && (
+      {/* Review All Due — hidden during restore for the same reason the
+          figures are: it appears or not purely on ["srs-cards"]. */}
+      {!restoring && dueNow > 0 && (
         <Link href="/dashboard/learn/review" className="mt-5 block">
           <Button className="w-full animate-pulse-ring rounded-lg" size="lg">
             <Brain className="mr-2 h-4 w-4" />
@@ -196,7 +227,7 @@ export function LearnClient({ streak }: { streak: number }) {
       {/* Deck list */}
       <div className="mt-8">
         <SectionHeader title="Decks" />
-        {isLoading ? (
+        {restoring ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
               <div

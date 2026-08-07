@@ -2,6 +2,7 @@
 
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useIsRestoring } from "@tanstack/react-query";
 import {
   Plus,
   Search,
@@ -64,6 +65,16 @@ function NotesPageInner() {
   const closeGenerateModal = useUIStore((s) => s.closeGenerateModal);
   const { data: notes, isLoading, isError, refetch } = useNotesQuery();
 
+  // See the tasks page for the full reasoning: the persisted ["notes"] snapshot
+  // restores asynchronously, so anything derived from `notes` must render the
+  // same thing on the server and the first client render. isLoading reads false
+  // during a restore (no fetch happens), which is why it was never the fix.
+  //
+  // This covers the DATA half of the Notes hydration warning only. The other
+  // half is structural — the DropdownMenu Portal inside PullToRefresh — and is
+  // deliberately untouched here.
+  const restoring = useIsRestoring() || isLoading;
+
   const visible = useMemo(() => {
     let list = notes ?? [];
     if (kindFilter) list = list.filter((n) => n.kind === kindFilter);
@@ -71,7 +82,10 @@ function NotesPageInner() {
     return q ? list.filter((n) => matchesQuery(n, q)) : list;
   }, [notes, query, kindFilter]);
 
-  const hasNotes = (notes?.length ?? 0) > 0;
+  // Gates the search field and the Revisit chip, both of which sit OUTSIDE the
+  // skeleton block — without the restore gate they pop into existence when the
+  // snapshot lands, which is a mismatch of its own.
+  const hasNotes = !restoring && (notes?.length ?? 0) > 0;
 
   return (
     <div className="animate-fade-up">
@@ -164,7 +178,7 @@ function NotesPageInner() {
       )}
 
       <div className="mt-5">
-        {isLoading ? (
+        {restoring ? (
           <LoadingSkeleton count={4} />
         ) : isError ? (
           <EmptyState
