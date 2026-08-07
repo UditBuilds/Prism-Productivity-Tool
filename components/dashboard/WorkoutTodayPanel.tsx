@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { useIsRestoring } from "@tanstack/react-query";
 import { AlertCircle, Dumbbell, Loader2, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -48,12 +49,20 @@ export function WorkoutTodayPanel() {
    */
   const [expandedRuns, setExpandedRuns] = useState<string[]>([]);
 
+  // Both hooks derive from the ONE persisted ["workouts"] cache, so a single
+  // gate covers the set list and the 21-day session count. The snapshot
+  // restores from IndexedDB asynchronously and nothing waits for it; isLoading
+  // reads false throughout a restore (the query never fetches), so it could
+  // never have been the gate. isRestoring is true on the server render and the
+  // first client render alike.
+  const restoring = useIsRestoring() || isLoading;
+
   const groups = groupSetsByExercise(todaySets ?? []);
 
   return (
     <>
       <div className="mt-4">
-        {isLoading ? (
+        {restoring ? (
           <div className="space-y-2">
             <div className="h-4 w-24 animate-pulse rounded bg-surface-raised" />
             <div className="h-8 animate-pulse rounded-md bg-surface-raised" />
@@ -123,7 +132,7 @@ export function WorkoutTodayPanel() {
 
       {/* The feature measuring its own use. Hidden until there is something to
           report, so a brand-new user isn't greeted by a zero. */}
-      {(sessionCount ?? 0) > 0 && (
+      {!restoring && (sessionCount ?? 0) > 0 && (
         <p className="mt-4 border-t border-border pt-4 font-mono text-xs tabular-nums text-muted-foreground">
           {sessionCount} session{sessionCount === 1 ? "" : "s"} in the last 21
           days

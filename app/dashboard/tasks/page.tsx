@@ -2,6 +2,7 @@
 
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useIsRestoring } from "@tanstack/react-query";
 import {
   Plus,
   ListTodo,
@@ -85,6 +86,15 @@ function TasksPageContent() {
   const openCreateTask = useUIStore((s) => s.openCreateTask);
   const { data: tasks, isLoading, isError, refetch } = useTasksQuery();
 
+  // The persisted ["tasks"] snapshot is restored from IndexedDB asynchronously,
+  // and nothing gates rendering on it — so the cache can land mid-hydration and
+  // the client would render restored rows against server HTML that had none.
+  // isLoading is NOT enough: during a restore the query never fetches, so it
+  // reads false while data is still undefined, and the empty state renders.
+  // isRestoring is true on the server render AND the first client render, so
+  // gating on it keeps both sides showing the same skeleton.
+  const restoring = useIsRestoring() || isLoading;
+
   const counts = useMemo(() => {
     const list = tasks ?? [];
     return {
@@ -147,7 +157,7 @@ function TasksPageContent() {
                     : "bg-muted text-muted-foreground"
                 )}
               >
-                {isLoading ? (
+                {restoring ? (
                   <span className="inline-block h-3 w-3 animate-pulse rounded-sm bg-muted-foreground/30 align-[-1px]" />
                 ) : (
                   counts[tab.value]
@@ -161,7 +171,7 @@ function TasksPageContent() {
       <RecurringTasksStrip />
 
       <div className="mt-5">
-        {isLoading ? (
+        {restoring ? (
           <LoadingSkeleton count={3} />
         ) : isError ? (
           <EmptyState
