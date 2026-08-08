@@ -6,7 +6,7 @@ import { MAX_RAW_INPUT_LENGTH, parseWorkoutInput } from "@/lib/ai/workout";
 import {
   aiRateLimitHeaders,
   aiRateLimitMessage,
-  checkAiRateLimit,
+  checkWorkoutRateLimit,
 } from "@/lib/ai/rateLimit";
 import type { Database, WorkoutSet } from "@/types/database";
 
@@ -88,14 +88,17 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
 
-  // Shared per-user cap across all six AI routes — this is the only method on
-  // this route that reaches Groq, so GET/PATCH/DELETE are deliberately exempt.
+  // This route's OWN per-user cap (100/60s), fully decoupled from the 20/60s
+  // budget the five content-generation routes share. POST is the only method
+  // here that reaches Groq, so GET/PATCH/DELETE are deliberately exempt.
   //
-  // A rejection here means NO row is inserted, so the capture is lost rather
-  // than stored unparsed — the one place this cap can destroy user input. See
-  // MAX_REQUESTS_PER_WINDOW in lib/ai/rateLimit.ts for why the ceiling is
-  // sized around this route's offline-replay burst specifically.
-  const rateLimit = checkAiRateLimit(user.id);
+  // The separate, much higher ceiling exists because a rejection here means NO
+  // row is inserted — the capture is lost rather than stored unparsed, and the
+  // retryer can't save it (a 429 is indistinguishable from a network failure to
+  // it, and all 3 retries land inside the same window). Sharing the low ceiling
+  // would let a PDF analysis burn the budget a gym session then needs. See
+  // MAX_WORKOUT_REQUESTS_PER_WINDOW in lib/ai/rateLimit.ts.
+  const rateLimit = checkWorkoutRateLimit(user.id);
   if (!rateLimit.allowed) {
     return json(
       { data: null, error: aiRateLimitMessage(rateLimit.retryAfterSeconds) },
