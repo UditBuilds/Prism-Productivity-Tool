@@ -2,12 +2,21 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { generateFlashcardsFromNote, MAX_SOURCE_CHARS } from "@/lib/ai/client";
+import {
+  aiRateLimitHeaders,
+  aiRateLimitMessage,
+  checkAiRateLimit,
+} from "@/lib/ai/rateLimit";
 
 type GeneratedCard = { front: string; back: string };
 type ApiResponse<T> = { data: T | null; error: string | null };
 
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
+function json<T>(
+  body: ApiResponse<T>,
+  status = 200,
+  headers?: Record<string, string>
+) {
+  return NextResponse.json(body, { status, headers });
 }
 
 // POST /api/srs/generate — read a note via the AI provider, return drafts (no save)
@@ -17,6 +26,16 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
+
+  // Shared per-user cap across all six AI routes — before any Groq work.
+  const rateLimit = checkAiRateLimit(user.id);
+  if (!rateLimit.allowed) {
+    return json(
+      { data: null, error: aiRateLimitMessage(rateLimit.retryAfterSeconds) },
+      429,
+      aiRateLimitHeaders(rateLimit.retryAfterSeconds)
+    );
+  }
 
   let body: Record<string, unknown>;
   try {

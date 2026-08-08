@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  aiRateLimitHeaders,
+  aiRateLimitMessage,
+  checkAiRateLimit,
+} from "@/lib/ai/rateLimit";
 
 // Same Groq setup as lib/ai/client.ts. That module exports flashcard helpers
 // with their own prompts and keeps its client private, so we instantiate one
@@ -37,8 +42,12 @@ export const maxDuration = 60;
 
 type ApiResponse<T> = { data: T | null; error: string | null };
 
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
+function json<T>(
+  body: ApiResponse<T>,
+  status = 200,
+  headers?: Record<string, string>
+) {
+  return NextResponse.json(body, { status, headers });
 }
 
 const SYSTEM_PROMPT = `You are a markdown formatter. Add proper markdown structure to raw unformatted text.
@@ -68,6 +77,16 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
+
+  // Shared per-user cap across all six AI routes — before any Groq work.
+  const rateLimit = checkAiRateLimit(user.id);
+  if (!rateLimit.allowed) {
+    return json(
+      { data: null, error: aiRateLimitMessage(rateLimit.retryAfterSeconds) },
+      429,
+      aiRateLimitHeaders(rateLimit.retryAfterSeconds)
+    );
+  }
 
   let body: Record<string, unknown>;
   try {

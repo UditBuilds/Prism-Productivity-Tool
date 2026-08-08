@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { generateFlashcardsFromTranscript } from "@/lib/ai/client";
+import {
+  aiRateLimitHeaders,
+  aiRateLimitMessage,
+  checkAiRateLimit,
+} from "@/lib/ai/rateLimit";
 import { mergeCards } from "@/lib/pdf/merge-cards";
 import type { GeneratedCard } from "@/lib/pdf/types";
 import {
@@ -45,12 +50,17 @@ function ok(data: YoutubeAnalyzeSuccess) {
   });
 }
 
-function fail(code: YoutubeErrorCode, message: string, status: number) {
+function fail(
+  code: YoutubeErrorCode,
+  message: string,
+  status: number,
+  headers?: Record<string, string>
+) {
   const body: ErrorBody = {
     data: null,
     error: { code, message, hint: YOUTUBE_ERROR_HINTS[code] },
   };
-  return NextResponse.json(body, { status });
+  return NextResponse.json(body, { status, headers });
 }
 
 // POST /api/youtube/analyze — { url, cardCount, deckName? } → cards in SRS.
@@ -61,6 +71,18 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ data: null, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Shared per-user cap across all six AI routes — before the transcript fetch
+  // and the (up to 6) per-chunk Groq calls this route makes.
+  const rateLimit = checkAiRateLimit(user.id);
+  if (!rateLimit.allowed) {
+    return fail(
+      "RATE_LIMITED",
+      aiRateLimitMessage(rateLimit.retryAfterSeconds),
+      429,
+      aiRateLimitHeaders(rateLimit.retryAfterSeconds)
+    );
   }
 
   let body: Record<string, unknown>;

@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istDayContext } from "@/lib/date";
 import { MAX_RAW_INPUT_LENGTH, parseWorkoutInput } from "@/lib/ai/workout";
+import {
+  aiRateLimitHeaders,
+  aiRateLimitMessage,
+  checkAiRateLimit,
+} from "@/lib/ai/rateLimit";
 import type { Database, WorkoutSet } from "@/types/database";
 
 type WorkoutSetInsert =
@@ -12,8 +17,12 @@ type WorkoutSetUpdate =
 
 type ApiResponse<T> = { data: T | null; error: string | null };
 
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
+function json<T>(
+  body: ApiResponse<T>,
+  status = 200,
+  headers?: Record<string, string>
+) {
+  return NextResponse.json(body, { status, headers });
 }
 
 /**
@@ -78,6 +87,22 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
+
+  // Shared per-user cap across all six AI routes — this is the only method on
+  // this route that reaches Groq, so GET/PATCH/DELETE are deliberately exempt.
+  //
+  // A rejection here means NO row is inserted, so the capture is lost rather
+  // than stored unparsed — the one place this cap can destroy user input. See
+  // MAX_REQUESTS_PER_WINDOW in lib/ai/rateLimit.ts for why the ceiling is
+  // sized around this route's offline-replay burst specifically.
+  const rateLimit = checkAiRateLimit(user.id);
+  if (!rateLimit.allowed) {
+    return json(
+      { data: null, error: aiRateLimitMessage(rateLimit.retryAfterSeconds) },
+      429,
+      aiRateLimitHeaders(rateLimit.retryAfterSeconds)
+    );
+  }
 
   let body: Record<string, unknown>;
   try {
