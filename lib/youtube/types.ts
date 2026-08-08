@@ -6,7 +6,8 @@ export type YoutubeErrorCode =
   | "NO_TRANSCRIPT"
   | "PRIVATE_VIDEO"
   | "GROQ_ERROR"
-  | "NETWORK_ERROR";
+  | "NETWORK_ERROR"
+  | "RATE_LIMITED";
 
 export interface YoutubeTranscriptSegment {
   text: string;
@@ -48,4 +49,6 @@ export const YOUTUBE_ERROR_HINTS: Record<YoutubeErrorCode, string> = {
   NETWORK_ERROR:
     "Could not reach YouTube. The video may be region-restricted or age-gated.",
   GROQ_ERROR: "AI generation failed. Try again or reduce card count.",
+  RATE_LIMITED:
+    "You've made a lot of AI requests in the last minute. Wait a moment and try again.",
 };

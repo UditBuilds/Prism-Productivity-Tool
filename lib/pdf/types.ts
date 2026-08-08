@@ -9,7 +9,8 @@ export type PdfErrorCode =
   | "INVALID_RANGE"
   | "EXTRACT_FAILED"
   | "AI_FAILED"
-  | "STORAGE_FAILED";
+  | "STORAGE_FAILED"
+  | "RATE_LIMITED";
 
 export interface GeneratedCard {
   front: string;
@@ -78,4 +79,6 @@ export const PDF_ERROR_HINTS: Record<PdfErrorCode, string> = {
     "The file may be corrupted or password-protected. Try re-exporting the PDF.",
   AI_FAILED: "The AI service hiccuped — this usually works on a retry.",
   STORAGE_FAILED: "Check your connection and try again.",
+  RATE_LIMITED:
+    "You've made a lot of AI requests in the last minute. Wait a moment, then re-upload and try again.",
 };

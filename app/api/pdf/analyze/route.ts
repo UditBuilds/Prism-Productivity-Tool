@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { generateFlashcardsFromNote } from "@/lib/ai/client";
+import {
+  aiRateLimitHeaders,
+  aiRateLimitMessage,
+  checkAiRateLimit,
+} from "@/lib/ai/rateLimit";
 import { extractPages } from "@/lib/pdf/extract";
 import { chunkText } from "@/lib/pdf/chunk";
 import { mergeCards } from "@/lib/pdf/merge-cards";
@@ -41,8 +46,12 @@ const MAX_FILENAME_CHARS = 300;
 
 type ApiResponse<T> = { data: T | null; error: string | null; code?: string };
 
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
+function json<T>(
+  body: ApiResponse<T>,
+  status = 200,
+  headers?: Record<string, string>
+) {
+  return NextResponse.json(body, { status, headers });
 }
 
 const MODES: AnalyzeMode[] = ["quick", "smart", "range"];
@@ -64,6 +73,13 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
+
+  // Shared per-user cap across all six AI routes. Decided here (a slot is
+  // consumed by the attempt either way) but ENFORCED inside the try below, so
+  // a rejection still runs the finally that removes the temp upload. Returning
+  // early would orphan it: PDFUploadModal clears its own cleanup ref on ANY
+  // response, trusting this route's finally to have done the delete.
+  const rateLimit = checkAiRateLimit(user.id);
 
   let body: Record<string, unknown>;
   try {
@@ -113,6 +129,13 @@ export async function POST(request: Request) {
   // Everything past this point runs inside try/finally so the uploaded temp
   // object is always cleaned up — including validation failures.
   try {
+    if (!rateLimit.allowed) {
+      throw new PdfAnalyzeError(
+        "RATE_LIMITED",
+        aiRateLimitMessage(rateLimit.retryAfterSeconds),
+        429
+      );
+    }
     if (mode === "range") {
       const start = parseIntInRange(body.pageStart, 1, 5000);
       const end = parseIntInRange(body.pageEnd, 1, 5000);
@@ -277,7 +300,15 @@ export async function POST(request: Request) {
     return json<AnalyzeData>({ data, error: null });
   } catch (err) {
     if (err instanceof PdfAnalyzeError) {
-      return json({ data: null, error: err.message, code: err.code }, err.status);
+      return json(
+        { data: null, error: err.message, code: err.code },
+        err.status,
+        // Only the rate-limit throw carries a Retry-After; rateLimit is
+        // narrowed to the rejected variant by the code check.
+        err.code === "RATE_LIMITED" && !rateLimit.allowed
+          ? aiRateLimitHeaders(rateLimit.retryAfterSeconds)
+          : undefined
+      );
     }
     console.error("PDF analyze error:", err);
     return json(
