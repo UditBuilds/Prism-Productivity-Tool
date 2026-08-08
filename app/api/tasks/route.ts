@@ -152,6 +152,32 @@ async function applyReminderIntent(
   return error ? error.message : null;
 }
 
+/**
+ * Confirm a submitted plan_id names a plan this user owns.
+ *
+ * RLS scopes the TASK row to the caller, but it says nothing about what the
+ * task points AT: `plan_id` is a plain FK, so any UUID the client sends is
+ * accepted and stored. Defence in depth on top of RLS, not a replacement for
+ * it.
+ *
+ * A malformed UUID makes Postgres reject the comparison (22P02) rather than
+ * return no rows. Treating the error the same as "not found" is what turns
+ * today's raw 500 into a clean 400.
+ */
+async function ownsPlan(
+  supabase: ReturnType<typeof createClient>,
+  planId: string,
+  userId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("plans")
+    .select("id")
+    .eq("id", planId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !error && !!data;
+}
+
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 /** Normalise a submitted days_of_week to unique, sorted weekday numbers 0–6.
@@ -238,6 +264,13 @@ export async function POST(request: Request) {
     ? body.priority
     : "medium";
   const planId = typeof body.plan_id === "string" ? body.plan_id : null;
+  // An absent or null plan_id is the normal case — TaskForm sends null when no
+  // plan is selected — so only a PRESENT one is checked. Rejected rather than
+  // nulled out: silently dropping the link would save a task the user believes
+  // is filed under a plan.
+  if (planId !== null && !(await ownsPlan(supabase, planId, user.id))) {
+    return json({ data: null, error: "Plan not found" }, 404);
+  }
   // Stamp completion if a task is created directly as done (the PATCH path
   // owns the done/un-done transitions for existing tasks).
   const completedAt = status === "done" ? new Date().toISOString() : null;
@@ -481,7 +514,13 @@ export async function PATCH(request: Request) {
       typeof body.due_date === "string" ? body.due_date : null;
   }
   if (body.plan_id !== undefined) {
-    updates.plan_id = typeof body.plan_id === "string" ? body.plan_id : null;
+    const nextPlanId = typeof body.plan_id === "string" ? body.plan_id : null;
+    // Same ownership rule as POST. Fixing only the create path would leave the
+    // identical hole open one HTTP verb away — TaskForm edits go through here.
+    if (nextPlanId !== null && !(await ownsPlan(supabase, nextPlanId, user.id))) {
+      return json({ data: null, error: "Plan not found" }, 404);
+    }
+    updates.plan_id = nextPlanId;
   }
 
   const hasTaskUpdates = Object.keys(updates).length > 0;

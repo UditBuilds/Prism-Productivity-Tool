@@ -5,6 +5,50 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 const MODEL = "llama-3.3-70b-versatile";
 
 /**
+ * Output caps. Every call in this module previously ran with no `max_tokens`,
+ * so a pathological input could bill an unbounded completion — the same hazard
+ * lib/ai/workout.ts already documents and caps, applied to the four call sites
+ * that were missed.
+ *
+ * Sized from the actual worst case each function can be asked for:
+ * - Cards: callers clamp to 30 (/api/srs/generate, /api/pdf/analyze) or 20
+ *   (/api/youtube/analyze). At 30 cards a measured front+back pair runs well
+ *   under 60 tokens, so ~1,800 is realistic and 4,000 is a bit over double —
+ *   the same headroom ratio workout.ts chose.
+ * - Notes: one markdown section from a <=4,000-char transcript chunk. 2,000
+ *   tokens is roughly 8,000 characters of output, comfortably more than a
+ *   faithful summary of that input needs.
+ */
+const MAX_TOKENS_CARDS = 4000;
+const MAX_TOKENS_NOTES = 2000;
+
+/**
+ * Backstop on what any single call may send to the model.
+ *
+ * Deliberately sized so it truncates NOTHING that exists today — a backstop
+ * that silently trims real content is a behaviour change wearing a security
+ * fix's clothes. Measured against the live database: the largest note is
+ * 18,656 characters, and PDF (9,000, lib/pdf/chunk.ts) and transcript (4,000,
+ * lib/youtube/extract.ts) chunks are already far smaller. 32,000 clears the
+ * real maximum by ~1.7x while still bounding the prompt at roughly 8k tokens.
+ *
+ * It exists so a future caller cannot reintroduce an unbounded prompt by
+ * forgetting its own cap — which is exactly how this class of bug arrived the
+ * first time.
+ */
+export const MAX_SOURCE_CHARS = 32000;
+
+/**
+ * True when the model stopped because it hit `max_tokens` rather than
+ * finishing. Callers that persist prose need this: a length-truncated
+ * completion is a partial document, and saving one silently destroys content.
+ * JSON callers don't — a truncated array fails to parse and throws anyway.
+ */
+function wasTruncated(finishReason: string | null | undefined): boolean {
+  return finishReason === "length";
+}
+
+/**
  * Reads a note and returns spaced-repetition flashcards. SERVER-ONLY — this
  * touches GROQ_API_KEY, so it must only be called from API routes, never a
  * client component.
@@ -32,8 +76,8 @@ RULES:
 6. Never generate cards that are too obvious.
 7. Use active recall — questions should make the reader retrieve the answer, not recognise it.
 
-Note title: ${noteTitle}
-Note content: ${noteContent}
+Note title: ${noteTitle.slice(0, 300)}
+Note content: ${noteContent.slice(0, MAX_SOURCE_CHARS)}
 
 JSON array:`;
 
@@ -43,6 +87,7 @@ JSON array:`;
       model: MODEL,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
+      max_tokens: MAX_TOKENS_CARDS,
     });
     text = (completion.choices[0]?.message?.content ?? "").trim();
   } catch (err) {
@@ -112,7 +157,7 @@ Rules:
 - Preserve concrete facts, definitions, formulas, and cause-and-effect relationships; drop filler, greetings, and sponsor reads.
 - Do not invent information that the transcript does not support.`;
 
-  const userContent = `Title: ${videoTitle}\n\nTranscript excerpt:\n${transcriptChunk}`;
+  const userContent = `Title: ${videoTitle.slice(0, 300)}\n\nTranscript excerpt:\n${transcriptChunk.slice(0, MAX_SOURCE_CHARS)}`;
 
   let text: string;
   try {
@@ -123,7 +168,15 @@ Rules:
         { role: "user", content: userContent },
       ],
       temperature: 0.5,
+      max_tokens: MAX_TOKENS_NOTES,
     });
+    // This output is persisted as a note. A completion cut off at the token
+    // ceiling would store a section that ends mid-sentence, so treat it as a
+    // failure — /api/youtube/notes drops a failed chunk and keeps the rest,
+    // which is honest, where a silently half-written section is not.
+    if (wasTruncated(completion.choices[0]?.finish_reason)) {
+      throw new Error("AI output was truncated.");
+    }
     text = (completion.choices[0]?.message?.content ?? "").trim();
   } catch (err) {
     console.error("Groq generate error (notes from transcript):", err);
@@ -165,7 +218,7 @@ Return ONLY a JSON array:
 [{"front": "...", "back": "..."}]
 No preamble. No markdown fences.`;
 
-  const userContent = `Video title: ${videoTitle}\n\nTranscript excerpt:\n${transcriptChunk}`;
+  const userContent = `Video title: ${videoTitle.slice(0, 300)}\n\nTranscript excerpt:\n${transcriptChunk.slice(0, MAX_SOURCE_CHARS)}`;
 
   let text: string;
   try {
@@ -176,6 +229,7 @@ No preamble. No markdown fences.`;
         { role: "user", content: userContent },
       ],
       temperature: 0.7,
+      max_tokens: MAX_TOKENS_CARDS,
     });
     text = (completion.choices[0]?.message?.content ?? "").trim();
   } catch (err) {

@@ -57,6 +57,37 @@ function toCardRow(raw: unknown, userId: string): CardInsert | null {
   };
 }
 
+/**
+ * Confirm every note_id referenced by an incoming batch belongs to the caller.
+ *
+ * RLS scopes the CARD rows to the user but not what they point at — `note_id`
+ * is a plain FK, so any UUID the client sends is stored as-is. Defence in depth
+ * on top of RLS, not a replacement for it.
+ *
+ * Checks EVERY distinct id in the batch, not just the first: the bulk path
+ * takes a client-supplied array, so validating one card would leave the other
+ * N-1 unchecked. One `in` query regardless of batch size.
+ *
+ * A malformed UUID makes Postgres reject the comparison (22P02) rather than
+ * return no rows, so an error counts as "not owned" — which turns what is
+ * currently a raw 500 from the insert into a clean 404.
+ */
+async function ownsAllNotes(
+  supabase: ReturnType<typeof createClient>,
+  noteIds: string[],
+  userId: string
+): Promise<boolean> {
+  if (noteIds.length === 0) return true;
+  const { data, error } = await supabase
+    .from("notes")
+    .select("id")
+    .eq("user_id", userId)
+    .in("id", noteIds);
+  if (error || !data) return false;
+  const owned = new Set(data.map((n) => n.id));
+  return noteIds.every((id) => owned.has(id));
+}
+
 // POST /api/srs/cards — create one card (object body) or many (array body)
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -82,6 +113,19 @@ export async function POST(request: Request) {
       return json({ data: null, error: "No valid cards to save" }, 400);
     }
 
+    // note_id is optional (the YouTube and manual paths send null) — only the
+    // present ones are checked, and all of them are.
+    const referencedNoteIds = Array.from(
+      new Set(
+        rows
+          .map((r) => r.note_id)
+          .filter((id): id is string => typeof id === "string")
+      )
+    );
+    if (!(await ownsAllNotes(supabase, referencedNoteIds, user.id))) {
+      return json({ data: null, error: "Note not found" }, 404);
+    }
+
     const { data, error } = await supabase
       .from("srs_cards")
       .insert(rows)
@@ -105,6 +149,11 @@ export async function POST(request: Request) {
       ? single.deck_name.trim()
       : "Default";
 
+  const noteId = typeof single.note_id === "string" ? single.note_id : null;
+  if (noteId !== null && !(await ownsAllNotes(supabase, [noteId], user.id))) {
+    return json({ data: null, error: "Note not found" }, 404);
+  }
+
   const { data, error } = await supabase
     .from("srs_cards")
     .insert({
@@ -112,7 +161,7 @@ export async function POST(request: Request) {
       front,
       back,
       deck_name: deckName,
-      note_id: typeof single.note_id === "string" ? single.note_id : null,
+      note_id: noteId,
     })
     .select()
     .single();

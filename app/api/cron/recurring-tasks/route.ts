@@ -57,7 +57,10 @@ type RecurringSchema = {
 // task per template per IST day (also backed by the unique
 // (recurring_task_id, due_date) index).
 export async function POST(request: Request) {
-  // Guard: only the scheduler (with the shared secret) may call this.
+  // Guard: only the scheduler (with the shared secret) may call this. The
+  // check runs before any DB call and a failure writes NOTHING —
+  // unauthenticated callers control the request rate, so any per-request write
+  // here would be unbounded. Don't add logging to this branch.
   if (request.headers.get("x-cron-secret") !== process.env.CRON_SECRET) {
     return json({ data: null, error: "Unauthorized" }, 401);
   }
