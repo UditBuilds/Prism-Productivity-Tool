@@ -4,6 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { istDayContext } from "@/lib/date";
 import { MAX_RAW_INPUT_LENGTH, parseWorkoutInput } from "@/lib/ai/workout";
 import {
+  formatStructuredRawInput,
+  type StructuredSetInput,
+} from "@/lib/workouts";
+import {
   aiRateLimitHeaders,
   aiRateLimitMessage,
   checkWorkoutRateLimit,
@@ -41,6 +45,99 @@ const DAY_MS = 86_400_000;
 /** Backstop only. 21 days of heavy lifting is a few hundred rows. */
 const MAX_ROWS = 1000;
 
+/**
+ * Ceiling on ONE structured submission.
+ *
+ * The picker submits one exercise's sets per capture, so realistic values are
+ * 1-6. 50 is a backstop against a malformed or hostile body, sized off the
+ * largest session this codebase documents anywhere (the 12-exercise / 44-set
+ * session measured for MAX_TOKENS in lib/ai/workout.ts) — a single capture
+ * bigger than an entire session is not a capture.
+ */
+const MAX_STRUCTURED_SETS = 50;
+
+type StructuredSetsResult =
+  | { ok: true; sets: StructuredSetInput[] | null }
+  | { ok: false; error: string };
+
+/**
+ * Validate the optional `sets` field.
+ *
+ * ABSENT is the discriminator: no `sets` key means this is a free-text capture
+ * and the Groq path below runs exactly as it always has. A present `sets` is
+ * validated strictly and 400s on anything malformed — unlike raw text, there
+ * is nothing to salvage from a bad number, and silently coercing one would
+ * write a wrong weight that looks authoritative.
+ *
+ * The per-set shape is deliberately as general as the table (an exercise name
+ * per set, not one for the whole capture) so a capture can hold more than one
+ * exercise, which is what the free-text path already produces — "assisted
+ * pullup and chinups" is one capture_id spanning two exercises. Phase 1's UI
+ * submits a single exercise; the endpoint does not need to care.
+ */
+function parseStructuredSets(value: unknown): StructuredSetsResult {
+  if (value === undefined || value === null) return { ok: true, sets: null };
+
+  if (!Array.isArray(value)) {
+    return { ok: false, error: "Invalid sets" };
+  }
+  if (value.length === 0) {
+    return { ok: false, error: "Nothing to log" };
+  }
+  if (value.length > MAX_STRUCTURED_SETS) {
+    return {
+      ok: false,
+      error: `Too many sets at once (max ${MAX_STRUCTURED_SETS}).`,
+    };
+  }
+
+  const sets: StructuredSetInput[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "object" || raw === null) {
+      return { ok: false, error: "Invalid set" };
+    }
+    const item = raw as Record<string, unknown>;
+
+    const exercise =
+      typeof item.exercise === "string" ? item.exercise.trim() : "";
+    // An exercise name is the minimum for a row to mean anything — the same
+    // bar parseWorkoutInput holds AI output to.
+    if (!exercise) {
+      return { ok: false, error: "Every set needs an exercise" };
+    }
+
+    let weightKg: number | null = null;
+    if (item.weight_kg !== undefined && item.weight_kg !== null) {
+      if (
+        typeof item.weight_kg !== "number" ||
+        !Number.isFinite(item.weight_kg) ||
+        item.weight_kg < 0
+      ) {
+        return { ok: false, error: "Invalid weight" };
+      }
+      // 0 kg is bodyweight, not a zero load — same rule the AI path applies.
+      weightKg =
+        item.weight_kg === 0 ? null : Math.round(item.weight_kg * 100) / 100;
+    }
+
+    let reps: number | null = null;
+    if (item.reps !== undefined && item.reps !== null) {
+      if (
+        typeof item.reps !== "number" ||
+        !Number.isInteger(item.reps) ||
+        item.reps < 0
+      ) {
+        return { ok: false, error: "Invalid reps" };
+      }
+      reps = item.reps === 0 ? null : item.reps;
+    }
+
+    sets.push({ exercise: exercise.slice(0, 120), weight_kg: weightKg, reps });
+  }
+
+  return { ok: true, sets };
+}
+
 // GET /api/workouts — every set in the last 21 IST days, oldest first.
 export async function GET() {
   const supabase = createClient();
@@ -69,17 +166,27 @@ export async function GET() {
 }
 
 /**
- * POST /api/workouts — log one capture of gym shorthand.
+ * POST /api/workouts — log one capture, structured or free-text.
  *
- * Parsing happens HERE, not in the browser, so the whole operation is a single
- * offline-queueable mutation: a set logged with no signal replays as one
- * request and parses when connectivity returns.
+ * TWO INPUT SHAPES, ONE ROUTE. They differ only in where the numbers come
+ * from; everything downstream (capture_id, set_index, the insert, the offline
+ * queue entry) is identical.
  *
- * Body: { raw_input, performed_at? }
- * Inserts one row per parsed set, all sharing a generated capture_id and the
- * verbatim raw_input. If the parse throws or yields nothing usable, a SINGLE
- * row is still inserted with raw_input and null parsed fields — losing what
- * the user typed is never an acceptable outcome.
+ *   { sets: [{exercise, weight_kg, reps}, …], performed_at? }
+ *       The structured picker. Values are already structured, so there is
+ *       nothing to parse and Groq is NOT called — raw_input is synthesized
+ *       from the sets instead.
+ *
+ *   { raw_input, performed_at? }
+ *       Gym shorthand, unchanged. Parsing happens HERE, not in the browser, so
+ *       the whole operation is a single offline-queueable mutation: a set
+ *       logged with no signal replays as one request and parses when
+ *       connectivity returns. If the parse throws or yields nothing usable, a
+ *       SINGLE row is still inserted with raw_input and null parsed fields —
+ *       losing what the user typed is never an acceptable outcome.
+ *
+ * Both insert one row per set, sharing a generated capture_id and one
+ * raw_input, with a 1-based set_index in performed order.
  */
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -90,7 +197,14 @@ export async function POST(request: Request) {
 
   // This route's OWN per-user cap (100/60s), fully decoupled from the 20/60s
   // budget the five content-generation routes share. POST is the only method
-  // here that reaches Groq, so GET/PATCH/DELETE are deliberately exempt.
+  // here that can reach Groq, so GET/PATCH/DELETE are deliberately exempt.
+  //
+  // Checked BEFORE the body is read, so it applies to structured captures too
+  // even though those never call Groq. That is intentional and the tier is
+  // untouched: 100/60s was sized so a whole queued session replaying at once
+  // clears it with 2x headroom, and structured captures are the same shape of
+  // burst. Making them exempt would mean two ceilings to reason about for one
+  // insert path, for no gain — see MAX_WORKOUT_REQUESTS_PER_WINDOW.
   //
   // The separate, much higher ceiling exists because a rejection here means NO
   // row is inserted — the capture is lost rather than stored unparsed, and the
@@ -114,8 +228,23 @@ export async function POST(request: Request) {
     return json({ data: null, error: "Invalid JSON body" }, 400);
   }
 
-  const rawInput =
-    typeof body.raw_input === "string" ? body.raw_input.trim() : "";
+  const structured = parseStructuredSets(body.sets);
+  if (!structured.ok) {
+    return json({ data: null, error: structured.error }, 400);
+  }
+
+  // A structured capture owns its own raw_input — the server synthesizes it so
+  // one place decides the format and an offline replay produces the same
+  // string. Any raw_input a structured client sent is ignored rather than
+  // trusted. The slice can only bite at ~50 sets with 120-char names; the
+  // parsed columns are the real record for these rows, so capping the echo is
+  // preferable to rejecting the capture.
+  const rawInput = structured.sets
+    ? formatStructuredRawInput(structured.sets).slice(0, MAX_RAW_INPUT_LENGTH)
+    : typeof body.raw_input === "string"
+      ? body.raw_input.trim()
+      : "";
+
   if (!rawInput) {
     return json({ data: null, error: "Nothing to log" }, 400);
   }
@@ -140,40 +269,54 @@ export async function POST(request: Request) {
 
   const captureId = crypto.randomUUID();
 
-  let parsed: Awaited<ReturnType<typeof parseWorkoutInput>> = [];
-  try {
-    parsed = await parseWorkoutInput(rawInput);
-  } catch (err) {
-    // Groq down, rate-limited, or unusable output. Fall through to the
-    // unparsed row below; the user still has their log and can correct it.
-    console.error("Workout parse failed, storing raw row:", err);
-  }
+  /** 1-based position within THIS capture, in performed order. */
+  const toRow = (
+    s: { exercise: string; weight_kg: number | null; reps: number | null },
+    i: number
+  ): WorkoutSetInsert => ({
+    user_id: user.id,
+    capture_id: captureId,
+    raw_input: rawInput,
+    performed_at: performedAt,
+    exercise: s.exercise,
+    weight_kg: s.weight_kg,
+    reps: s.reps,
+    set_index: i + 1,
+  });
 
-  const rows: WorkoutSetInsert[] =
-    parsed.length > 0
-      ? parsed.map((s, i) => ({
-          user_id: user.id,
-          capture_id: captureId,
-          raw_input: rawInput,
-          performed_at: performedAt,
-          exercise: s.exercise,
-          weight_kg: s.weight_kg,
-          reps: s.reps,
-          // 1-based position within THIS capture, in performed order.
-          set_index: i + 1,
-        }))
-      : [
-          {
-            user_id: user.id,
-            capture_id: captureId,
-            raw_input: rawInput,
-            performed_at: performedAt,
-            exercise: null,
-            weight_kg: null,
-            reps: null,
-            set_index: null,
-          },
-        ];
+  let rows: WorkoutSetInsert[];
+
+  if (structured.sets) {
+    // Nothing to parse. This is the whole cost saving of the structured path:
+    // no Groq call, no failure mode where a set is stored unreadable, and the
+    // numbers are exactly what the user tapped.
+    rows = structured.sets.map(toRow);
+  } else {
+    let parsed: Awaited<ReturnType<typeof parseWorkoutInput>> = [];
+    try {
+      parsed = await parseWorkoutInput(rawInput);
+    } catch (err) {
+      // Groq down, rate-limited, or unusable output. Fall through to the
+      // unparsed row below; the user still has their log and can correct it.
+      console.error("Workout parse failed, storing raw row:", err);
+    }
+
+    rows =
+      parsed.length > 0
+        ? parsed.map(toRow)
+        : [
+            {
+              user_id: user.id,
+              capture_id: captureId,
+              raw_input: rawInput,
+              performed_at: performedAt,
+              exercise: null,
+              weight_kg: null,
+              reps: null,
+              set_index: null,
+            },
+          ];
+  }
 
   const { data, error } = await supabase
     .from("workout_sets")

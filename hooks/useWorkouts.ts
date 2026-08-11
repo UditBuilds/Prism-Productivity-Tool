@@ -2,16 +2,37 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import { istDayContext } from "@/lib/date";
-import { countSessionDays } from "@/lib/workouts";
+import {
+  countSessionDays,
+  formatStructuredRawInput,
+  type StructuredSetInput,
+} from "@/lib/workouts";
 import type { WorkoutSet } from "@/types/database";
 
 const WORKOUTS_KEY = ["workouts"] as const;
 
-export interface LogWorkoutInput {
-  raw_input: string;
-  /** Stamped client-side so an offline replay keeps the original log time. */
-  performed_at?: string;
-}
+/**
+ * The two capture shapes POST /api/workouts accepts, as a union rather than
+ * two optional fields so a call site has to mean one of them. `sets` is the
+ * structured picker; `raw_input` is the free-text fallback.
+ *
+ * Both go through the SAME mutation below, and that is load-bearing rather
+ * than tidy: only mutation keys registered in lib/offline-mutations.ts are
+ * dehydrated to IndexedDB at all, so a second key for structured logging
+ * would be dropped on reload instead of replayed.
+ */
+export type LogWorkoutInput =
+  | {
+      raw_input: string;
+      sets?: undefined;
+      /** Stamped client-side so an offline replay keeps the log time. */
+      performed_at?: string;
+    }
+  | {
+      sets: StructuredSetInput[];
+      raw_input?: undefined;
+      performed_at?: string;
+    };
 
 export interface UpdateWorkoutSetInput {
   id: string;
@@ -100,10 +121,16 @@ export const deleteWorkoutSetMutationOptions = {
 };
 
 /**
- * Log-then-verify: one placeholder row appears instantly carrying the raw
- * text, and the refetch replaces it with the parsed sets. The optimistic row
- * deliberately has null parsed fields — the parse runs on the server, so
- * inventing an exercise name here would flash a guess that may not match.
+ * Log-then-verify. The optimistic rows differ by path, and the difference is
+ * about what is actually known at this moment:
+ *
+ * - FREE TEXT: one placeholder row carrying the raw text and null parsed
+ *   fields. The parse runs on the server, so inventing an exercise name here
+ *   would flash a guess that may not match what comes back.
+ * - STRUCTURED: one row per set with the real exercise, weight and reps.
+ *   There is no guess — the server writes these exact values, so showing them
+ *   immediately is accurate rather than optimistic. This is also what lets the
+ *   ×N collapse appear the instant three identical sets are logged.
  */
 export function useLogWorkout() {
   const qc = useQueryClient();
@@ -113,19 +140,49 @@ export function useLogWorkout() {
       await qc.cancelQueries({ queryKey: WORKOUTS_KEY });
       const previous = qc.getQueryData<WorkoutSet[]>(WORKOUTS_KEY) ?? [];
       const now = new Date().toISOString();
-      const optimistic: WorkoutSet = {
-        id: `optimistic-${crypto.randomUUID()}`,
+      const performedAt = input.performed_at ?? now;
+      // One id per capture, mirroring the server's single crypto.randomUUID().
+      const captureId = `optimistic-${crypto.randomUUID()}`;
+
+      const base = {
         user_id: "optimistic",
-        capture_id: `optimistic-${crypto.randomUUID()}`,
-        raw_input: input.raw_input,
-        performed_at: input.performed_at ?? now,
-        exercise: null,
-        weight_kg: null,
-        reps: null,
-        set_index: null,
+        capture_id: captureId,
+        performed_at: performedAt,
         created_at: now,
       };
-      qc.setQueryData<WorkoutSet[]>(WORKOUTS_KEY, [...previous, optimistic]);
+
+      let optimistic: WorkoutSet[];
+      if (input.sets) {
+        // Bound to a const so the narrowing survives into the map callback —
+        // TS widens a mutable parameter again inside a closure.
+        const sets = input.sets;
+        // Same helper the route uses, so the row does not visibly change
+        // wording when the saved version replaces it.
+        const rawInput = formatStructuredRawInput(sets);
+        optimistic = sets.map((s, i) => ({
+          ...base,
+          id: `optimistic-${crypto.randomUUID()}`,
+          raw_input: rawInput,
+          exercise: s.exercise,
+          weight_kg: s.weight_kg,
+          reps: s.reps,
+          set_index: i + 1,
+        }));
+      } else {
+        optimistic = [
+          {
+            ...base,
+            id: `optimistic-${crypto.randomUUID()}`,
+            raw_input: input.raw_input,
+            exercise: null,
+            weight_kg: null,
+            reps: null,
+            set_index: null,
+          },
+        ];
+      }
+
+      qc.setQueryData<WorkoutSet[]>(WORKOUTS_KEY, previous.concat(optimistic));
       return { previous };
     },
     onError: (err, _input, ctx) => {

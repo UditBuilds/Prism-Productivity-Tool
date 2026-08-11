@@ -1,4 +1,5 @@
 import { istDateString } from "@/lib/date";
+import { exerciseKey } from "@/lib/exercise-library";
 import type { WorkoutSet } from "@/types/database";
 
 /** Sets performed on one exercise, in the order they were logged. */
@@ -69,12 +70,21 @@ export function countSessionDays(sets: WorkoutSet[]): number {
  * body. It is deliberately NOT "to failure" — that qualifier isn't stored, and
  * a column for it is deferred until there are more real rows to design against.
  */
-export function formatSetLine(set: WorkoutSet): string {
+/** Trim the trailing ".00"/".50" noise numeric() round-trips produce. */
+function formatWeightNumber(weightKg: number): string {
+  return Number(weightKg).toFixed(2).replace(/\.?0+$/, "");
+}
+
+/**
+ * Takes only the two columns it reads, so a not-yet-saved set from the picker
+ * formats through exactly the same function as a stored row — one definition
+ * of what "80 kg × 5" looks like.
+ */
+export function formatSetLine(
+  set: Pick<WorkoutSet, "weight_kg" | "reps">
+): string {
   const weight =
-    set.weight_kg === null
-      ? null
-      : // Trim the trailing ".00"/".50" noise numeric() round-trips produce.
-        `${Number(set.weight_kg).toFixed(2).replace(/\.?0+$/, "")} kg`;
+    set.weight_kg === null ? null : `${formatWeightNumber(set.weight_kg)} kg`;
 
   if (weight && set.reps !== null) return `${weight} × ${set.reps}`;
   if (weight) return weight;
@@ -135,4 +145,87 @@ export function collapseConsecutiveSets(sets: WorkoutSet[]): SetRun[] {
   }
 
   return runs;
+}
+
+/**
+ * One set as the structured picker submits it: already in kilograms, already
+ * split per set. Nothing here needs parsing, which is the entire point — the
+ * Groq round-trip is skipped for this path.
+ */
+export interface StructuredSetInput {
+  exercise: string;
+  weight_kg: number | null;
+  reps: number | null;
+}
+
+/**
+ * Canonical text for ONE structured set: "Bench Press 80kg x5".
+ *
+ * Both numbers are optional and mean different things when absent, so neither
+ * can be printed as a bare blank:
+ *   weight + reps  -> "Bench Press 80kg x5"
+ *   weight only    -> "Lat Pulldown 70kg"
+ *   reps only      -> "Pull Up bodyweight x8"
+ *   neither        -> "Pull Up bodyweight"
+ * "bodyweight" rather than an omitted weight, for the same reason
+ * formatSetLine says "Bodyweight": no load recorded means the load was the
+ * body, and that is a fact rather than a gap.
+ */
+export function formatStructuredSet(set: StructuredSetInput): string {
+  const weight =
+    set.weight_kg === null
+      ? "bodyweight"
+      : `${formatWeightNumber(set.weight_kg)}kg`;
+  return set.reps === null
+    ? `${set.exercise} ${weight}`
+    : `${set.exercise} ${weight} x${set.reps}`;
+}
+
+/**
+ * raw_input for a structured capture.
+ *
+ * The column is NOT NULL and is the documented ground truth for what was
+ * logged, so a structured row cannot simply leave it empty. It is a faithful
+ * echo of the parsed columns rather than something a human typed — which is
+ * exactly what makes it safe to synthesize: unlike the free-text path there is
+ * no original wording to lose.
+ *
+ * Server and client both call this so an optimistic row and its saved
+ * replacement read identically.
+ */
+export function formatStructuredRawInput(
+  sets: ReadonlyArray<StructuredSetInput>
+): string {
+  return sets.map(formatStructuredSet).join(", ");
+}
+
+/**
+ * That exercise's most recent set, or null. Powers the "Same as last set"
+ * shortcut and the prefill when an exercise is picked.
+ *
+ * Matched on the normalised name so a hand-corrected "bench press" still
+ * counts as the same exercise the picker calls "Bench Press" — the same
+ * identity groupSetsByExercise uses.
+ */
+export function lastSetForExercise(
+  sets: ReadonlyArray<WorkoutSet>,
+  exercise: string
+): WorkoutSet | null {
+  const key = exerciseKey(exercise);
+  let best: WorkoutSet | null = null;
+  let bestAt = -Infinity;
+  let bestIndex = -1;
+
+  for (const set of sets) {
+    if (set.exercise === null || exerciseKey(set.exercise) !== key) continue;
+    const at = Date.parse(set.performed_at);
+    const index = set.set_index ?? -1;
+    if (at > bestAt || (at === bestAt && index > bestIndex)) {
+      best = set;
+      bestAt = at;
+      bestIndex = index;
+    }
+  }
+
+  return best;
 }
