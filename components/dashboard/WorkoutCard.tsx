@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Dumbbell, Loader2, Plus } from "lucide-react";
 
 import { useLogWorkout } from "@/hooks/useWorkouts";
+import type { StructuredSetInput } from "@/lib/workouts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionPanel } from "@/components/dashboard/SectionPanel";
@@ -41,6 +42,12 @@ export function WorkoutCard() {
   const logWorkout = useLogWorkout();
   const [input, setInput] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  /**
+   * The in-progress session draft lives HERE, not inside the sheet, so closing
+   * the sheet — including an accidental backdrop tap — cannot discard eight
+   * exercises of work. Only a successful save or an explicit Clear empties it.
+   */
+  const [session, setSession] = useState<StructuredSetInput[]>([]);
 
   function submit() {
     const raw = input.trim();
@@ -62,10 +69,20 @@ export function WorkoutCard() {
         className="h-9 w-full rounded-md"
       >
         <Dumbbell aria-hidden className="h-4 w-4" />
-        Log sets
+        {/* The count is the only cue that a closed sheet still holds a draft. */}
+        {session.length > 0
+          ? `Resume session (${session.length} set${
+              session.length === 1 ? "" : "s"
+            })`
+          : "Log sets"}
       </Button>
 
-      <WorkoutLogSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+      <WorkoutLogSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        session={session}
+        setSession={setSession}
+      />
 
       {/* The free-text fallback, unchanged. 16 from the primary CTA — it is a
           separate object, not part of it. */}

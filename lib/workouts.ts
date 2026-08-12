@@ -199,6 +199,47 @@ export function formatStructuredRawInput(
   return sets.map(formatStructuredSet).join(", ");
 }
 
+/** One exercise's slice of a session draft, with each set's flat-array index. */
+export interface StructuredSetGroup {
+  exercise: string;
+  /** `index` is the set's position in the flat draft — what removal needs. */
+  sets: Array<{ set: StructuredSetInput; index: number }>;
+}
+
+/**
+ * Group a session draft by exercise for display, preserving first-seen order
+ * and carrying each set's original index.
+ *
+ * The flat array stays the source of truth because it IS the request payload,
+ * and because set_index is assigned across the whole capture server-side — so
+ * the order sets were added in is the order they are stored in. Grouping is
+ * presentation only, exactly like groupSetsByExercise above.
+ *
+ * Re-picking an exercise already in the draft appends to its existing group
+ * rather than starting a second one, matching how the display treats a stored
+ * capture. Note this means the draft can render a different shape than the
+ * saved rows if sets were added out of order — the flat order is what saves.
+ */
+export function groupStructuredSets(
+  sets: ReadonlyArray<StructuredSetInput>
+): StructuredSetGroup[] {
+  const groups: StructuredSetGroup[] = [];
+  const byKey = new Map<string, StructuredSetGroup>();
+
+  sets.forEach((set, index) => {
+    const key = exerciseKey(set.exercise);
+    let group = byKey.get(key);
+    if (!group) {
+      group = { exercise: set.exercise, sets: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.sets.push({ set, index });
+  });
+
+  return groups;
+}
+
 /**
  * That exercise's most recent set, or null. Powers the "Same as last set"
  * shortcut and the prefill when an exercise is picked.
