@@ -242,25 +242,31 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Day details */}
-        <div className="rounded-xl border border-border bg-surface p-4">
+        {/* Day details — a LIST panel, so it carries NO padding of its own.
+            Padding the card and the row both inset the title twice and cost
+            it 34px, which truncated a real 42-character task title at 375.
+            The rows span the card edge to edge and own the 16 themselves;
+            branches that are one object (skeleton, error) re-add it. */}
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
           {isLoading ? (
-            <div className="space-y-2">
+            <div className="space-y-2 p-4">
               <Skeleton className="h-4 w-40" />
               <Skeleton className="h-12 w-full rounded-lg" />
               <Skeleton className="h-12 w-full rounded-lg" />
             </div>
           ) : isError ? (
-            <EmptyState
-              icon={AlertCircle}
-              title="Couldn't load this month"
-              description="Something went wrong fetching your schedule."
-              action={
-                <Button variant="outline" onClick={() => refetch()}>
-                  Try again
-                </Button>
-              }
-            />
+            <div className="p-4">
+              <EmptyState
+                icon={AlertCircle}
+                title="Couldn't load this month"
+                description="Something went wrong fetching your schedule."
+                action={
+                  <Button variant="outline" onClick={() => refetch()}>
+                    Try again
+                  </Button>
+                }
+              />
+            </div>
           ) : (
             <DayDetails
               date={selected}
@@ -290,7 +296,9 @@ function DayDetails({
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-foreground">
+      {/* Everything that is NOT a row carries the 16 itself, because the
+          panel no longer does. */}
+      <h3 className="px-4 pt-4 text-sm font-semibold text-foreground">
         {dayLabel(date)}
       </h3>
 
@@ -304,7 +312,7 @@ function DayDetails({
               : "No tasks or reminders on this day."
           }
           density="compact"
-          className="mt-4 border-none bg-transparent"
+          className="m-4 border-none bg-transparent"
           action={
             <Link
               href="/dashboard/tasks"
@@ -319,15 +327,17 @@ function DayDetails({
         <div className="mt-4 space-y-4">
           {hasTasks && items && (
             <section>
-              <MonoLabel className="mb-2 flex items-center gap-2">
+              <MonoLabel className="mb-2 flex items-center gap-2 px-4">
                 <CheckSquare className="h-3.5 w-3.5" />
                 Tasks
               </MonoLabel>
-              <ul className="space-y-2">
+              {/* divide-y ALONE — never `divide-y divide-border`, which resets
+                  border-color on every child after the first. */}
+              <ul className="divide-y border-y">
                 {items.tasks.map((task) => (
                   <li
                     key={task.id}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-surface-raised/50 p-4"
+                    className="flex items-center gap-2 p-4"
                   >
                     <span
                       className={cn(
@@ -355,16 +365,16 @@ function DayDetails({
 
           {hasReminders && items && (
             <section>
-              <MonoLabel className="mb-2 flex items-center gap-2">
+              <MonoLabel className="mb-2 flex items-center gap-2 px-4">
                 <Bell className="h-3.5 w-3.5" />
                 Reminders
               </MonoLabel>
-              <ul className="space-y-2">
+              <ul className="divide-y border-y">
                 {items.reminders.map((reminder) => (
                   <li
                     key={reminder.id}
                     className={cn(
-                      "flex items-center gap-2 rounded-lg border border-border bg-surface-raised/50 p-4",
+                      "flex items-center gap-2 p-4",
                       reminder.sent && "opacity-60"
                     )}
                   >
@@ -380,7 +390,7 @@ function DayDetails({
             </section>
           )}
 
-          <div className="flex gap-4 border-t border-border/60 pt-4">
+          <div className="flex gap-4 px-4 pb-4">
             {hasTasks && (
               <Link
                 href="/dashboard/tasks"
