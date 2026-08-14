@@ -18,6 +18,7 @@ import type { CalendarDayItems } from "@/app/api/calendar/route";
 import { priorityStyles } from "@/components/tasks/task-styles";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionHeader } from "@/components/shared/SectionHeader";
+import { MonoLabel } from "@/components/shared/MonoLabel";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -131,8 +132,8 @@ export default function CalendarPage() {
       />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px] lg:items-start">
-        {/* Month grid card */}
-        <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
+        {/* Month grid card — tier 1, one padding step at every width. */}
+        <div className="rounded-xl border border-border bg-surface p-4">
           {/* Month navigation */}
           <SectionHeader
             title={monthLabel(month)}
@@ -170,12 +171,9 @@ export default function CalendarPage() {
           {/* Weekday headers */}
           <div className="grid grid-cols-7 text-center">
             {WEEKDAY_HEADERS.map((wd) => (
-              <span
-                key={wd}
-                className="pb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60"
-              >
+              <MonoLabel as="span" key={wd} className="pb-2">
                 {wd}
-              </span>
+              </MonoLabel>
             ))}
           </div>
 
@@ -232,37 +230,43 @@ export default function CalendarPage() {
           </div>
 
           {/* Legend */}
-          <div className="mt-3 flex items-center gap-4 border-t border-border/60 pt-3 text-[11px] text-muted-foreground/60">
-            <span className="flex items-center gap-1.5">
+          <div className="mt-4 flex items-center gap-4 border-t border-border/60 pt-4 text-xs text-muted-foreground/60">
+            <span className="flex items-center gap-2">
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
               Tasks
             </span>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-2">
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />
               Reminders
             </span>
           </div>
         </div>
 
-        {/* Day details */}
-        <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
+        {/* Day details — a LIST panel, so it carries NO padding of its own.
+            Padding the card and the row both inset the title twice and cost
+            it 34px, which truncated a real 42-character task title at 375.
+            The rows span the card edge to edge and own the 16 themselves;
+            branches that are one object (skeleton, error) re-add it. */}
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
           {isLoading ? (
-            <div className="space-y-3">
+            <div className="space-y-2 p-4">
               <Skeleton className="h-4 w-40" />
               <Skeleton className="h-12 w-full rounded-lg" />
               <Skeleton className="h-12 w-full rounded-lg" />
             </div>
           ) : isError ? (
-            <EmptyState
-              icon={AlertCircle}
-              title="Couldn't load this month"
-              description="Something went wrong fetching your schedule."
-              action={
-                <Button variant="outline" onClick={() => refetch()}>
-                  Try again
-                </Button>
-              }
-            />
+            <div className="p-4">
+              <EmptyState
+                icon={AlertCircle}
+                title="Couldn't load this month"
+                description="Something went wrong fetching your schedule."
+                action={
+                  <Button variant="outline" onClick={() => refetch()}>
+                    Try again
+                  </Button>
+                }
+              />
+            </div>
           ) : (
             <DayDetails
               date={selected}
@@ -292,7 +296,9 @@ function DayDetails({
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-foreground">
+      {/* Everything that is NOT a row carries the 16 itself, because the
+          panel no longer does. */}
+      <h3 className="px-4 pt-4 text-sm font-semibold text-foreground">
         {dayLabel(date)}
       </h3>
 
@@ -306,7 +312,7 @@ function DayDetails({
               : "No tasks or reminders on this day."
           }
           density="compact"
-          className="mt-4 border-none bg-transparent"
+          className="m-4 border-none bg-transparent"
           action={
             <Link
               href="/dashboard/tasks"
@@ -317,18 +323,21 @@ function DayDetails({
           }
         />
       ) : (
-        <div className="mt-4 space-y-5">
+        // 16 between the two sibling groups inside this one panel.
+        <div className="mt-4 space-y-4">
           {hasTasks && items && (
             <section>
-              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+              <MonoLabel className="mb-2 flex items-center gap-2 px-4">
                 <CheckSquare className="h-3.5 w-3.5" />
                 Tasks
-              </p>
-              <ul className="space-y-1.5">
+              </MonoLabel>
+              {/* divide-y ALONE — never `divide-y divide-border`, which resets
+                  border-color on every child after the first. */}
+              <ul className="divide-y border-y">
                 {items.tasks.map((task) => (
                   <li
                     key={task.id}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-surface-raised/50 px-3 py-2"
+                    className="flex items-center gap-2 p-4"
                   >
                     <span
                       className={cn(
@@ -342,7 +351,7 @@ function DayDetails({
                     </span>
                     <span
                       className={cn(
-                        "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium capitalize",
+                        "shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium capitalize",
                         priorityStyles[task.priority]
                       )}
                     >
@@ -356,16 +365,16 @@ function DayDetails({
 
           {hasReminders && items && (
             <section>
-              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+              <MonoLabel className="mb-2 flex items-center gap-2 px-4">
                 <Bell className="h-3.5 w-3.5" />
                 Reminders
-              </p>
-              <ul className="space-y-1.5">
+              </MonoLabel>
+              <ul className="divide-y border-y">
                 {items.reminders.map((reminder) => (
                   <li
                     key={reminder.id}
                     className={cn(
-                      "flex items-center gap-2 rounded-lg border border-border bg-surface-raised/50 px-3 py-2",
+                      "flex items-center gap-2 p-4",
                       reminder.sent && "opacity-60"
                     )}
                   >
@@ -381,7 +390,7 @@ function DayDetails({
             </section>
           )}
 
-          <div className="flex gap-3 border-t border-border/60 pt-3">
+          <div className="flex gap-4 px-4 pb-4">
             {hasTasks && (
               <Link
                 href="/dashboard/tasks"
