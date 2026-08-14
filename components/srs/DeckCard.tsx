@@ -29,7 +29,7 @@ export function DeckCard({
   )}`;
 
   return (
-    <div className="flex flex-col rounded-xl border border-border bg-surface p-5 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-lift active:scale-[0.99] active:opacity-90">
+    <div className="flex flex-col rounded-xl border border-border bg-surface p-4 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-lift active:scale-[0.99] active:opacity-90">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -74,7 +74,7 @@ export function DeckCard({
           <span>Reviewed last: {lastReviewed}</span>
           <span className="tabular-nums">{pct}%</span>
         </div>
-        <ProgressBar className="mt-1.5" value={pct} size="sm" />
+        <ProgressBar className="mt-2" value={pct} size="sm" />
       </div>
 
       <div className="mt-4">

@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { StatCard } from "@/components/shared/StatCard";
 import { MoodPanel } from "@/components/srs/MoodPanel";
 import { ProductivityPanel } from "@/components/srs/ProductivityPanel";
 
@@ -43,26 +44,6 @@ function masteryToneClass(pct: number): string {
   if (pct >= 70) return "text-success";
   if (pct >= 40) return "text-warning";
   return "text-danger";
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: string | number;
-  icon: LucideIcon;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground sm:text-sm">{label}</span>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
-    </div>
-  );
 }
 
 /** Analytics tab content: SRS stats + a Mood history sub-tab. */
@@ -92,16 +73,16 @@ function StatsContent({ streak }: { streak: number }) {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="space-y-8">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="rounded-xl border border-border bg-surface p-4">
               <Skeleton className="h-3 w-2/3" />
-              <Skeleton className="mt-3 h-7 w-12" />
+              <Skeleton className="mt-2 h-7 w-12" />
             </div>
           ))}
         </div>
-        <div className="rounded-xl border border-border bg-surface p-5">
+        <div className="rounded-xl border border-border bg-surface p-4">
           <Skeleton className="h-4 w-48" />
           <Skeleton className="mt-4 h-[220px] w-full rounded-lg" />
         </div>
@@ -132,23 +113,25 @@ function StatsContent({ streak }: { streak: number }) {
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Stats row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="space-y-8">
+      {/* Stats row. These used a local StatCard that shadowed the shared one
+          with a sans label at two sizes (text-xs sm:text-sm); size="md" keeps
+          the 24px figure this panel already rendered. */}
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {stats.map((s) => (
-          <StatCard key={s.label} {...s} />
+          <StatCard key={s.label} {...s} size="md" />
         ))}
       </div>
 
       {/* Activity chart */}
-      <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="rounded-xl border border-border bg-surface p-4">
         <h3 className="text-sm font-semibold text-foreground">
           Review Activity — Last 30 Days
         </h3>
         {data.totalReviews === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Brain className="h-8 w-8 text-muted-foreground" />
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
+            <p className="mt-4 max-w-xs text-sm text-muted-foreground">
               Complete your first review session to see your activity.
             </p>
           </div>
@@ -212,8 +195,8 @@ function StatsContent({ streak }: { streak: number }) {
       </div>
 
       {/* Deck performance table */}
-      <div className="rounded-xl border border-border bg-surface p-5">
-        <h3 className="mb-3 text-sm font-semibold text-foreground">
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <h3 className="mb-4 text-sm font-semibold text-foreground">
           Deck Performance
         </h3>
         {data.deckPerformance.length === 0 ? (

@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { StatCard } from "@/components/shared/StatCard";
+import { MonoLabel } from "@/components/shared/MonoLabel";
 import { SectionHeader } from "@/components/shared/SectionHeader";
 import { ProgressBar } from "@/components/shared/ProgressBar";
 
@@ -90,12 +91,13 @@ export default function WeeklyReviewPage() {
 
 function ReviewSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="space-y-8">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="rounded-xl border border-border bg-surface p-4">
             <Skeleton className="h-3 w-2/3" />
-            <Skeleton className="mt-3 h-7 w-14" />
+            {/* 8 from a label to its figure — same step StatCard uses. */}
+            <Skeleton className="mt-2 h-7 w-14" />
           </div>
         ))}
       </div>
@@ -156,13 +158,11 @@ function ReviewContent({
   ];
 
   return (
-    <div className="space-y-6">
-      <p className="-mt-2 text-xs text-muted-foreground/60">
-        {data.week.label}
-      </p>
+    <div className="space-y-8">
+      <p className="text-xs text-muted-foreground/60">{data.week.label}</p>
 
-      {/* Summary strip */}
-      <div className="stagger-children grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Summary strip — peer tiles are one set, so they take the 8 step. */}
+      <div className="stagger-children grid grid-cols-2 gap-2 lg:grid-cols-4">
         {kpis.map((kpi) => (
           <StatCard
             key={kpi.label}
@@ -176,7 +176,7 @@ function ReviewContent({
 
       {/* Best / quietest day */}
       {bestDay && (
-        <div className={cn("grid gap-3", worstDay && "sm:grid-cols-2")}>
+        <div className={cn("grid gap-2", worstDay && "sm:grid-cols-2")}>
           <HighlightCard kind="best" day={bestDay} />
           {worstDay && <HighlightCard kind="quiet" day={worstDay} />}
         </div>
@@ -193,18 +193,18 @@ function ReviewContent({
               <li
                 key={day.date}
                 className={cn(
-                  "rounded-xl border bg-surface px-4 py-3",
+                  "rounded-xl border bg-surface p-4",
                   isBest
                     ? "border-accent/40 bg-accent/[0.05]"
                     : "border-border",
                   day.isFuture && "opacity-45"
                 )}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <div className="w-24 shrink-0 sm:w-32">
                     <p className="text-sm font-semibold text-foreground">
                       {day.dayLabel.slice(0, 3)}
-                      <span className="ml-1.5 text-xs font-normal text-muted-foreground/60">
+                      <span className="ml-2 text-xs font-normal text-muted-foreground/60">
                         {shortDate(day.date)}
                       </span>
                     </p>
@@ -239,12 +239,12 @@ function ReviewContent({
                   </p>
 
                   {isBest && (
-                    <span className="shrink-0 rounded-full bg-accent-gradient px-2 py-0.5 text-[10px] font-semibold text-accent-foreground shadow-glow-accent-sm">
+                    <span className="shrink-0 rounded-full bg-accent-gradient px-2 py-0.5 text-xs font-semibold text-accent-foreground shadow-glow-accent-sm">
                       Best
                     </span>
                   )}
                   {day.isToday && !isBest && (
-                    <span className="shrink-0 rounded-full border border-border bg-surface-raised px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    <span className="shrink-0 rounded-full border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-muted-foreground">
                       Today
                     </span>
                   )}
@@ -266,14 +266,14 @@ function ReviewContent({
 
       {/* Focus breakdown */}
       {categoryBreakdown.length > 0 && (
-        <section className="rounded-xl border border-border bg-surface p-5">
+        <section className="rounded-xl border border-border bg-surface p-4">
           <h3 className="text-sm font-semibold text-foreground">
             Where your focus went
           </h3>
-          <ul className="mt-4 space-y-3">
+          <ul className="mt-4 space-y-2">
             {categoryBreakdown.map((slice) => (
               <li key={slice.category}>
-                <div className="flex items-center gap-2.5 text-sm">
+                <div className="flex items-center gap-2 text-sm">
                   <span
                     aria-hidden
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -292,7 +292,7 @@ function ReviewContent({
                   </span>
                 </div>
                 <ProgressBar
-                  className="mt-1.5 bg-muted/60"
+                  className="mt-2 bg-muted/60"
                   value={slice.percentage}
                   variant="category"
                   color={categoryChartColor(slice.category)}
@@ -305,16 +305,16 @@ function ReviewContent({
 
       {/* Insights */}
       {insights.length > 0 && (
-        <section className="rounded-xl border border-border bg-surface p-5">
+        <section className="rounded-xl border border-border bg-surface p-4">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Lightbulb className="h-4 w-4 text-accent" />
             Patterns this week
           </h3>
-          <ul className="mt-3 space-y-2">
+          <ul className="mt-4 space-y-2">
             {insights.map((insight) => (
               <li
                 key={insight}
-                className="flex items-start gap-2.5 text-sm text-muted-foreground"
+                className="flex items-start gap-2 text-sm text-muted-foreground"
               >
                 <span
                   aria-hidden
@@ -353,16 +353,20 @@ function HighlightCard({
           : "border-border bg-surface"
       )}
     >
-      <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+      <MonoLabel className="flex items-center gap-2">
         {isBest ? (
           <Sparkles className="h-3.5 w-3.5 text-accent" />
         ) : (
           <Moon className="h-3.5 w-3.5 text-muted-foreground/60" />
         )}
         {isBest ? "Strongest day" : "Quietest day"}
+      </MonoLabel>
+      {/* Object label (12) -> its title (16) -> its meta (12), 8 apart.
+          The title was 18 and the meta 13; neither is a rank in the scale. */}
+      <p className="mt-2 text-base font-semibold text-foreground">
+        {day.dayLabel}
       </p>
-      <p className="mt-2 text-lg font-bold text-foreground">{day.dayLabel}</p>
-      <p className="mt-0.5 text-[13px] text-muted-foreground">
+      <p className="mt-2 text-xs text-muted-foreground">
         {stats.length > 0 ? stats.join(" · ") : "Light activity"}
       </p>
     </div>

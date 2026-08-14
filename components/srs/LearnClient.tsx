@@ -32,15 +32,15 @@ const AnalyticsPanel = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="space-y-8">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
               className="rounded-xl border border-border bg-surface p-4"
             >
               <Skeleton className="h-3 w-2/3" />
-              <Skeleton className="mt-3 h-7 w-12" />
+              <Skeleton className="mt-2 h-7 w-12" />
             </div>
           ))}
         </div>
@@ -150,7 +150,7 @@ export function LearnClient({ streak }: { streak: number }) {
         }
       />
 
-      <Tabs defaultValue="decks" className="mt-5">
+      <Tabs defaultValue="decks" className="mt-4">
         <TabsList className="grid w-full max-w-xs grid-cols-2">
           <TabsTrigger value="decks">Decks</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -158,7 +158,7 @@ export function LearnClient({ streak }: { streak: number }) {
 
         <TabsContent value="decks">
       {/* Stats banner */}
-      <section className="stagger-children mt-5 grid grid-cols-3 gap-3">
+      <section className="stagger-children mt-4 grid grid-cols-3 gap-2">
         {/* The card chrome and label stay put; only the FIGURE waits. A
             skeleton the height of the md value line (text-2xl → 32px) keeps
             the three-column banner exactly the size it will settle at. */}
@@ -188,7 +188,7 @@ export function LearnClient({ streak }: { streak: number }) {
           subtitle={
             streakFreezes !== undefined && streakFreezes < 3 ? (
               <p
-                className={`mt-1 text-xs ${
+                className={`mt-2 text-xs ${
                   streakFreezes === 0
                     ? "text-destructive"
                     : "text-accent-soft/90 drop-shadow-[0_0_5px_rgb(var(--accent-soft-rgb)/0.4)]"
@@ -207,7 +207,7 @@ export function LearnClient({ streak }: { streak: number }) {
       {/* Review All Due — hidden during restore for the same reason the
           figures are: it appears or not purely on ["srs-cards"]. */}
       {!restoring && dueNow > 0 && (
-        <Link href="/dashboard/learn/review" className="mt-5 block">
+        <Link href="/dashboard/learn/review" className="mt-4 block">
           <Button className="w-full animate-pulse-ring rounded-lg" size="lg">
             <Brain className="mr-2 h-4 w-4" />
             Review All Due ({dueNow} card{dueNow === 1 ? "" : "s"})
@@ -228,14 +228,14 @@ export function LearnClient({ streak }: { streak: number }) {
       <div className="mt-8">
         <SectionHeader title="Decks" />
         {restoring ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
               <div
                 key={i}
-                className="rounded-xl border border-border bg-surface p-5"
+                className="rounded-xl border border-border bg-surface p-4"
               >
                 <Skeleton className="h-4 w-1/3" />
-                <Skeleton className="mt-3 h-3 w-1/2" />
+                <Skeleton className="mt-2 h-3 w-1/2" />
                 <Skeleton className="mt-4 h-1.5 w-full rounded-full" />
                 <Skeleton className="mt-4 h-9 w-full rounded-lg" />
               </div>
@@ -262,7 +262,7 @@ export function LearnClient({ streak }: { streak: number }) {
             }
           />
         ) : (
-          <div className="stagger-children grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="stagger-children grid grid-cols-1 gap-2 sm:grid-cols-2">
             {decks?.map((deck) => (
               <DeckCard
                 key={deck.deckName}
@@ -277,7 +277,7 @@ export function LearnClient({ streak }: { streak: number }) {
       </div>
         </TabsContent>
 
-        <TabsContent value="analytics" className="mt-5">
+        <TabsContent value="analytics" className="mt-4">
           <AnalyticsPanel streak={streakValue} />
         </TabsContent>
       </Tabs>

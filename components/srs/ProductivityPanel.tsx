@@ -31,6 +31,7 @@ import type { WeekStats } from "@/app/api/analytics/productivity/route";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { MonoLabel } from "@/components/shared/MonoLabel";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -84,15 +85,13 @@ function CompareTile({
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
-      <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
-        {label}
-      </p>
+      <MonoLabel>{label}</MonoLabel>
       <p className="mt-2 text-2xl font-bold tracking-tight text-foreground">
         {format(current)}
       </p>
       <p
         className={cn(
-          "mt-1.5 flex items-center gap-1 text-xs",
+          "mt-2 flex items-center gap-2 text-xs",
           direction === "up"
             ? "text-success"
             : direction === "down"
@@ -125,18 +124,18 @@ export function ProductivityPanel() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-8">
+        <div className="grid grid-cols-2 gap-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="rounded-xl border border-border bg-surface p-4">
               <Skeleton className="h-3 w-2/3" />
-              <Skeleton className="mt-3 h-7 w-16" />
+              <Skeleton className="mt-2 h-7 w-16" />
               <Skeleton className="mt-2 h-3 w-3/4" />
             </div>
           ))}
         </div>
         {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="rounded-xl border border-border bg-surface p-5">
+          <div key={i} className="rounded-xl border border-border bg-surface p-4">
             <Skeleton className="h-4 w-44" />
             <Skeleton className="mt-4 h-[200px] w-full rounded-lg" />
           </div>
@@ -192,9 +191,9 @@ export function ProductivityPanel() {
     data.mostProductiveDay !== null || data.mostProductiveHour !== null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* 1. This week vs last week */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2">
         {tiles.map((tile) => (
           <CompareTile
             key={tile.key}
@@ -207,7 +206,7 @@ export function ProductivityPanel() {
       </div>
 
       {/* 2. Focus activity — last 30 days */}
-      <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="rounded-xl border border-border bg-surface p-4">
         <h3 className="text-sm font-semibold text-foreground">
           Focus Activity — Last 30 Days
         </h3>
@@ -259,7 +258,7 @@ export function ProductivityPanel() {
       </div>
 
       {/* 3. Focus by category */}
-      <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="rounded-xl border border-border bg-surface p-4">
         <h3 className="text-sm font-semibold text-foreground">
           Focus by Category
         </h3>
@@ -300,11 +299,11 @@ export function ProductivityPanel() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <ul className="mt-3 space-y-1.5">
+            <ul className="mt-4 space-y-2">
               {data.categoryBreakdown.map((slice) => (
                 <li
                   key={slice.category}
-                  className="flex items-center gap-2.5 text-sm"
+                  className="flex items-center gap-2 text-sm"
                 >
                   <span
                     aria-hidden
@@ -328,7 +327,7 @@ export function ProductivityPanel() {
       </div>
 
       {/* 4. Daily tasks completed — last 30 days */}
-      <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="rounded-xl border border-border bg-surface p-4">
         <h3 className="text-sm font-semibold text-foreground">
           Tasks Completed — Last 30 Days
         </h3>
@@ -384,7 +383,7 @@ export function ProductivityPanel() {
       {showInsights && (
         <div className="flex flex-wrap gap-2">
           {data.mostProductiveDay !== null && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground">
               <CalendarCheck className="h-3.5 w-3.5 text-accent" />
               Most productive:{" "}
               <span className="font-medium text-foreground">
@@ -393,7 +392,7 @@ export function ProductivityPanel() {
             </span>
           )}
           {data.mostProductiveHour !== null && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground">
               <Clock className="h-3.5 w-3.5 text-accent" />
               Peak focus hour:{" "}
               <span className="font-medium text-foreground">

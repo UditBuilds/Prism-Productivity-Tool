@@ -38,7 +38,7 @@ export function MoodPanel() {
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="rounded-xl border border-border bg-surface p-4">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="mt-4 h-8 w-full" />
         <Skeleton className="mt-4 h-3 w-2/3" />
@@ -49,7 +49,7 @@ export function MoodPanel() {
   const hasLogs = (logs?.length ?? 0) > 0;
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
+    <div className="rounded-xl border border-border bg-surface p-4">
       <h3 className="text-sm font-semibold text-foreground">
         Mood — Last 30 Days
       </h3>
@@ -57,14 +57,14 @@ export function MoodPanel() {
       {!hasLogs ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <SmilePlus className="h-8 w-8 text-muted-foreground" />
-          <p className="mt-3 max-w-xs text-sm text-muted-foreground">
+          <p className="mt-4 max-w-xs text-sm text-muted-foreground">
             Log your first mood from the dashboard to see your history here.
           </p>
         </div>
       ) : (
         <>
           {/* Day dots, oldest → today */}
-          <div className="mt-4 flex flex-wrap gap-1.5">
+          <div className="mt-4 flex flex-wrap gap-2">
             {days.map((d) => (
               <span
                 key={d.date}
@@ -90,7 +90,7 @@ export function MoodPanel() {
           </div>
 
           {/* Frequency breakdown */}
-          <p className="mt-5 text-sm text-muted-foreground">
+          <p className="mt-4 text-sm text-muted-foreground">
             This month:{" "}
             {MOODS.filter((m) => (counts.get(m.value) ?? 0) > 0)
               .map(

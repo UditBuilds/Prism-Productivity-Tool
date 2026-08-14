@@ -31,6 +31,7 @@ import { fireFocusCompletionFeedback } from "@/components/focus/FloatingTimer";
 import type { FocusCategory } from "@/types/database";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionHeader } from "@/components/shared/SectionHeader";
+import { MonoLabel } from "@/components/shared/MonoLabel";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -156,12 +157,12 @@ function IdleView() {
         icon={Timer}
       />
 
-      <div className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+      {/* Tier 1: the section body. One radius (xl) and one padding (16) for
+          every tier-1 card in the app — was rounded-2xl / 20-24. */}
+      <div className="rounded-xl border border-border bg-surface p-4">
       {/* Category selector */}
-      <div className="mb-2.5 flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
-          Category
-        </p>
+      <div className="mb-2 flex items-center justify-between">
+        <MonoLabel>Category</MonoLabel>
         <button
           type="button"
           onClick={() => setManageOpen(true)}
@@ -172,7 +173,9 @@ function IdleView() {
           <Settings2 className="h-4 w-4" />
         </button>
       </div>
-      <div className="scrollbar-none -mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+      {/* The negative margin must match the card's padding exactly or the row
+          bleeds unevenly — both are 16 now (were 20/24 via p-5 sm:p-6). */}
+      <div className="scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         {/* No loading state existed for this row before — a restore just
             popped the chips in. Pill-shaped placeholders at the chip's own
             height (py-1.5 + 20px line box = 32px) hold the row's space
@@ -216,7 +219,7 @@ function IdleView() {
 
       {/* Inline quick-add */}
       {showNewCategory && (
-        <div className="mt-3 rounded-lg border border-border bg-surface-raised/40 p-3">
+        <div className="mt-4 rounded-lg border border-border bg-surface-raised/40 p-4">
           <Input
             autoFocus
             value={newName}
@@ -237,7 +240,7 @@ function IdleView() {
             placeholder="Category name"
             className="h-9 rounded-lg text-sm"
           />
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             {CATEGORY_COLORS.map((hex) => (
               <button
                 key={hex}
@@ -258,7 +261,7 @@ function IdleView() {
           {createError && (
             <p className="mt-2 text-xs text-destructive">{createError}</p>
           )}
-          <div className="mt-3 flex items-center justify-end gap-2">
+          <div className="mt-2 flex items-center justify-end gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -283,9 +286,9 @@ function IdleView() {
       )}
 
       {/* Mode toggle */}
-      <p className="mb-2.5 mt-6 text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
-        Mode
-      </p>
+      {/* 16 between sibling groups inside the card, 8 from a label to the
+          control it names. */}
+      <MonoLabel className="mb-2 mt-4">Mode</MonoLabel>
       <div className="flex gap-2">
         {(
           [
@@ -313,9 +316,7 @@ function IdleView() {
       {/* Duration selector — only for Pomodoro (stopwatch is open-ended) */}
       {timerType === "preset" && (
         <>
-          <p className="mb-2.5 mt-6 text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
-            Duration
-          </p>
+          <MonoLabel className="mb-2 mt-4">Duration</MonoLabel>
           <div className="flex flex-wrap items-center gap-2">
             {DURATIONS.map((d) => (
               <button
@@ -363,7 +364,7 @@ function IdleView() {
       )}
 
       {/* Start */}
-      <div className="mt-7">
+      <div className="mt-4">
         <Button
           size="lg"
           disabled={!canStart}
@@ -378,8 +379,8 @@ function IdleView() {
       </div>
       </div>
 
-      {/* Recent sessions */}
-      <div className="mt-10">
+      {/* Recent sessions — 32 between sections */}
+      <div className="mt-8">
         <SectionHeader title="Recent sessions" />
         {isLoading ? (
           <div className="space-y-2">
@@ -401,7 +402,7 @@ function IdleView() {
               return (
                 <li
                   key={s.id}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm transition-colors hover:border-border-col"
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface p-4 text-sm transition-colors hover:border-border-col"
                 >
                   <span aria-hidden>{cat?.emoji ?? "🎯"}</span>
                   <span className="font-medium text-foreground">
@@ -426,7 +427,7 @@ function IdleView() {
         {recent &&
           recent.length >= 3 &&
           recent.slice(0, 3).every((s) => !s.completed) && (
-            <p className="mt-3 text-center text-xs text-muted-foreground">
+            <p className="mt-4 text-center text-xs text-muted-foreground">
               💡 Try completing one full session — it builds momentum.
             </p>
           )}
@@ -503,7 +504,7 @@ function RunningView() {
 
       {/* Count-up (stopwatch) — no fake progress ring, just a live pulse */}
       {isStopwatch ? (
-        <div className="relative mt-6 flex h-[300px] w-[300px] items-center justify-center">
+        <div className="relative mt-4 flex h-[300px] w-[300px] items-center justify-center">
           <span
             aria-hidden
             className={cn(
@@ -525,7 +526,7 @@ function RunningView() {
             >
               {formatClock(elapsedSeconds)}
             </span>
-            <span className="mt-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            <MonoLabel as="span" className="mt-2 flex items-center gap-2">
               <span
                 className={cn(
                   "h-2 w-2 rounded-full bg-accent",
@@ -533,12 +534,12 @@ function RunningView() {
                 )}
               />
               Stopwatch
-            </span>
+            </MonoLabel>
           </div>
         </div>
       ) : (
         /* Ring + countdown (preset) */
-        <div className="relative mt-6 flex items-center justify-center">
+        <div className="relative mt-4 flex items-center justify-center">
           {/* Orbiting accent particles */}
           {!isPaused && (
             <div
@@ -618,7 +619,7 @@ function RunningView() {
       )}
 
       {/* Controls */}
-      <div className="mt-8 flex items-center gap-3">
+      <div className="mt-8 flex items-center gap-2">
         <button
           type="button"
           onClick={isPaused ? resumeTimer : pauseTimer}
@@ -680,13 +681,13 @@ function CompletedView() {
         ))}
         <CheckCircle2 className="h-16 w-16 animate-pop text-success drop-shadow-[0_0_20px_rgb(16_185_129/0.4)]" />
       </div>
-      <h1 className="text-gradient mt-5 text-2xl font-bold">
+      <h1 className="text-gradient mt-4 text-2xl font-bold">
         {category} session complete!
       </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-2 text-sm text-muted-foreground">
         Well done — that&apos;s real progress.
       </p>
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
         <Button onClick={() => startBreak(5)} className="rounded-lg">
           <Coffee className="mr-1.5 h-4 w-4" />
           Take a 5 min break
