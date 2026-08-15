@@ -133,6 +133,75 @@ export const EXERCISE_LIBRARY: ReadonlyArray<{
 ];
 
 /**
+ * The body parts, in library order. DERIVED from EXERCISE_LIBRARY rather than
+ * written out again, so adding a group above cannot leave a second list stale.
+ *
+ * This is the analysis vocabulary as well as the picker's, which is the whole
+ * reason the lookup below reads `group` instead of a new field: the section
+ * heading the user picks an exercise under IS the body part they trained. A
+ * parallel `bodyPart` attribute could disagree with the heading, and then the
+ * picker and the analysis would be telling the user two different things.
+ */
+export const BODY_PARTS: ReadonlyArray<string> = EXERCISE_LIBRARY.map(
+  (entry) => entry.group
+);
+
+/**
+ * Where an exercise's sets are counted when a name is not in the library.
+ *
+ * Freeform picker entries and Groq-parsed free text can both produce names the
+ * library has never heard of, and they must land SOMEWHERE visible: silently
+ * dropping them would make the balance read as though that work never happened,
+ * which is the exact error the feature exists to prevent.
+ */
+export const UNCLASSIFIED_BODY_PART = "Other";
+
+/**
+ * normalised exercise name -> body part, built once on first use.
+ *
+ * Object rather than Map, and Object.keys rather than an iterator, because
+ * tsconfig pins ES5 iteration (see CLAUDE.md, Session 5) — a `for…of` over
+ * `map.entries()` does not downlevel here.
+ */
+let bodyPartIndex: Record<string, string> | null = null;
+
+function getBodyPartIndex(): Record<string, string> {
+  if (bodyPartIndex) return bodyPartIndex;
+  const index: Record<string, string> = {};
+  for (const entry of EXERCISE_LIBRARY) {
+    for (const name of entry.exercises) {
+      index[exerciseKey(name)] = entry.group;
+    }
+  }
+  bodyPartIndex = index;
+  return index;
+}
+
+/**
+ * The body part an exercise trains, or null when the library doesn't know it.
+ *
+ * ONE PRIMARY GROUP PER EXERCISE, deliberately. Real lifts are not so tidy —
+ * "Deadlift" sits under Back but is most of a leg session, and "Dip" under
+ * Chest does real triceps work — so a multi-muscle weighting model would be
+ * more anatomically honest. It is not used because the weights would be
+ * invented: nothing in the logged data says what fraction of a deadlift is
+ * posterior chain, and a made-up 0.6/0.4 split would dress a guess up as a
+ * measurement. One group per exercise is a simplification the user can see and
+ * correct for, which a hidden weighting is not.
+ *
+ * Matching is on `exerciseKey`, the same identity groupSetsByExercise uses, so
+ * a hand-corrected "flat bench press" resolves exactly like the picker's "Flat
+ * Bench Press".
+ */
+export function bodyPartForExercise(name: string | null): string | null {
+  if (name === null) return null;
+  const key = exerciseKey(name);
+  if (key === "") return null;
+  const found = getBodyPartIndex()[key];
+  return found ?? null;
+}
+
+/**
  * How many history names the "Recent" section shows. Recency stops being
  * information somewhere, and a picker whose first screen is 30 names is the
  * scrolling problem the picker exists to remove.

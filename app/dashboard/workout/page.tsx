@@ -11,6 +11,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionPanel } from "@/components/dashboard/SectionPanel";
 import { WorkoutLogSheet } from "@/components/workout/WorkoutLogSheet";
 import { WorkoutTodayPanel } from "@/components/workout/WorkoutTodayPanel";
+import { WorkoutProgressPanel } from "@/components/workout/WorkoutProgressPanel";
+import { BodyPartBalancePanel } from "@/components/workout/BodyPartBalancePanel";
 
 const PLACEHOLDER = "bench 3x5 @ 80kg, squat 100x5";
 
@@ -141,6 +143,18 @@ export default function WorkoutPage() {
           dashboard, kept deliberately. */}
       <SectionPanel title="Today">
         <WorkoutTodayPanel />
+      </SectionPanel>
+
+      {/* The analysis layer, reading 180 days where the two sections above read
+          21. Both are one readout each, so `card` like Today — and both sit
+          BELOW logging, which stays the first thing on the page. Order zooms
+          out: today's sets, then each exercise over time, then the whole body. */}
+      <SectionPanel title="Progress">
+        <WorkoutProgressPanel />
+      </SectionPanel>
+
+      <SectionPanel title="Body-part balance">
+        <BodyPartBalancePanel />
       </SectionPanel>
     </div>
   );
