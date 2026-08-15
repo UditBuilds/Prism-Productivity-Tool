@@ -1,8 +1,14 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The dashboard's status zone — the day's check-in and the four counters — in
- * ONE tier-1 container.
+ * The dashboard's status zone — the four counters — in ONE tier-1 container.
+ *
+ * It used to carry the mood check-in above the counters, separated by a
+ * hairline. The check-in was removed from the dashboard (the `mood_logs`
+ * feature itself is untouched — the Learn page's Mood tab and the Weekly
+ * Review still read it), so the `checkIn` prop and the `* + *` divider rule
+ * that existed only to separate the two groups are gone with it. One group
+ * needs no divider.
  *
  * Why a full-bleed band rather than an inset card (the one stated exception in
  * the dashboard's visual system):
@@ -23,12 +29,9 @@ import { cn } from "@/lib/utils";
  * becomes an ordinary inset card and the page reads as one family again.
  */
 export function StatusBand({
-  checkIn,
   counters,
   className,
 }: {
-  /** The mood check-in row — a client island. */
-  checkIn: React.ReactNode;
   /** The four-across counter grid. */
   counters: React.ReactNode;
   className?: string;
@@ -41,17 +44,7 @@ export function StatusBand({
         className
       )}
     >
-      {/* Two groups, one container: the hairline says "related, but not the
-          same thing", and space-around (16) sits either side of it.
-          The rule is applied via `* + *` rather than hard-coded on the counter
-          block because MoodWidget renders NOTHING until its query resolves —
-          a fixed divider would hang there alone on first paint. With no DOM
-          node above it, the counters simply become the first child and the
-          divider never applies. */}
-      <div className="[&>*+*]:mt-4 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-4">
-        {checkIn}
-        {counters}
-      </div>
+      {counters}
     </section>
   );
 }

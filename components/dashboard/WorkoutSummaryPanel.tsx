@@ -33,7 +33,7 @@ export function WorkoutSummaryPanel() {
 
   if (restoring) {
     return (
-      <SectionPanel title="Workout">
+      <SectionPanel title="Workout" variant="plain">
         <div className="h-5 w-40 animate-pulse rounded bg-surface-raised" />
       </SectionPanel>
     );
@@ -45,7 +45,7 @@ export function WorkoutSummaryPanel() {
   // number turns a rest day into a reproach.
   if (setsToday === 0) {
     return (
-      <SectionPanel title="Workout" variant="bare">
+      <SectionPanel title="Workout" variant="plain">
         <EmptyState
           icon={Dumbbell}
           title="No sets logged today"
@@ -64,7 +64,12 @@ export function WorkoutSummaryPanel() {
   }
 
   return (
-    <SectionPanel title="Workout" href="/dashboard/workout" linkLabel="Log sets">
+    <SectionPanel
+      title="Workout"
+      href="/dashboard/workout"
+      linkLabel="Log sets"
+      variant="plain"
+    >
       <p className="text-sm text-foreground">
         <span className="font-mono tabular-nums">{setsToday}</span> set
         {setsToday === 1 ? "" : "s"} logged today
