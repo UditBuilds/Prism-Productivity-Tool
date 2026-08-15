@@ -1,6 +1,31 @@
 import { istDateString } from "@/lib/date";
-import { exerciseKey } from "@/lib/exercise-library";
 import type { WorkoutSet } from "@/types/database";
+
+/**
+ * Case-insensitive identity for an exercise name.
+ *
+ * This MUST agree with groupSetsByExercise below, which keys on
+ * `exercise.toLowerCase()` and lets the first spelling seen win the label. If
+ * the picker and the display disagreed about what counts as the same exercise,
+ * a name picked in the picker could still land as a second group in today's
+ * list. It lives here, beside that function, rather than in
+ * lib/exercise-library where it started: the library imports it, so keeping it
+ * there put all 66 library names into every chunk that merely grouped sets —
+ * the dashboard included.
+ *
+ * Whitespace collapse goes one step beyond case-insensitivity: `PATCH
+ * /api/workouts` writes whatever the inline editor's free text field holds, so
+ * "Close  Grip Row" is reachable by a fat-fingered correction in a way a
+ * mis-cased name is not.
+ *
+ * Measured on the real table (15 rows, 5 distinct names — Flat Bench Press,
+ * Pull Up, Chin Up, Close Grip Row, Lat Pulldown) this is currently a no-op:
+ * there are no case variants, because the Groq prompt pins Title Case singular
+ * at temperature 0. It guards the hand-editing path, not the AI one.
+ */
+export function exerciseKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
 
 /** Sets performed on one exercise, in the order they were logged. */
 export interface ExerciseGroup {

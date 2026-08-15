@@ -52,9 +52,9 @@ const MAX_SETS_PER_CAPTURE = 50;
  *   picker  -> choose the next exercise
  *   builder -> weight/reps for that exercise, added to the session draft
  *
- * The draft lives in WorkoutCard, NOT here, so closing the sheet mid-session
- * doesn't discard eight exercises of work — only a successful save or an
- * explicit Clear empties it.
+ * The draft lives in the Workout page, NOT here, so closing the sheet
+ * mid-session doesn't discard eight exercises of work — only a successful save
+ * or an explicit Clear empties it.
  */
 export function WorkoutLogSheet({
   open,

@@ -31,10 +31,10 @@ function isPending(set: WorkoutSet): boolean {
 /**
  * Today's sets plus the 21-day session count.
  *
- * A "use client" island imported STATICALLY by WorkoutCard. next/dynamic with
- * `ssr: false` was tried for the hydration race described in WorkoutCard's own
- * note and did not fix it, so it is not used here — don't reintroduce it
- * without reproducing that race first.
+ * Imported STATICALLY by the Workout page. next/dynamic with `ssr: false` was
+ * tried for the hydration race described in that page's own note and did not
+ * fix it, so it is not used here — don't reintroduce it without reproducing
+ * that race first.
  */
 export function WorkoutTodayPanel() {
   const { data: todaySets, isLoading, isError } = useTodaysSets();
@@ -61,7 +61,10 @@ export function WorkoutTodayPanel() {
 
   return (
     <>
-      <div className="mt-4">
+      {/* No top margin: this is the first thing in its own section panel, whose
+          16 padding already spaces it. On the dashboard card it followed the
+          log form and carried the 16 itself. */}
+      <div>
         {restoring ? (
           <div className="space-y-2">
             <div className="h-4 w-24 animate-pulse rounded bg-surface-raised" />
@@ -75,10 +78,11 @@ export function WorkoutTodayPanel() {
             density="compact"
           />
         ) : groups.length === 0 ? (
-          // One line, not the full EmptyState card. This sits on the first
-          // screen above Due Today, where a 100px dashed card costs more than
-          // the message is worth. The error branch above keeps the card — it
-          // is rare and needs to stop the reader.
+          // One line, not the full EmptyState card: the Log panel directly
+          // above already says what to do, so a dashed card repeating it in
+          // larger type is a second answer to a question nobody asked. The
+          // error branch above keeps the card — it is rare and needs to stop
+          // the reader.
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Dumbbell aria-hidden className="h-3.5 w-3.5 shrink-0" />
             Nothing logged today — type a set above and it saves straight away.

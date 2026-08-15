@@ -1,3 +1,4 @@
+import { exerciseKey } from "@/lib/workouts";
 import type { WorkoutSet } from "@/types/database";
 
 /**
@@ -7,29 +8,15 @@ import type { WorkoutSet } from "@/types/database";
  * NO DATABASE TABLE. The library is reference data with no per-user state — a
  * table would need RLS, a seed, a migration and a fetch to say exactly what
  * this file says, and the user's own history already lives in ["workouts"].
+ *
+ * `exerciseKey` used to live here and now lives in lib/workouts.ts, imported
+ * above. The dependency had to point this way round: lib/workouts is what the
+ * DASHBOARD needs (it groups and counts sets), so with the key here, every
+ * chunk that touched workout data also pulled in all 66 library names. Verified
+ * against the real build — "Barbell Bench Press" was in the /dashboard chunk.
+ * The key is also where its own contract says it belongs, next to the
+ * groupSetsByExercise it must agree with.
  */
-
-/**
- * Case-insensitive identity for an exercise name.
- *
- * This MUST agree with groupSetsByExercise in lib/workouts.ts, which keys on
- * `exercise.toLowerCase()` and lets the first spelling seen win the label. If
- * the picker and the display disagreed about what counts as the same exercise,
- * a name picked here could still land as a second group in today's list.
- *
- * Whitespace collapse goes one step beyond that (the brief asked for
- * case-insensitive "at minimum"): `PATCH /api/workouts` writes whatever the
- * inline editor's free text field holds, so "Close  Grip Row" is reachable by
- * a fat-fingered correction in a way a mis-cased name is not.
- *
- * Measured on the real table (15 rows, 5 distinct names — Flat Bench Press,
- * Pull Up, Chin Up, Close Grip Row, Lat Pulldown) this is currently a no-op:
- * there are no case variants, because the Groq prompt pins Title Case singular
- * at temperature 0. It guards the hand-editing path, not the AI one.
- */
-export function exerciseKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
-}
 
 /**
  * Names follow the SAME convention as lib/ai/workout.ts's prompt: conventional

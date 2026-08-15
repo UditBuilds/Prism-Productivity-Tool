@@ -23,7 +23,7 @@ import { MoodWidget } from "@/components/dashboard/MoodWidget";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
 import { PushHealthBanner } from "@/components/dashboard/PushHealthBanner";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
-import { WorkoutCard } from "@/components/dashboard/WorkoutCard";
+import { WorkoutSummaryPanel } from "@/components/dashboard/WorkoutSummaryPanel";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
 import { DashboardRow } from "@/components/dashboard/DashboardRow";
 import { StatusBand } from "@/components/dashboard/StatusBand";
@@ -32,7 +32,6 @@ import { StatCard } from "@/components/shared/StatCard";
 import { DayRail } from "@/components/shared/DayRail";
 import { ProgressBar } from "@/components/shared/ProgressBar";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Button } from "@/components/ui/button";
 
 export const metadata = { title: "Dashboard | Prism" };
 
@@ -377,10 +376,10 @@ export default async function DashboardHome() {
         )}
       </SectionPanel>
 
-      {/* Workout capture — client island; this page stays a Server Component.
-          Sits below Due Today: above it, its 148px cost the first screen the
-          three task rows that are the point of this page. */}
-      <WorkoutCard />
+      {/* Workout summary — client island; this page stays a Server Component.
+          Reports only: the capture flow it replaces moved to /dashboard/workout,
+          which is also where the bottom nav now points. */}
+      <WorkoutSummaryPanel />
 
       {/* Upcoming countdowns */}
       <SectionPanel
@@ -405,19 +404,22 @@ export default async function DashboardHome() {
             density="compact"
           />
         ) : upcomingItems.length === 0 ? (
+          // One row, not a card — the same treatment Due Today's empty branch
+          // has had since PR #30. The two stacked buttons are gone rather than
+          // shrunk: the section header already carries "+ Add countdown", so
+          // the card was spending ~180px to repeat a control sitting 40px
+          // above it. The error branch above keeps the card.
           <EmptyState
             icon={CalendarClock}
             title="Nothing coming up"
-            density="compact"
+            density="inline"
             action={
-              <div className="flex justify-center gap-2">
-                <Button asChild className="rounded-lg">
-                  <Link href="/dashboard/reminders">+ Add countdown</Link>
-                </Button>
-                <Button asChild variant="outline" className="rounded-lg">
-                  <Link href="/dashboard/tasks">+ Add task</Link>
-                </Button>
-              </div>
+              <Link
+                href="/dashboard/tasks"
+                className="text-xs font-medium text-accent hover:text-accent-hover"
+              >
+                Add a task →
+              </Link>
             }
           />
         ) : (
@@ -558,11 +560,22 @@ export default async function DashboardHome() {
             density="compact"
           />
         ) : revisitNotes.length === 0 ? (
+          // One row. The description it used to carry ("Save a note as Revisit
+          // and it resurfaces here") is not rendered at inline density by
+          // design, so the instruction moves into the action link — where it
+          // is a control rather than a sentence about one.
           <EmptyState
             icon={BookOpen}
             title="Nothing to revisit"
-            description="Save a note as Revisit and it resurfaces here."
-            density="compact"
+            density="inline"
+            action={
+              <Link
+                href="/dashboard/notes"
+                className="text-xs font-medium text-accent hover:text-accent-hover"
+              >
+                Save a note →
+              </Link>
+            }
           />
         ) : (
           <ul className="divide-y">
