@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Calendar, CalendarCheck, LogOut, User } from "lucide-react";
+import { Bell, Calendar, CalendarCheck, LogOut, Timer, User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/UserAvatar";
@@ -154,6 +154,19 @@ export function TopBar({
               {email}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {/* Focus lives here rather than in the bottom bar, which Workout
+                now holds. This dropdown is the established mobile overflow —
+                Calendar, Weekly Review and Settings already reach mobile
+                through it — so Focus needed no new mechanism. Listed first: it
+                is the only one here that is a mode you enter, and the only one
+                displaced from the bar. On desktop the sidebar still shows it,
+                same as the three below. */}
+            <DropdownMenuItem asChild>
+              <Link href="/dashboard/focus" className="cursor-pointer">
+                <Timer className="mr-2 h-4 w-4" />
+                Focus
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href="/dashboard/calendar" className="cursor-pointer">
                 <Calendar className="mr-2 h-4 w-4" />

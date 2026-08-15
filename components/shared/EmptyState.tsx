@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils";
  *
  * - `default` — full card: floating icon, title, description, action.
  * - `compact` — same card, tighter paddings, for inline panel slots.
- * - `inline`  — a single row: small leading icon, title, action. No icon
- *   circle and no description line (see `description` below).
+ * - `inline`  — a single row on the page itself: small leading icon, title,
+ *   action. NO card — no border, no background — and no description line
+ *   (see `description` below).
  */
 export type EmptyStateDensity = "default" | "compact" | "inline";
 
@@ -35,8 +36,19 @@ export interface EmptyStateProps {
  * The `inline` density exists because a section that is empty on most days
  * (Due Today, for a user who usually has nothing due) otherwise renders the
  * largest element on the first screen to announce that there is nothing to
- * do. It is the same component and the same dashed-surface language — just
- * one row instead of a card.
+ * do. It is one row instead of a card.
+ *
+ * It draws NO surface of its own. It used to keep the dashed card, on the
+ * theory that it was the same language one row tall — but once the dashboard's
+ * sections were de-boxed, the empty states were the only thing still drawing
+ * boxes, and on an ordinary day three of four sections are empty. Measured on
+ * the real page: 3 of 4 sections still rendered a bordered surface totalling
+ * 174px, so de-boxing the sections had bought almost nothing. A section with
+ * nothing in it should be a quiet line, not a framed announcement.
+ *
+ * Every `inline` call site is a dashboard section (Due Today, Workout,
+ * Upcoming, Revisit) — Focus, Learn, Calendar and Weekly Review use `default`
+ * or `compact` and are unaffected by this.
  */
 export function EmptyState({
   icon: Icon,
@@ -55,7 +67,7 @@ export function EmptyState({
           // the spacing scale; they stay in step. The gap stays 8, not the
           // row's 16: this leading icon is a bare glyph, where the row's is a
           // 36px bubble — a container, and containers take space-around.
-          "flex items-center gap-2 rounded-xl border border-dashed border-border bg-surface p-4",
+          "flex items-center gap-2 p-4",
           className
         )}
       >

@@ -2,15 +2,22 @@ import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/shared/SectionHeader";
 
 /**
- * A dashboard section: rank-1 header on the page background, tier-1 card
- * beneath it. The four content sections (Due Today, Workout, Upcoming,
- * Revisit) all go through here so the page cannot drift back into six
- * different section gaps and three padding regimes.
+ * A section: rank-1 header, then its body. Every dashboard content section
+ * (Due Today, Workout, Upcoming, Revisit) and both Workout-page sections go
+ * through here, so the page cannot drift back into six different section gaps
+ * and three padding regimes.
  *
  * The system it enforces:
  *   space-between (32)  section -> section          — owned by the page
  *   space-around  (16)  header -> body, card padding
  *   space-inside  (8)   row -> row inside the body
+ *
+ * WHY TWO VARIANTS AND NOT THREE. This used to offer `card` / `list` / `bare`,
+ * where `list` was a card with no padding (rows partitioned it edge to edge)
+ * and `bare` was no card at all. Once the dashboard's four sections were
+ * de-boxed, `list` had no call sites left — a card with no padding, no
+ * background and no border is just `plain`. `bare` and `list` therefore
+ * collapsed into one honest option.
  *
  * SectionHeader's own `mb-3` / `gap-2.5` are overridden here rather than
  * changed at source: Focus, Learn and Weekly Review share that component and
@@ -23,19 +30,22 @@ export function SectionPanel({
   linkLabel,
   action,
   /**
-   * How the body sits in its tier-1 card.
+   * Whether the body gets a container of its own.
    *
-   * - `card` — 16px padding. For a body that is one object (the Workout form).
-   * - `list` — NO padding; the rows partition the card edge to edge and carry
-   *   the 16 themselves, separated by hairlines rather than gaps.
-   * - `bare` — no card at all. An EmptyState draws its own dashed tier-1
-   *   surface, and nesting that inside a solid one is two boxes saying one
-   *   thing.
+   * - `card` — tier-1 card, 16px padding. For a body that is ONE object: the
+   *   Workout page's log form, its day's sets. The card is doing real work
+   *   there, because those bodies are a form and a grouped list that need to
+   *   read as single objects on a page dedicated to them.
+   * - `plain` — no container. The body sits directly on the page background;
+   *   rows carry their own 16 and separate with hairlines, and an EmptyState
+   *   draws its own dashed surface.
    *
-   * `list` is not a stylistic preference. Padding the card AND the row insets
-   * the row's text twice: 343 − 2×16 (card) − 2×16 (row) leaves a title 32px
-   * narrower, which truncated real row titles that used to fit. Rows spanning
-   * the full card width put their text back on x=33, exactly where it was.
+   * The dashboard uses `plain` for all four of its sections. Wrapping each one
+   * in an identical bordered card made four different kinds of content — a
+   * task list, a readout, a schedule, saved notes — look like four instances
+   * of one widget, and that repetition (not the content) is what read as a
+   * stack of boxes. Separation now comes from the 32 between sections and the
+   * header's own weight and accent bar.
    */
   variant = "card",
   children,
@@ -46,7 +56,7 @@ export function SectionPanel({
   href?: string;
   linkLabel?: string;
   action?: React.ReactNode;
-  variant?: "card" | "list" | "bare";
+  variant?: "card" | "plain";
   children: React.ReactNode;
   className?: string;
 }) {
@@ -61,17 +71,10 @@ export function SectionPanel({
         accentBar
         className="mb-4 gap-2"
       />
-      {variant === "bare" ? (
+      {variant === "plain" ? (
         children
       ) : (
-        <div
-          className={cn(
-            "rounded-xl border border-border bg-surface",
-            // overflow-hidden so a square-cornered first/last row is clipped by
-            // the card's radius instead of poking through it.
-            variant === "list" ? "overflow-hidden" : "p-4"
-          )}
-        >
+        <div className="rounded-xl border border-border bg-surface p-4">
           {children}
         </div>
       )}

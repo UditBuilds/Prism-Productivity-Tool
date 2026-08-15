@@ -19,11 +19,10 @@ import {
 import { cn } from "@/lib/utils";
 import { renderMarkdown } from "@/lib/markdown";
 import type { Countdown, Note, Reminder, Task } from "@/types/database";
-import { MoodWidget } from "@/components/dashboard/MoodWidget";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
 import { PushHealthBanner } from "@/components/dashboard/PushHealthBanner";
 import { DueTodayRow } from "@/components/dashboard/DueTodayRow";
-import { WorkoutCard } from "@/components/dashboard/WorkoutCard";
+import { WorkoutSummaryPanel } from "@/components/dashboard/WorkoutSummaryPanel";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
 import { DashboardRow } from "@/components/dashboard/DashboardRow";
 import { StatusBand } from "@/components/dashboard/StatusBand";
@@ -32,7 +31,6 @@ import { StatCard } from "@/components/shared/StatCard";
 import { DayRail } from "@/components/shared/DayRail";
 import { ProgressBar } from "@/components/shared/ProgressBar";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Button } from "@/components/ui/button";
 
 export const metadata = { title: "Dashboard | Prism" };
 
@@ -252,11 +250,16 @@ export default async function DashboardHome() {
       {/* Notification permission nudge (renders only while undecided) */}
       <NotificationNudge />
 
-      {/* Status band — the day's check-in and the four counters in ONE tier-1
-          container. Both describe today's state rather than being things to
-          act on, and both used to sit directly on the page background with no
-          container at all. See StatusBand for why this one section bleeds to
-          the viewport edge instead of taking the usual 16px insets.
+      {/* Status band — the four counters in ONE tier-1 container. They describe
+          today's state rather than being things to act on, and used to sit
+          directly on the page background with no container at all. See
+          StatusBand for why this one section bleeds to the viewport edge
+          instead of taking the usual 16px insets.
+
+          The band is now the ONLY boxed thing on the page, and that is the
+          point: with the four content sections de-boxed, the border here reads
+          as "this is a different kind of thing — readouts, not a list you work
+          through" rather than as one more identical card.
 
           Each counter links to where its number can be acted on. "REVIEW 16"
           is routinely the most actionable thing on the page and used to be
@@ -267,7 +270,6 @@ export default async function DashboardHome() {
           these are 0 and one is not, and rendering all four at the same weight
           made the page's only live number look like decoration. */}
       <StatusBand
-        checkIn={<MoodWidget />}
         counters={
           <div className="grid grid-cols-4 gap-1">
             <StatCard
@@ -326,14 +328,14 @@ export default async function DashboardHome() {
         }
       />
 
-      {/* Due Today. Empty and error branches are `bare` — an EmptyState draws
-          its own dashed tier-1 card, and nesting that inside the panel's solid
-          one is two boxes saying one thing. */}
+      {/* Due Today. `plain` in every branch now — rows, empty state and error
+          card alike sit directly on the page. The branch-dependent variant is
+          gone with the box it used to avoid double-drawing. */}
       <SectionPanel
         title="Due Today"
         count={dueCount}
         href="/dashboard/tasks"
-        variant={dueError !== null || dueTasks.length === 0 ? "bare" : "list"}
+        variant="plain"
       >
         {dueError ? (
           <EmptyState
@@ -377,17 +379,15 @@ export default async function DashboardHome() {
         )}
       </SectionPanel>
 
-      {/* Workout capture — client island; this page stays a Server Component.
-          Sits below Due Today: above it, its 148px cost the first screen the
-          three task rows that are the point of this page. */}
-      <WorkoutCard />
+      {/* Workout summary — client island; this page stays a Server Component.
+          Reports only: the capture flow it replaces moved to /dashboard/workout,
+          which is also where the bottom nav now points. */}
+      <WorkoutSummaryPanel />
 
       {/* Upcoming countdowns */}
       <SectionPanel
         title="Upcoming"
-        variant={
-          upcomingError !== null || upcomingItems.length === 0 ? "bare" : "list"
-        }
+        variant="plain"
         action={
           <Link
             href="/dashboard/reminders"
@@ -405,19 +405,22 @@ export default async function DashboardHome() {
             density="compact"
           />
         ) : upcomingItems.length === 0 ? (
+          // One row, not a card — the same treatment Due Today's empty branch
+          // has had since PR #30. The two stacked buttons are gone rather than
+          // shrunk: the section header already carries "+ Add countdown", so
+          // the card was spending ~180px to repeat a control sitting 40px
+          // above it. The error branch above keeps the card.
           <EmptyState
             icon={CalendarClock}
             title="Nothing coming up"
-            density="compact"
+            density="inline"
             action={
-              <div className="flex justify-center gap-2">
-                <Button asChild className="rounded-lg">
-                  <Link href="/dashboard/reminders">+ Add countdown</Link>
-                </Button>
-                <Button asChild variant="outline" className="rounded-lg">
-                  <Link href="/dashboard/tasks">+ Add task</Link>
-                </Button>
-              </div>
+              <Link
+                href="/dashboard/tasks"
+                className="text-xs font-medium text-accent hover:text-accent-hover"
+              >
+                Add a task →
+              </Link>
             }
           />
         ) : (
@@ -546,9 +549,7 @@ export default async function DashboardHome() {
         count={revisitNotes.length}
         href="/dashboard/notes?kind=revisit"
         linkLabel="View all"
-        variant={
-          revisitError !== null || revisitNotes.length === 0 ? "bare" : "list"
-        }
+        variant="plain"
       >
         {revisitError ? (
           <EmptyState
@@ -558,11 +559,22 @@ export default async function DashboardHome() {
             density="compact"
           />
         ) : revisitNotes.length === 0 ? (
+          // One row. The description it used to carry ("Save a note as Revisit
+          // and it resurfaces here") is not rendered at inline density by
+          // design, so the instruction moves into the action link — where it
+          // is a control rather than a sentence about one.
           <EmptyState
             icon={BookOpen}
             title="Nothing to revisit"
-            description="Save a note as Revisit and it resurfaces here."
-            density="compact"
+            density="inline"
+            action={
+              <Link
+                href="/dashboard/notes"
+                className="text-xs font-medium text-accent hover:text-accent-hover"
+              >
+                Save a note →
+              </Link>
+            }
           />
         ) : (
           <ul className="divide-y">
