@@ -7,6 +7,7 @@ import { CheckCircle2, Circle, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hapticTap } from "@/lib/haptics";
 import { useUpdateTask } from "@/hooks/useTasks";
+import type { DueTone } from "@/lib/date";
 import type { Task } from "@/types/database";
 import {
   priorityBorder,
@@ -16,29 +17,52 @@ import {
 } from "@/components/tasks/task-styles";
 import { DashboardRow, ROW_BUBBLE } from "@/components/dashboard/DashboardRow";
 
+/** Meta tint per due tone. Overdue is the only one that raises its voice. */
+const TONE_CLASS: Record<DueTone, string> = {
+  danger: "text-danger font-medium",
+  warning: "text-warning",
+  muted: "text-muted-foreground",
+};
+
 /**
- * A single "Due Today" row. The dashboard page is a Server Component, so
- * interactivity lives here in a "use client" island (mirrors the MoodWidget
- * pattern). The mark-done button is the row's leading control and is rendered
- * as a SIBLING of the link by DashboardRow — never nested inside it — so a tap
- * on the button can't also navigate, and the markup stays valid.
+ * A task row in the dashboard's agenda — overdue or due today.
  *
- * `dueLabel` is computed server-side via formatDueDate so the IST due-date
- * logic isn't duplicated on the client.
+ * Was DueTodayRow. It now also carries overdue rows, which is the whole point
+ * of this rebuild: a task that went past its date used to match no query on
+ * this page and simply vanished, so the dashboard said "all clear" while work
+ * was slipping.
+ *
+ * Future-dated tasks keep the separate, static UpcomingTaskRow — mark-done is
+ * offered for work that is OWED (overdue, today) and withheld for work that
+ * isn't yet, which is the existing decision, not a new one.
+ *
+ * `backlogCount` is the consolidation from components/tasks/group-backlog.ts:
+ * the cron spawns one row per scheduled day, so an uncompleted recurring
+ * template accumulates near-identical siblings daily. They collapse into this
+ * one row rather than filling the list with the same title N times. Actions
+ * here complete ONLY the fronting instance — the sibling rows are never
+ * merged, hidden or altered, because per-day history is what analytics read.
+ *
+ * `dueLabel`/`dueTone` are computed server-side by formatDueDate so the IST
+ * day math lives in exactly one place.
  */
-export function DueTodayRow({
+export function AgendaTaskRow({
   task,
   dueLabel,
+  dueTone = "muted",
+  backlogCount = 0,
 }: {
   task: Task;
   dueLabel: string | null;
+  dueTone?: DueTone;
+  backlogCount?: number;
 }) {
   const router = useRouter();
   const updateTask = useUpdateTask();
 
   // Optimistic check: show the row as done the instant it's tapped, before the
   // server refresh lands. The authoritative state comes from router.refresh()
-  // (the Due Today query excludes done tasks, so the row drops out on refresh).
+  // (the agenda queries exclude done tasks, so the row drops out on refresh).
   const [optimisticDone, setOptimisticDone] = useState(false);
   const done = task.status === "done" || optimisticDone;
 
@@ -98,8 +122,19 @@ export function DueTodayRow({
       }
       meta={
         dueLabel ? (
-          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+          <span
+            className={cn(
+              "font-mono text-xs tabular-nums",
+              TONE_CLASS[dueTone]
+            )}
+          >
             {dueLabel}
+            {backlogCount > 0 && (
+              <span className="text-muted-foreground">
+                {" "}
+                · +{backlogCount} earlier
+              </span>
+            )}
           </span>
         ) : null
       }
