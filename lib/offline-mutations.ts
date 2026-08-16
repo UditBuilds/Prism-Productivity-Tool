@@ -407,11 +407,18 @@ export function registerResumableMutations(qc: QueryClient): void {
   });
 
   // ── workouts ───────────────────────────────────────────────────────
-  // No derived caches: ["workouts"] is not registered in lib/derived-caches.ts
-  // because nothing downstream reads workout sets (v1 has no analytics).
+  // ["workout-analysis"] IS now a derived read model (progressive overload +
+  // body-part balance), so each of the three replays below marks it stale.
+  // This matters most for the offline path specifically: a gym is where the
+  // signal is worst, so the sets most likely to be replayed are exactly the
+  // ones a progression view would otherwise miss until its 5-minute staleTime
+  // expired.
   qc.setMutationDefaults(logWorkoutMutationOptions.mutationKey, {
     mutationFn: logWorkoutMutationOptions.mutationFn,
-    onSettled: () => void qc.invalidateQueries({ queryKey: ["workouts"] }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["workouts"] });
+      invalidateDerivedCaches(qc, "workout");
+    },
     onError: (err, variables) => {
       console.error(
         "[offline-replay] workout log failed",
@@ -425,7 +432,10 @@ export function registerResumableMutations(qc: QueryClient): void {
   });
   qc.setMutationDefaults(updateWorkoutSetMutationOptions.mutationKey, {
     mutationFn: updateWorkoutSetMutationOptions.mutationFn,
-    onSettled: () => void qc.invalidateQueries({ queryKey: ["workouts"] }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["workouts"] });
+      invalidateDerivedCaches(qc, "workout");
+    },
     onError: (err, variables) => {
       console.error(
         "[offline-replay] workout set update failed",
@@ -439,7 +449,10 @@ export function registerResumableMutations(qc: QueryClient): void {
   });
   qc.setMutationDefaults(deleteWorkoutSetMutationOptions.mutationKey, {
     mutationFn: deleteWorkoutSetMutationOptions.mutationFn,
-    onSettled: () => void qc.invalidateQueries({ queryKey: ["workouts"] }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["workouts"] });
+      invalidateDerivedCaches(qc, "workout");
+    },
     onError: (err, variables) => {
       console.error(
         "[offline-replay] workout set delete failed",

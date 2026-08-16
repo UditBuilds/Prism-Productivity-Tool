@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import { istDayContext } from "@/lib/date";
+import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import {
   countSessionDays,
   formatStructuredRawInput,
@@ -200,6 +201,7 @@ export function useLogWorkout() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: WORKOUTS_KEY });
+      invalidateDerivedCaches(qc, "workout");
     },
   });
 }
@@ -224,6 +226,7 @@ export function useUpdateWorkoutSet() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: WORKOUTS_KEY });
+      invalidateDerivedCaches(qc, "workout");
     },
   });
 }
@@ -247,6 +250,7 @@ export function useDeleteWorkoutSet() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: WORKOUTS_KEY });
+      invalidateDerivedCaches(qc, "workout");
     },
   });
 }

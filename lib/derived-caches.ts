@@ -18,7 +18,8 @@ type ActivitySource =
   | "plans"
   | "focus"
   | "srs-review"
-  | "mood";
+  | "mood"
+  | "workout";
 
 // ["calendar"] prefix-matches every ["calendar", month] query.
 const DERIVED_KEYS: Record<ActivitySource, string[][]> = {
@@ -34,6 +35,14 @@ const DERIVED_KEYS: Record<ActivitySource, string[][]> = {
     ["srs-analytics"],
   ],
   mood: [["weekly-review"]],
+  /**
+   * ["workout-analysis"] is a 180-day read model with a 5-minute staleTime,
+   * while ["workouts"] (the logging cache) holds 21 days and is invalidated by
+   * the mutations directly. Without this, a set logged today would not move the
+   * progression or body-part views for up to five minutes — and logging a set
+   * is precisely when the user might look.
+   */
+  workout: [["workout-analysis"]],
 };
 
 export function invalidateDerivedCaches(
