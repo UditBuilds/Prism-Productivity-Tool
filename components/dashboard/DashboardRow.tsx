@@ -28,7 +28,7 @@ export const ROW_BUBBLE =
  * themselves, which is the whole mechanism this direction runs on.
  */
 export const ROW_META =
-  "font-mono text-xs font-medium uppercase tracking-[0.1em] tabular-nums";
+  "block font-mono text-xs font-medium uppercase leading-5 tracking-[0.1em] tabular-nums";
 
 export interface DashboardRowProps {
   /** Icon or glyph in the leading slot. */
@@ -92,8 +92,14 @@ export function DashboardRow({
         <span className="line-clamp-2 text-sm font-semibold text-foreground transition-colors group-hover:text-accent">
           {title}
         </span>
-        {/* space-inside (8): the title and its meta line are one object. */}
-        {meta && <div className="mt-2 truncate">{meta}</div>}
+        {/* space-inside (8): the title and its meta line are one object.
+            IT WRAPS, IT DOES NOT TRUNCATE. `truncate` here cut the real row
+            "3 DAYS OVERDUE · MEDIUM · DAILY" off at "· DAI…" — uppercase plus
+            0.1em tracking is wide, and three segments do not fit 375px minus
+            the leading glyph and two 16px insets. Truncating a state line
+            silently deletes state, and the recurrence segment is the one that
+            falls off the end. Height is the cheaper thing to spend. */}
+        {meta && <div className="mt-2">{meta}</div>}
       </div>
     </>
   );
