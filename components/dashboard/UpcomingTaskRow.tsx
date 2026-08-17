@@ -1,7 +1,7 @@
 import { Circle } from "lucide-react";
 
 import type { Task } from "@/types/database";
-import { priorityBorder, priorityText } from "@/components/tasks/task-styles";
+import { priorityText } from "@/components/tasks/task-styles";
 import { DashboardRow, ROW_META } from "@/components/dashboard/DashboardRow";
 
 /** The separator between meta segments. Muted so the segments rank, not it. */
@@ -35,8 +35,11 @@ export function UpcomingTaskRow({
 }) {
   return (
     <DashboardRow
-      accentBorder={priorityBorder[task.priority]}
-      leading={<Circle className="h-4 w-4 text-muted-foreground" />}
+      // Same priority-tinted stroke as AgendaTaskRow — the two rows share one
+      // anatomy, and the accent bar they both used to carry is gone.
+      leading={
+        <Circle className={`h-4 w-4 ${priorityText[task.priority]}`} />
+      }
       href={`/dashboard/tasks/${task.id}`}
       title={task.title}
       meta={

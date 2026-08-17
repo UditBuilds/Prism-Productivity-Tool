@@ -9,7 +9,7 @@ import { hapticTap } from "@/lib/haptics";
 import { useUpdateTask } from "@/hooks/useTasks";
 import type { DueTone } from "@/lib/date";
 import type { Task } from "@/types/database";
-import { priorityBorder, priorityText } from "@/components/tasks/task-styles";
+import { priorityText } from "@/components/tasks/task-styles";
 import {
   DashboardRow,
   ROW_BUBBLE,
@@ -93,7 +93,6 @@ export function AgendaTaskRow({
 
   return (
     <DashboardRow
-      accentBorder={priorityBorder[task.priority]}
       leadingInteractive
       leading={
         <button
@@ -103,9 +102,18 @@ export function AgendaTaskRow({
           aria-label={
             done ? `${task.title} marked done` : `Mark "${task.title}" done`
           }
+          // PRIORITY TINTS THIS STROKE. It replaces the 2px left accent bar,
+          // which duplicated the word already on the meta line and, on a
+          // one-row day, rendered as a tall coloured slab. The circle is
+          // already on every row as the tap target, so the colour scan gets a
+          // home without a new object being added — and a stroke is not a
+          // surface. `low` resolves to muted: every task has a priority, so
+          // tinting the default would tint most rows and rank nothing.
           className={cn(
             ROW_BUBBLE,
-            "text-muted-foreground transition-colors hover:text-accent",
+            "transition-colors",
+            priorityText[task.priority],
+            "hover:text-accent",
             done && "text-success"
           )}
         >

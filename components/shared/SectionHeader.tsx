@@ -22,6 +22,13 @@ export interface SectionHeaderProps {
    * asks for the number without the capsule.
    */
   countPlain?: boolean;
+  /**
+   * Extra classes on the <h2> itself. Exists so the dashboard's refined
+   * heading tracking can be applied without restyling Focus, Learn, Weekly
+   * Review and Calendar, which render this component directly and are outside
+   * that change. `className` lands on the wrapper and cannot reach the title.
+   */
+  titleClassName?: string;
   /** Custom right-side slot; wins over href. */
   action?: React.ReactNode;
   className?: string;
@@ -38,6 +45,7 @@ export function SectionHeader({
   linkLabel = "View all",
   accentBar = false,
   countPlain = false,
+  titleClassName,
   action,
   className,
 }: SectionHeaderProps) {
@@ -49,7 +57,9 @@ export function SectionHeader({
           className="h-5 w-0.5 self-center rounded-full bg-accent"
         />
       )}
-      <h2 className="text-base font-semibold text-foreground">{title}</h2>
+      <h2 className={cn("text-base font-semibold text-foreground", titleClassName)}>
+        {title}
+      </h2>
       {count !== undefined && count > 0 && (
         <span
           className={cn(

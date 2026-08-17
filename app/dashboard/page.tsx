@@ -294,7 +294,7 @@ export default async function DashboardHome() {
       <StatusBand
         className="mt-8"
         counters={
-          <div className="grid grid-cols-4 gap-1">
+          <>
             <StatCard
               variant="strip"
               label="Overdue"
@@ -334,20 +334,23 @@ export default async function DashboardHome() {
               value={trainedLabel}
               valueVariant={daysSinceTrained === null ? "muted" : "default"}
               href="/dashboard/workout"
-              subtitle={
-                <p className="mt-2 truncate font-mono text-xs tabular-nums text-muted-foreground">
-                  {railError ? "load failed" : `${trainedDayCount}/7 days`}
-                </p>
-              }
+              // A string, not a <p>: StatCard owns the sub-line element now,
+              // because every column renders that slot whether or not it has
+              // anything to put in it.
+              subtitle={railError ? "load failed" : `${trainedDayCount}/7 days`}
             />
+            {/* OPEN closes the row against the right gutter — see StatusBand
+                for why the band is distributed rather than gridded. text-right
+                so the figure, not the label, is what lands on the margin. */}
             <StatCard
               variant="strip"
               label="Open"
               value={openCount}
               valueVariant={openCount > 0 ? "default" : "muted"}
               href="/dashboard/tasks"
+              className="text-right"
             />
-          </div>
+          </>
         }
       />
 

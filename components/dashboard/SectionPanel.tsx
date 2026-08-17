@@ -74,6 +74,11 @@ export function SectionPanel({
         action={action}
         accentBar
         className="mb-4 gap-2"
+        // The refined heading rank. Applied here rather than inside
+        // SectionHeader so the four pages that use that component directly
+        // stay byte-identical — the same local-override convention this
+        // component already uses for the header's spacing.
+        titleClassName="tracking-heading"
       />
       {variant === "plain" ? (
         children

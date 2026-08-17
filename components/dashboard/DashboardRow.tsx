@@ -26,9 +26,14 @@ export const ROW_BUBBLE =
  * 12px is the Meta rank of the type scale, and mono caps is the Object rank's
  * established treatment (MonoLabel). Colour is not set here — the segments rank
  * themselves, which is the whole mechanism this direction runs on.
+ *
+ * `tracking-meta` (0.06em) rather than the 0.10em this started at. Uppercase
+ * needs air, but 0.10em was wide enough that "3 DAYS OVERDUE · MEDIUM · DAILY"
+ * could not fit the width left after the leading glyph and two 16px insets,
+ * and wrapped to a second line. 0.06em keeps it on one.
  */
 export const ROW_META =
-  "block font-mono text-xs font-medium uppercase leading-5 tracking-[0.1em] tabular-nums";
+  "block font-mono text-xs font-medium uppercase leading-5 tracking-meta tabular-nums";
 
 export interface DashboardRowProps {
   /** Icon or glyph in the leading slot. */
@@ -47,8 +52,6 @@ export interface DashboardRowProps {
    * and tint the segments; see AgendaTaskRow for the ranking.
    */
   meta?: React.ReactNode;
-  /** Priority left border from task-styles; adds the 2px rule when present. */
-  accentBorder?: string;
   className?: string;
 }
 
@@ -75,7 +78,6 @@ export function DashboardRow({
   href,
   title,
   meta,
-  accentBorder,
   className,
 }: DashboardRowProps) {
   const body = (
@@ -107,22 +109,31 @@ export function DashboardRow({
   // space-around (16) on every side.
   const bodyClass = "flex min-w-0 flex-1 items-center gap-4 py-4 pr-4 pl-4";
 
+  /**
+   * THE PRIORITY ACCENT BAR IS GONE.
+   *
+   * It was a 2px coloured left rule, and it had to live on this inner wrapper
+   * rather than the <li> so that CSS wouldn't miter it against the <li>'s own
+   * divider and render a run of same-priority rows as one unbroken rail. All
+   * of that machinery is deleted with the bar.
+   *
+   * Two reasons it went. It duplicated information the meta line already
+   * states as a word ("MEDIUM"), and on the real one-row day it rendered as a
+   * tall coloured slab that was the loudest object on the screen — it only
+   * ever looked balanced in fixture shots with four rows stacked up.
+   *
+   * Priority now tints the stroke of the tap-to-complete circle, which is
+   * already on every row. That gives the colour scan a home without adding an
+   * object, and a stroke is not a surface, so it stays inside the direction.
+   *
+   * Consequence: the `divide-y divide-border` hazard no longer bites here —
+   * the colour utility used to outrank `border-l-*` and strip the accent from
+   * every row after the first. `divide-y` ALONE is still correct on the <ul>;
+   * do not add `divide-border` back.
+   */
   return (
     <li className={cn("group", className)}>
-      {/* The priority accent lives on an INNER wrapper, not on the <li>.
-          As a sibling border of the <li>'s own border-top, CSS miters the two
-          at the corner and the hairline never crosses the 2px bar — so a run
-          of same-priority rows rendered as one unbroken rail down the panel,
-          which reads as an alarm rather than as N items. One level in, the
-          <li>'s divider spans the full row width and cuts the bar into one
-          segment per row. */}
-      <div
-        className={cn(
-          "flex items-center",
-          accentBorder && "border-l-2",
-          accentBorder
-        )}
-      >
+      <div className="flex items-center">
         {leadingInteractive && leading && (
           <div className="flex shrink-0 items-center py-4 pl-4">{leading}</div>
         )}

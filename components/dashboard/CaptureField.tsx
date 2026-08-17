@@ -189,7 +189,10 @@ export function CaptureField() {
             : "Add"
         }
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center font-mono text-sm transition-colors",
+          // text-xs, not text-sm: the glyph is mono at the 12px Meta rank. At
+          // 14 it was the page's one off-scale size — 14 is the sans Body
+          // rank, and one rank per size is the rule.
+          "flex h-9 w-9 shrink-0 items-center justify-center font-mono text-xs transition-colors",
           pending
             ? "text-foreground hover:text-accent"
             : "text-muted-foreground/40"

@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The dashboard's status zone — the four counters.
+ * The dashboard's status zone — the four counters — and the one place that
+ * owns how that row meets the page margins.
  *
  * WHY THIS NO LONGER BLEEDS TO THE VIEWPORT EDGE.
  *
@@ -16,27 +17,41 @@ import { cn } from "@/lib/utils";
  * inside a normally-padded card at 375px — the rail clipped. Bleeding out and
  * re-applying the page gutter as the band's own padding was the workaround.
  *
- * The type direction deletes the rail (TRAINED now states "1/7 days" as text),
+ * The type direction deletes the rail (TRAINED states "1/7 days" as text),
  * which deletes the 81px floor, which deletes the reason for the workaround.
- * The band is an ordinary section again.
  *
- * The columns do not change width. `-mx-4 … px-4` was re-applying exactly the
- * gutter it had just cancelled, so its content box was already 343px — the same
- * 343px an ordinary section gets. Four columns at `gap-1` are 82.75px either
- * way. Removing the bleed moves nothing horizontally; it only removes the
- * surface, the two hairlines, and the `sm:` branch that existed to undo them.
+ * FULL-WIDTH DISTRIBUTION, NOT A FOUR-COLUMN GRID.
  *
- * It is kept as a component rather than inlined because it is the one place
- * that owns how the counter row meets the page margins — which is precisely the
- * axis the symmetry variants explore.
+ * `justify-between` on content-sized columns, so the row spans the whole
+ * measure: OVERDUE's label starts on the page's left margin and OPEN's figure
+ * closes against the right one, which puts the band on exactly the same width
+ * as every section header below it.
+ *
+ * Two alternatives were rendered and rejected by looking. A true 25% grid kept
+ * the columns equal but ended OPEN well short of the right margin, leaving the
+ * band visibly narrower than the headers. Centring inside those quarters read
+ * as one unit but pulled OVERDUE off the left margin, so the band no longer
+ * lined up with anything on the page.
+ *
+ * The accepted cost: columns size to their content, so the gaps between them
+ * are not equal — TRAINED sits nearer REVIEW than OPEN does to TRAINED. The
+ * outer edges are what align, and they are what the eye reads against the
+ * headers.
+ *
+ * `items-start` matters: without it the flex row stretches every column to the
+ * tallest and the figures stop sharing a baseline.
  */
 export function StatusBand({
   counters,
   className,
 }: {
-  /** The four-across counter grid. */
+  /** The four counter tiles, in reading order. */
   counters: React.ReactNode;
   className?: string;
 }) {
-  return <section className={cn(className)}>{counters}</section>;
+  return (
+    <section className={cn("flex items-start justify-between", className)}>
+      {counters}
+    </section>
+  );
 }
