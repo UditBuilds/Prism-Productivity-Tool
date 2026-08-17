@@ -24,9 +24,14 @@ export interface DashboardRowProps {
   /** When set, the body is a Link. Padding lives INSIDE it, so the whole row is tappable. */
   href?: string;
   title: React.ReactNode;
-  /** Sits beside the title at its own size — the recurring-task marker. */
-  titleAdornment?: React.ReactNode;
-  /** Second line under the title (due label, reminder time). */
+  /**
+   * Line(s) under the title — due label, reminder time, and any row markers
+   * (the recurring glyph). Markers used to sit beside the title in a
+   * `titleAdornment` slot; they were moved here because that slot competed
+   * with the title for the row's scarcest resource at 375px, and because a
+   * title that now wraps to two lines has no single line for a glyph to
+   * vertically align against.
+   */
   meta?: React.ReactNode;
   /** Right-hand slot — priority/status pills, countdown label. */
   trailing?: React.ReactNode;
@@ -51,7 +56,6 @@ export function DashboardRow({
   bubbleClassName,
   href,
   title,
-  titleAdornment,
   meta,
   trailing,
   below,
@@ -66,12 +70,14 @@ export function DashboardRow({
         </span>
       )}
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate text-sm font-semibold text-foreground">
-            {title}
-          </span>
-          {titleAdornment}
-        </div>
+        {/* WRAPS, never truncates. A single truncated line put "Use higgsfield
+            as it is free for 20-30 days" out at "Use higgsfield…" — the title
+            had 104px of the 375 to work with once two badges and a glyph had
+            taken their share. Clamped at two lines so a pathological title
+            can't run the row off the screen; every real one fits inside it. */}
+        <span className="line-clamp-2 text-sm font-semibold text-foreground">
+          {title}
+        </span>
         {/* space-inside (8): the title and its meta line are one object. */}
         {meta && <div className="mt-2 truncate">{meta}</div>}
         {below}

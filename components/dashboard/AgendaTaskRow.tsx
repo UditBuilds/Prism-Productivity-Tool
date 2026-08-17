@@ -9,12 +9,7 @@ import { hapticTap } from "@/lib/haptics";
 import { useUpdateTask } from "@/hooks/useTasks";
 import type { DueTone } from "@/lib/date";
 import type { Task } from "@/types/database";
-import {
-  priorityBorder,
-  priorityStyles,
-  statusStyles,
-  statusLabel,
-} from "@/components/tasks/task-styles";
+import { priorityBorder, priorityStyles } from "@/components/tasks/task-styles";
 import { DashboardRow, ROW_BUBBLE } from "@/components/dashboard/DashboardRow";
 
 /** Meta tint per due tone. Overdue is the only one that raises its voice. */
@@ -45,6 +40,15 @@ const TONE_CLASS: Record<DueTone, string> = {
  *
  * `dueLabel`/`dueTone` are computed server-side by formatDueDate so the IST
  * day math lives in exactly one place.
+ *
+ * ONE BADGE, ONE GLYPH. This row used to carry a priority pill AND a "Todo"
+ * status pill while the future-dated row beside it carried only the priority
+ * pill — two anatomies in one list. The status pill is gone outright: every row
+ * in an agenda is a todo, so the badge stated the one thing that was true of
+ * all of them, and it cost the title the width it needed. The recurring marker
+ * moved out of the title line onto the meta line for the same reason. What is
+ * left is the leading circle, the title, a meta line, and exactly one badge —
+ * and UpcomingTaskRow now renders the same four things.
  */
 export function AgendaTaskRow({
   task,
@@ -112,51 +116,43 @@ export function AgendaTaskRow({
           {task.title}
         </span>
       }
-      titleAdornment={
-        task.recurring_task_id ? (
-          <Repeat
-            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-            aria-label="Repeats daily"
-          />
-        ) : null
-      }
       meta={
-        dueLabel ? (
-          <span
-            className={cn(
-              "font-mono text-xs tabular-nums",
-              TONE_CLASS[dueTone]
+        dueLabel || task.recurring_task_id ? (
+          <span className="flex items-center gap-2">
+            {task.recurring_task_id && (
+              <Repeat
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                aria-label="Repeats daily"
+              />
             )}
-          >
-            {dueLabel}
-            {backlogCount > 0 && (
-              <span className="text-muted-foreground">
-                {" "}
-                · +{backlogCount} earlier
+            {dueLabel && (
+              <span
+                className={cn(
+                  "truncate font-mono text-xs tabular-nums",
+                  TONE_CLASS[dueTone]
+                )}
+              >
+                {dueLabel}
+                {backlogCount > 0 && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · +{backlogCount} earlier
+                  </span>
+                )}
               </span>
             )}
           </span>
         ) : null
       }
       trailing={
-        <>
-          <span
-            className={cn(
-              "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize",
-              priorityStyles[task.priority]
-            )}
-          >
-            {task.priority}
-          </span>
-          <span
-            className={cn(
-              "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-              statusStyles[task.status]
-            )}
-          >
-            {statusLabel[task.status]}
-          </span>
-        </>
+        <span
+          className={cn(
+            "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize",
+            priorityStyles[task.priority]
+          )}
+        >
+          {task.priority}
+        </span>
       }
     />
   );

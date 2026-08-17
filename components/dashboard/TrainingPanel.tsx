@@ -10,6 +10,8 @@ import {
   formatCivilDate,
   formatDaysSince,
   formatSessionTopSet,
+  type ExerciseProgression,
+  type ProgressChange,
   type ProgressDirection,
 } from "@/lib/workout-analysis";
 import { SectionPanel } from "@/components/dashboard/SectionPanel";
@@ -79,7 +81,27 @@ export function TrainingPanel() {
   // not render. The Workout nav tab is the entry point, not a placeholder here.
   if (!data || data.totalSets === 0) return null;
 
-  const progressions = data.progressions.slice(0, PROGRESSION_LIMIT);
+  /**
+   * ONLY exercises that actually have something to progress FROM.
+   *
+   * The block shipped rendering the top 3 exercises whatever their state, and
+   * since no exercise in the real table has yet been logged on two different
+   * days, all three rows read "First session" — the same absence of data stated
+   * three times at full fidelity. A progression readout with nothing to
+   * progress from is not a readout, so an entry without a prior session is not
+   * a quiet row here, it is not a row at all; when none qualify the whole block
+   * (heading included) is suppressed.
+   *
+   * `analyseWorkoutSets` already sorts comparable entries first, so slicing
+   * after the filter can never drop a comparable row in favour of a baseline.
+   */
+  const progressing = data.progressions
+    .filter(
+      (p): p is ExerciseProgression & { change: ProgressChange } =>
+        p.change !== null
+    )
+    .slice(0, PROGRESSION_LIMIT);
+
   const trained = data.bodyParts.filter((b) => b.daysSince !== null);
   const untrained = data.bodyParts.filter((b) => b.daysSince === null);
 
@@ -105,11 +127,11 @@ export function TrainingPanel() {
         </p>
       )}
 
-      {progressions.length > 0 && (
+      {progressing.length > 0 && (
         <div className="mt-4">
           <MonoLabel as="p">Progression</MonoLabel>
           <ul className="mt-2 divide-y">
-            {progressions.map((p) => (
+            {progressing.map((p) => (
               <li
                 key={p.key}
                 className="flex items-center justify-between gap-4 py-2"
@@ -123,17 +145,16 @@ export function TrainingPanel() {
                     {formatCivilDate(p.latest.date)}
                   </p>
                 </div>
-                {/* One session is a BASELINE, not a zero change — a "0 kg"
-                    chip would assert a comparison that has not happened. */}
+                {/* Every row here HAS a change — the baseline case is filtered
+                    out above rather than rendered as "First session", so this
+                    chip always states a real comparison. */}
                 <span
                   className={cn(
                     "shrink-0 font-mono text-xs tabular-nums",
-                    p.change
-                      ? DIRECTION_TINT[p.change.direction]
-                      : "text-muted-foreground/60"
+                    DIRECTION_TINT[p.change.direction]
                   )}
                 >
-                  {p.change ? formatChange(p.change) : "First session"}
+                  {formatChange(p.change)}
                 </span>
               </li>
             ))}
@@ -144,34 +165,37 @@ export function TrainingPanel() {
       {data.bodyParts.length > 0 && (
         <div className="mt-4">
           <MonoLabel as="p">Body parts</MonoLabel>
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {trained.map((b) => (
-              <li
-                key={b.bodyPart}
-                className="rounded-md bg-surface-raised px-2 py-1 text-xs text-foreground"
-              >
-                {b.bodyPart}{" "}
-                <span className="font-mono tabular-nums text-muted-foreground">
-                  {formatDaysSince(b.daysSince as number).toLowerCase()}
-                </span>
-              </li>
-            ))}
-            {untrained.map((b) => (
-              // Muted, not alarming: an untrained group is information. And it
-              // reads "nothing in N days", never "never" — the analysis cannot
-              // see past its window, so "never" would assert what it has no
-              // evidence for.
-              <li
-                key={b.bodyPart}
-                className="rounded-md bg-surface-raised px-2 py-1 text-xs text-muted-foreground/70"
-              >
-                {b.bodyPart}{" "}
-                <span className="font-mono tabular-nums">
-                  nothing in {data.windowDays}d
-                </span>
-              </li>
-            ))}
-          </ul>
+
+          {/* A chip is spent only on a group with actual work behind it. Six
+              chips, four of them saying "nothing in 180d", wrapped to three
+              lines and gave the absence of training more room than the
+              training — the emptier the history, the louder the section got. */}
+          {trained.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {trained.map((b) => (
+                <li
+                  key={b.bodyPart}
+                  className="rounded-md bg-surface-raised px-2 py-1 text-xs text-foreground"
+                >
+                  {b.bodyPart}{" "}
+                  <span className="font-mono tabular-nums text-muted-foreground">
+                    {formatDaysSince(b.daysSince as number).toLowerCase()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* The rest collapse to one line. Still counted, never dropped — and
+              still "nothing in N days", never "never": the analysis cannot see
+              past its window, so "never" would assert what it has no evidence
+              for. Muted, not alarming: an untrained group is information. */}
+          {untrained.length > 0 && (
+            <p className="mt-2 font-mono text-xs text-muted-foreground/70">
+              {untrained.length} group{untrained.length === 1 ? "" : "s"}{" "}
+              untrained in {data.windowDays}d
+            </p>
+          )}
         </div>
       )}
     </SectionPanel>
