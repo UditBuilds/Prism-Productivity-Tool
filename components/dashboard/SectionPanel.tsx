@@ -26,6 +26,7 @@ import { SectionHeader } from "@/components/shared/SectionHeader";
 export function SectionPanel({
   title,
   count,
+  countPlain,
   href,
   linkLabel,
   action,
@@ -53,6 +54,8 @@ export function SectionPanel({
 }: {
   title: string;
   count?: number;
+  /** Render the count as bare mono text rather than a filled pill. */
+  countPlain?: boolean;
   href?: string;
   linkLabel?: string;
   action?: React.ReactNode;
@@ -65,6 +68,7 @@ export function SectionPanel({
       <SectionHeader
         title={title}
         count={count}
+        countPlain={countPlain}
         href={href}
         linkLabel={linkLabel}
         action={action}

@@ -77,9 +77,10 @@ export function StatCard({
   );
 
   if (variant === "strip") {
-    // The strip lives in a grid-cols-4 gap-1 row that leaves ~83px per column,
-    // 81px of which the Day Rail needs. The link adds no padding of its own so
-    // the column geometry is exactly what it was.
+    // The strip lives in a grid-cols-4 gap-1 row. It no longer has to reserve
+    // 81px for a Day Rail — the rail was replaced by a text sub-line — so the
+    // column is free to be whatever a quarter of the content width is. The link
+    // still adds no padding of its own.
     const body = (
       <>
         <MonoLabel
@@ -88,12 +89,21 @@ export function StatCard({
         >
           {label}
         </MonoLabel>
-        {/* space-inside (8): a label and its figure are one object. Was 2px,
-            which read as the label sitting ON the number rather than above
-            it — a large part of why the strip felt cramped. */}
+        {/* space-inside (8): a label and its figure are one object.
+            THE FIGURE IS SANS, NOT MONO. Two reasons, and the second is the
+            one that matters. First, the type direction carries hierarchy on
+            size/weight/case/colour alone, and a mono figure under a mono label
+            gives the pair no contrast to work with — the label stops reading as
+            subordinate. Second, JetBrains Mono draws a DOTTED zero: at 30px in
+            muted grey a `0` came out as a narrow ring with a dot in it, which
+            read as an outlined glyph rather than as the number nought. On a
+            page whose normal day is three zeros and one number, that is the
+            single most-rendered glyph on the screen. Instrument Sans draws a
+            plain `0`. tabular-nums is kept — Instrument Sans carries tnum, so
+            the figures still align column to column. */}
         <p
           className={cn(
-            "mt-2 font-mono text-3xl font-semibold tabular-nums tracking-tight",
+            "mt-2 font-sans text-3xl font-semibold tabular-nums tracking-tight",
             valueTint
           )}
         >

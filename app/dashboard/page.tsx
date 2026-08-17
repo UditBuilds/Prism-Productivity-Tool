@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, BookOpen, AlertCircle } from "lucide-react";
+import { Bell, AlertCircle } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -21,12 +21,10 @@ import { CaptureField } from "@/components/dashboard/CaptureField";
 import { TrainingPanel } from "@/components/dashboard/TrainingPanel";
 import { AgendaTaskRow } from "@/components/dashboard/AgendaTaskRow";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
-import { DashboardRow } from "@/components/dashboard/DashboardRow";
+import { DashboardRow, ROW_META } from "@/components/dashboard/DashboardRow";
 import { StatusBand } from "@/components/dashboard/StatusBand";
 import { SectionPanel } from "@/components/dashboard/SectionPanel";
 import { StatCard } from "@/components/shared/StatCard";
-import { DayRail } from "@/components/shared/DayRail";
-import { ProgressBar } from "@/components/shared/ProgressBar";
 import { EmptyState } from "@/components/shared/EmptyState";
 
 export const metadata = { title: "Dashboard | Prism" };
@@ -318,7 +316,18 @@ export default async function DashboardHome() {
             {/* TRAINED is a DURATION, not a count, so the zero/non-zero rule
                 doesn't map onto it: "0" would be the best possible state and
                 would render muted. It reads muted only when there is nothing
-                to report at all. */}
+                to report at all.
+
+                THE DAY RAIL IS GONE, STATED AS TEXT INSTEAD. The rail was
+                7 × 9px cells + 6 × 3px gaps = 81px intrinsic, and that 81px was
+                the sole reason the whole status band had to bleed to the
+                viewport edge (see StatusBand). "1/7 days" says what the rail
+                said — how many of the last seven IST days had at least one set
+                — in the type system, at the meta rank, in about a third of the
+                width. What it gives up is WHICH days: the rail showed the
+                pattern (three in a row, or three scattered), the text shows
+                only the count. That is the trade, and it buys back an entire
+                layout workaround. */}
             <StatCard
               variant="strip"
               label="Trained"
@@ -326,19 +335,9 @@ export default async function DashboardHome() {
               valueVariant={daysSinceTrained === null ? "muted" : "default"}
               href="/dashboard/workout"
               subtitle={
-                railError ? (
-                  <p className="mt-2 truncate text-xs text-muted-foreground">
-                    Load failed
-                  </p>
-                ) : (
-                  <DayRail
-                    days={trainedRailDays}
-                    fillClassName="bg-success"
-                    outlineClassName="border-success"
-                    label={`${trainedDayCount} of 7 days trained`}
-                    className="mt-2"
-                  />
-                )
+                <p className="mt-2 truncate font-mono text-xs tabular-nums text-muted-foreground">
+                  {railError ? "load failed" : `${trainedDayCount}/7 days`}
+                </p>
               }
             />
             <StatCard
@@ -406,43 +405,34 @@ export default async function DashboardHome() {
                   const display = formatCountdown(c.target_date);
                   const toneClass =
                     display.tone === "accent"
-                      ? "text-accent font-semibold"
+                      ? "text-accent"
                       : display.tone === "warning"
-                        ? "text-warning font-semibold"
+                        ? "text-warning"
                         : display.tone === "dimmed"
                           ? "text-muted-foreground/50"
                           : "text-muted-foreground";
+                  // The progress BAR became a progress NUMBER. The bar was a
+                  // filled surface, which this direction does not have; the
+                  // percentage it encoded is the same figure stated in words,
+                  // and it joins the countdown's own label on the one meta
+                  // line every row here carries. Nothing stops being reported.
+                  const pct = countdownProgressPct(c.created_at, c.target_date);
                   return (
                     <DashboardRow
                       key={`countdown-${c.id}`}
                       leading={
                         // 24 = the Glyph rank. text-xl (20) was the one
                         // off-scale size on this page.
-                        <span className="text-2xl transition-transform group-hover:scale-110">
-                          {c.emoji}
-                        </span>
+                        <span className="text-2xl">{c.emoji}</span>
                       }
                       title={c.title}
-                      below={
-                        <ProgressBar
-                          className="mt-2"
-                          value={countdownProgressPct(
-                            c.created_at,
-                            c.target_date
-                          )}
-                          variant={
-                            display.tone === "warning" ? "warning" : "accent"
-                          }
-                        />
-                      }
-                      trailing={
-                        <span
-                          className={cn(
-                            "shrink-0 font-mono text-xs tabular-nums",
-                            toneClass
-                          )}
-                        >
-                          {display.label}
+                      meta={
+                        <span className={ROW_META}>
+                          <span className={toneClass}>{display.label}</span>
+                          <span className="text-muted-foreground/40"> · </span>
+                          <span className="text-muted-foreground">
+                            {pct}%
+                          </span>
                         </span>
                       }
                     />
@@ -455,15 +445,18 @@ export default async function DashboardHome() {
                   Date.parse(r.remind_at) - Date.now() < 3_600_000;
                 const toneClass =
                   display.tone === "danger"
-                    ? "text-danger font-medium"
+                    ? "text-danger"
                     : display.tone === "warning"
-                      ? "text-warning font-medium"
+                      ? "text-warning"
                       : "text-muted-foreground";
                 return (
                   <DashboardRow
                     key={`reminder-${r.id}`}
-                    bubbleClassName={cn(withinHour && "ring-1 ring-warning/40")}
                     leading={
+                      // The due-soon ring is gone with the bubble that carried
+                      // it. Urgency was always also in the meta tint; now that
+                      // is the only place it lives, and the glyph tint follows
+                      // the same rule.
                       <Bell
                         className={cn(
                           "h-4 w-4",
@@ -473,28 +466,35 @@ export default async function DashboardHome() {
                     }
                     title={r.title}
                     meta={
-                      <span
-                        className={cn(
-                          "font-mono text-xs tabular-nums",
-                          toneClass
-                        )}
-                      >
+                      <span className={cn(ROW_META, toneClass)}>
                         {display.label}
                       </span>
                     }
                   />
                 );
               })}
-            </ul>
-          )}
 
-          {!agendaError && agendaOverflow > 0 && (
-            <Link
-              href="/dashboard/tasks"
-              className="block border-t border-border p-4 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground"
-            >
-              +{agendaOverflow} more
-            </Link>
+              {/* Overflow is a ROW OF THE LIST, not a footer bar under it. It
+                  used to sit outside the <ul> with its own top hairline, a
+                  centred label and a surface hover — which, once the section
+                  stopped being a card, left it as the only filled thing in
+                  view. As an <li> it inherits the same divide-y hairline every
+                  other row gets, and it starts on the same x=16 as their
+                  titles instead of being centred against nothing. */}
+              {agendaOverflow > 0 && (
+                <li>
+                  <Link
+                    href="/dashboard/tasks"
+                    className={cn(
+                      ROW_META,
+                      "block px-4 py-4 text-muted-foreground transition-colors hover:text-accent"
+                    )}
+                  >
+                    +{agendaOverflow} more
+                  </Link>
+                </li>
+              )}
+            </ul>
           )}
         </SectionPanel>
       )}
@@ -509,6 +509,7 @@ export default async function DashboardHome() {
         <SectionPanel
           title="Revisit"
           count={revisitNotes.length}
+          countPlain
           href="/dashboard/notes?kind=revisit"
           linkLabel="View all"
           variant="plain"
@@ -521,15 +522,18 @@ export default async function DashboardHome() {
               density="compact"
             />
           ) : (
+            /* Same treatment as the agenda: the title is the sans body rank,
+               anything about the note is one mono-caps meta line. The BookOpen
+               glyph is gone — every row in a section headed "Revisit" is a
+               note, so the icon stated the one thing already true of all of
+               them, and it cost the title its left alignment with every other
+               title on the page. */
             <ul className="divide-y">
               {revisitNotes.map((n) => (
-                <li key={n.id} className="p-4">
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <p className="truncate text-sm font-semibold text-foreground">
-                      {n.title}
-                    </p>
-                  </div>
+                <li key={n.id} className="px-4 py-4">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {n.title}
+                  </p>
                   {n.content.trim() && (
                     <div
                       className="prose-preview mt-2 text-sm text-muted-foreground"

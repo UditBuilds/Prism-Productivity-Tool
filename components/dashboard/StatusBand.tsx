@@ -1,32 +1,34 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The dashboard's status zone — the four counters — in ONE tier-1 container.
+ * The dashboard's status zone — the four counters.
  *
- * It used to carry the mood check-in above the counters, separated by a
- * hairline. The check-in was removed from the dashboard (the `mood_logs`
- * feature itself is untouched — the Learn page's Mood tab and the Weekly
- * Review still read it), so the `checkIn` prop and the `* + *` divider rule
- * that existed only to separate the two groups are gone with it. One group
- * needs no divider.
+ * WHY THIS NO LONGER BLEEDS TO THE VIEWPORT EDGE.
  *
- * Why a full-bleed band rather than an inset card (the one stated exception in
- * the dashboard's visual system):
+ * It used to be a full-bleed tier-1 card (`-mx-4 border-y bg-surface px-4`),
+ * and the justification was arithmetic rather than taste:
  *
  *   page content width          343px  (375 − 2 × 16px gutter)
  *   Day Rail intrinsic width     81px  (7 cells × 9px + 6 gaps × 3px)
- *   widest cell label         75.61px  ("DUE TODAY" / "REMINDERS")
  *
- * Four counter columns need `4c + 3g ≤ 343 − 2P` with `c ≥ 81`, which reduces
- * to `2P + 3g ≤ 19`. A single pair of 16px insets is already 32px, so there is
- * no gap value that lets the strip sit inside a normally-padded card at 375px
- * — the rail clips. Bleeding to the viewport edge and re-applying the page
- * gutter as the band's own padding keeps the columns at their measured 82.75px
- * and the rail whole, and puts the band's content on x=16, the same vertical
- * line every section header sits on.
+ * Four columns needed `4c + 3g ≤ 343 − 2P` with `c ≥ 81`, i.e. `2P + 3g ≤ 19`.
+ * One pair of 16px insets is already 32px, so NO gap value let the strip sit
+ * inside a normally-padded card at 375px — the rail clipped. Bleeding out and
+ * re-applying the page gutter as the band's own padding was the workaround.
  *
- * From `sm:` up the constraint disappears (columns are ~141px), so the band
- * becomes an ordinary inset card and the page reads as one family again.
+ * The type direction deletes the rail (TRAINED now states "1/7 days" as text),
+ * which deletes the 81px floor, which deletes the reason for the workaround.
+ * The band is an ordinary section again.
+ *
+ * The columns do not change width. `-mx-4 … px-4` was re-applying exactly the
+ * gutter it had just cancelled, so its content box was already 343px — the same
+ * 343px an ordinary section gets. Four columns at `gap-1` are 82.75px either
+ * way. Removing the bleed moves nothing horizontally; it only removes the
+ * surface, the two hairlines, and the `sm:` branch that existed to undo them.
+ *
+ * It is kept as a component rather than inlined because it is the one place
+ * that owns how the counter row meets the page margins — which is precisely the
+ * axis the symmetry variants explore.
  */
 export function StatusBand({
   counters,
@@ -36,15 +38,5 @@ export function StatusBand({
   counters: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <section
-      className={cn(
-        "-mx-4 border-y border-border bg-surface px-4 py-4",
-        "sm:mx-0 sm:rounded-xl sm:border-x",
-        className
-      )}
-    >
-      {counters}
-    </section>
-  );
+  return <section className={cn(className)}>{counters}</section>;
 }

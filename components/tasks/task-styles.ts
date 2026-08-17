@@ -19,6 +19,24 @@ export const priorityBorder: Record<TaskPriority, string> = {
   high: "border-l-danger hover:border-l-danger",
 };
 
+/**
+ * Priority as TEXT TINT only — no fill, no border, no pill.
+ *
+ * `priorityStyles` above is a filled badge and cannot be reused where priority
+ * is one segment of a running meta line ("3 DAYS OVERDUE · MEDIUM · DAILY"):
+ * its background and border are exactly what such a line has to not have. Same
+ * three semantics as the badge, carried by colour alone.
+ *
+ * Low is muted rather than tinted on purpose. Every task has a priority, so a
+ * distinct colour for the default value would tint most rows on the page and
+ * the ranking would stop meaning anything.
+ */
+export const priorityText: Record<TaskPriority, string> = {
+  low: "text-muted-foreground",
+  medium: "text-warning",
+  high: "text-danger",
+};
+
 export const statusStyles: Record<TaskStatus, string> = {
   todo: "bg-muted text-muted-foreground",
   in_progress: "bg-accent/15 text-accent",

@@ -2,53 +2,60 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Circle, Repeat } from "lucide-react";
+import { CheckCircle2, Circle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { hapticTap } from "@/lib/haptics";
 import { useUpdateTask } from "@/hooks/useTasks";
 import type { DueTone } from "@/lib/date";
 import type { Task } from "@/types/database";
-import { priorityBorder, priorityStyles } from "@/components/tasks/task-styles";
-import { DashboardRow, ROW_BUBBLE } from "@/components/dashboard/DashboardRow";
+import { priorityBorder, priorityText } from "@/components/tasks/task-styles";
+import {
+  DashboardRow,
+  ROW_BUBBLE,
+  ROW_META,
+} from "@/components/dashboard/DashboardRow";
 
 /** Meta tint per due tone. Overdue is the only one that raises its voice. */
 const TONE_CLASS: Record<DueTone, string> = {
-  danger: "text-danger font-medium",
+  danger: "text-danger",
   warning: "text-warning",
   muted: "text-muted-foreground",
 };
 
+/** The separator between meta segments. Muted so the segments rank, not it. */
+function Dot() {
+  return <span className="text-muted-foreground/40"> · </span>;
+}
+
 /**
  * A task row in the dashboard's agenda — overdue or due today.
  *
- * Was DueTodayRow. It now also carries overdue rows, which is the whole point
- * of this rebuild: a task that went past its date used to match no query on
- * this page and simply vanished, so the dashboard said "all clear" while work
- * was slipping.
+ * ONE META LINE, NOT THREE PLACES. This row used to state its condition in a
+ * due label, a recurrence glyph and a filled priority pill in a trailing slot.
+ * All three now share one mono-caps line, each segment tinted by its own rank:
+ *
+ *     3 DAYS OVERDUE · MEDIUM · DAILY
+ *      └ danger        └ warning └ muted
+ *
+ * That is the same information in one sentence instead of three fragments, and
+ * it gives the title back the width the pill was taking at 375px.
+ *
+ * THE TAP AFFORDANCE. The direction removes every surface, so the mark-done
+ * control cannot be a bordered checkbox or a filled bubble — that is the chrome
+ * the direction exists to delete. What is left is the glyph itself: a bare
+ * circle outline sitting on the page background like punctuation, inside a 36px
+ * hit box that is invisible but still finger-sized. It is the same glyph
+ * TaskCard uses, minus its container. The circle is the single most
+ * conventional "not done yet" mark there is, which is what lets it read as a
+ * control without any box around it.
  *
  * Future-dated tasks keep the separate, static UpcomingTaskRow — mark-done is
- * offered for work that is OWED (overdue, today) and withheld for work that
- * isn't yet, which is the existing decision, not a new one.
+ * offered for work that is OWED and withheld for work that isn't yet.
  *
- * `backlogCount` is the consolidation from components/tasks/group-backlog.ts:
- * the cron spawns one row per scheduled day, so an uncompleted recurring
- * template accumulates near-identical siblings daily. They collapse into this
- * one row rather than filling the list with the same title N times. Actions
- * here complete ONLY the fronting instance — the sibling rows are never
+ * `backlogCount` is the consolidation from components/tasks/group-backlog.ts.
+ * Actions here complete ONLY the fronting instance — the sibling rows are never
  * merged, hidden or altered, because per-day history is what analytics read.
- *
- * `dueLabel`/`dueTone` are computed server-side by formatDueDate so the IST
- * day math lives in exactly one place.
- *
- * ONE BADGE, ONE GLYPH. This row used to carry a priority pill AND a "Todo"
- * status pill while the future-dated row beside it carried only the priority
- * pill — two anatomies in one list. The status pill is gone outright: every row
- * in an agenda is a todo, so the badge stated the one thing that was true of
- * all of them, and it cost the title the width it needed. The recurring marker
- * moved out of the title line onto the meta line for the same reason. What is
- * left is the leading circle, the title, a meta line, and exactly one badge —
- * and UpcomingTaskRow now renders the same four things.
  */
 export function AgendaTaskRow({
   task,
@@ -86,7 +93,6 @@ export function AgendaTaskRow({
 
   return (
     <DashboardRow
-      className={cn(done && "border-success/30 bg-success/[0.04]")}
       accentBorder={priorityBorder[task.priority]}
       leadingInteractive
       leading={
@@ -104,9 +110,9 @@ export function AgendaTaskRow({
           )}
         >
           {done ? (
-            <CheckCircle2 className="h-5 w-5 animate-pop" />
+            <CheckCircle2 className="h-4 w-4 animate-pop" />
           ) : (
-            <Circle className="h-5 w-5" />
+            <Circle className="h-4 w-4" />
           )}
         </button>
       }
@@ -117,41 +123,24 @@ export function AgendaTaskRow({
         </span>
       }
       meta={
-        dueLabel || task.recurring_task_id ? (
-          <span className="flex items-center gap-2">
-            {task.recurring_task_id && (
-              <Repeat
-                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                aria-label="Repeats daily"
-              />
-            )}
-            {dueLabel && (
-              <span
-                className={cn(
-                  "truncate font-mono text-xs tabular-nums",
-                  TONE_CLASS[dueTone]
-                )}
-              >
-                {dueLabel}
-                {backlogCount > 0 && (
-                  <span className="text-muted-foreground">
-                    {" "}
-                    · +{backlogCount} earlier
-                  </span>
-                )}
-              </span>
-            )}
-          </span>
-        ) : null
-      }
-      trailing={
-        <span
-          className={cn(
-            "shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize",
-            priorityStyles[task.priority]
+        <span className={ROW_META}>
+          {dueLabel && (
+            <span className={TONE_CLASS[dueTone]}>{dueLabel}</span>
           )}
-        >
-          {task.priority}
+          {dueLabel && backlogCount > 0 && (
+            <span className="text-muted-foreground">
+              {" "}
+              +{backlogCount} earlier
+            </span>
+          )}
+          {dueLabel && <Dot />}
+          <span className={priorityText[task.priority]}>{task.priority}</span>
+          {task.recurring_task_id && (
+            <>
+              <Dot />
+              <span className="text-muted-foreground">daily</span>
+            </>
+          )}
         </span>
       }
     />
