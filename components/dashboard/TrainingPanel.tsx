@@ -57,7 +57,11 @@ export function TrainingPanel() {
   if (restoring) {
     return (
       <SectionPanel title="Training" variant="plain">
-        <div className="h-5 w-40 animate-pulse rounded bg-surface-raised" />
+        {/* A word, not a grey block. A pulsing filled bar is a surface, and it
+            was the only one that ever appeared in this section. */}
+        <p className="animate-pulse font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+          Loading
+        </p>
       </SectionPanel>
     );
   }
@@ -170,15 +174,17 @@ export function TrainingPanel() {
               chips, four of them saying "nothing in 180d", wrapped to three
               lines and gave the absence of training more room than the
               training — the emptier the history, the louder the section got. */}
+          {/* The chips lost their fill. A body part and its staleness are a
+              noun and a number, and they read as a pair from the weight
+              difference alone — the capsule was doing no work the type wasn't
+              already doing. Wrapping is now on a wider gap so the pairs stay
+              distinguishable without a box to bound them. */}
           {trained.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-2">
+            <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
               {trained.map((b) => (
-                <li
-                  key={b.bodyPart}
-                  className="rounded-md bg-surface-raised px-2 py-1 text-xs text-foreground"
-                >
+                <li key={b.bodyPart} className="text-sm text-foreground">
                   {b.bodyPart}{" "}
-                  <span className="font-mono tabular-nums text-muted-foreground">
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
                     {formatDaysSince(b.daysSince as number).toLowerCase()}
                   </span>
                 </li>

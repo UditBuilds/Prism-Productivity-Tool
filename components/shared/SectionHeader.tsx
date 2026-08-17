@@ -12,6 +12,23 @@ export interface SectionHeaderProps {
   linkLabel?: string;
   /** Accent bar to the left of the title (dashboard sections). */
   accentBar?: boolean;
+  /**
+   * Render `count` as bare mono text instead of a filled pill.
+   *
+   * Opt-in, and defaulted off, because the pill is correct everywhere it
+   * already ships (Focus, Learn, Weekly Review, Calendar) and those pages are
+   * outside this change — flipping the default would restyle four screens as a
+   * side effect. The dashboard's type direction has no filled surfaces, so it
+   * asks for the number without the capsule.
+   */
+  countPlain?: boolean;
+  /**
+   * Extra classes on the <h2> itself. Exists so the dashboard's refined
+   * heading tracking can be applied without restyling Focus, Learn, Weekly
+   * Review and Calendar, which render this component directly and are outside
+   * that change. `className` lands on the wrapper and cannot reach the title.
+   */
+  titleClassName?: string;
   /** Custom right-side slot; wins over href. */
   action?: React.ReactNode;
   className?: string;
@@ -27,6 +44,8 @@ export function SectionHeader({
   href,
   linkLabel = "View all",
   accentBar = false,
+  countPlain = false,
+  titleClassName,
   action,
   className,
 }: SectionHeaderProps) {
@@ -38,9 +57,16 @@ export function SectionHeader({
           className="h-5 w-0.5 self-center rounded-full bg-accent"
         />
       )}
-      <h2 className="text-base font-semibold text-foreground">{title}</h2>
+      <h2 className={cn("text-base font-semibold text-foreground", titleClassName)}>
+        {title}
+      </h2>
       {count !== undefined && count > 0 && (
-        <span className="rounded-full bg-surface-raised px-2 py-0.5 font-mono text-xs font-medium tabular-nums text-muted-foreground">
+        <span
+          className={cn(
+            "font-mono text-xs font-medium tabular-nums text-muted-foreground",
+            !countPlain && "rounded-full bg-surface-raised px-2 py-0.5"
+          )}
+        >
           {count}
         </span>
       )}

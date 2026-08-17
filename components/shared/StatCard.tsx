@@ -2,7 +2,15 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { MonoLabel } from "@/components/shared/MonoLabel";
+import { MonoLabel, MONO_LABEL_REFINED } from "@/components/shared/MonoLabel";
+
+/**
+ * The strip's sub-line: one 12px mono meta line under the figure, always
+ * present so all four columns end on the same baseline. `leading-5` pins it to
+ * exactly one 20px line whether it holds text or the non-breaking space.
+ */
+const SUBLINE =
+  "mt-2 truncate font-mono text-xs leading-5 tabular-nums text-muted-foreground";
 
 /**
  * Tap affordance for a linked tile, borrowed wholesale from the TopBar icon
@@ -77,29 +85,52 @@ export function StatCard({
   );
 
   if (variant === "strip") {
-    // The strip lives in a grid-cols-4 gap-1 row that leaves ~83px per column,
-    // 81px of which the Day Rail needs. The link adds no padding of its own so
-    // the column geometry is exactly what it was.
+    // The strip no longer has to reserve 81px for a Day Rail — the rail was
+    // replaced by a text sub-line — so the column is free to size to its own
+    // content, which is what lets StatusBand distribute the four across the
+    // full measure. The link still adds no padding of its own.
     const body = (
       <>
         <MonoLabel
           as="span"
-          className={cn("block truncate", href && "group-hover:text-foreground")}
+          className={cn(
+            "block truncate",
+            MONO_LABEL_REFINED,
+            href && "group-hover:text-foreground"
+          )}
         >
           {label}
         </MonoLabel>
-        {/* space-inside (8): a label and its figure are one object. Was 2px,
-            which read as the label sitting ON the number rather than above
-            it — a large part of why the strip felt cramped. */}
+        {/* space-inside (8): a label and its figure are one object.
+            THE FIGURE IS SANS, NOT MONO. Two reasons, and the second is the
+            one that matters. First, the type direction carries hierarchy on
+            size/weight/case/colour alone, and a mono figure under a mono label
+            gives the pair no contrast to work with — the label stops reading as
+            subordinate. Second, JetBrains Mono draws a DOTTED zero: at 30px in
+            muted grey a `0` came out as a narrow ring with a dot in it, which
+            read as an outlined glyph rather than as the number nought. On a
+            page whose normal day is three zeros and one number, that is the
+            single most-rendered glyph on the screen. Instrument Sans draws a
+            plain `0`. tabular-nums is kept — Instrument Sans carries tnum, so
+            the figures still align column to column. */}
         <p
           className={cn(
-            "mt-2 font-mono text-3xl font-semibold tabular-nums tracking-tight",
+            "mt-2 font-sans text-3xl font-bold tabular-nums tracking-figure",
             valueTint
           )}
         >
           {value}
         </p>
-        {subtitle}
+        {/* THE SUB-LINE SLOT IS ALWAYS RENDERED, filled or not.
+            Only TRAINED has anything to say here ("1/7 days"), and when it was
+            the only column with a sub-line the whole band ended on a ragged
+            bottom edge with one counter hanging lower than its three
+            neighbours. A non-breaking space reserves exactly one meta line in
+            every column, so the band closes on a straight edge.
+            It changes nothing visible while three of four slots are empty —
+            it is structural, and it is what stops a second counter gaining a
+            sub-line from shifting the section below it. */}
+        <p className={SUBLINE}>{subtitle ?? " "}</p>
       </>
     );
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CornerDownLeft } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { hapticTap } from "@/lib/haptics";
@@ -174,6 +173,13 @@ export function CaptureField() {
         </span>
       ) : null}
 
+      {/* THE GLYPH IS A CHARACTER, NOT AN ICON IN A BOX. It shipped as a 28px
+          `rounded-md bg-surface-raised` tile around a lucide arrow — a filled
+          surface, which is the one thing this direction does not have. `↵`
+          (U+21B5) says the same thing in the type system: it is submit, drawn
+          in the mono face at the meta rank, and it earns its enabled state with
+          colour rather than with a background. The 36px box keeps the tap
+          target finger-sized without drawing anything. */}
       <button
         type="submit"
         disabled={!pending}
@@ -183,13 +189,16 @@ export function CaptureField() {
             : "Add"
         }
         className={cn(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
+          // text-xs, not text-sm: the glyph is mono at the 12px Meta rank. At
+          // 14 it was the page's one off-scale size — 14 is the sans Body
+          // rank, and one rank per size is the rule.
+          "flex h-9 w-9 shrink-0 items-center justify-center font-mono text-xs transition-colors",
           pending
-            ? "bg-surface-raised text-foreground hover:text-accent"
+            ? "text-foreground hover:text-accent"
             : "text-muted-foreground/40"
         )}
       >
-        <CornerDownLeft className="h-3.5 w-3.5" />
+        <span aria-hidden>↵</span>
       </button>
     </form>
   );

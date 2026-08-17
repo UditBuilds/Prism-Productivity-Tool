@@ -26,6 +26,7 @@ import { SectionHeader } from "@/components/shared/SectionHeader";
 export function SectionPanel({
   title,
   count,
+  countPlain,
   href,
   linkLabel,
   action,
@@ -53,6 +54,8 @@ export function SectionPanel({
 }: {
   title: string;
   count?: number;
+  /** Render the count as bare mono text rather than a filled pill. */
+  countPlain?: boolean;
   href?: string;
   linkLabel?: string;
   action?: React.ReactNode;
@@ -65,11 +68,17 @@ export function SectionPanel({
       <SectionHeader
         title={title}
         count={count}
+        countPlain={countPlain}
         href={href}
         linkLabel={linkLabel}
         action={action}
         accentBar
         className="mb-4 gap-2"
+        // The refined heading rank. Applied here rather than inside
+        // SectionHeader so the four pages that use that component directly
+        // stay byte-identical — the same local-override convention this
+        // component already uses for the header's spacing.
+        titleClassName="tracking-heading"
       />
       {variant === "plain" ? (
         children

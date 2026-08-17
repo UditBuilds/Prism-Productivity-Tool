@@ -28,6 +28,23 @@ const config: Config = {
           "monospace",
         ],
       },
+      /**
+       * Tracking tokens for the dashboard's refined type spec. Named rather
+       * than written as arbitrary `tracking-[-0.03em]` literals at the call
+       * sites, so the four ranks have one definition each and a future change
+       * is a single edit.
+       *
+       * Optical sizing: the bigger the type, the tighter it wants to be set.
+       * The 30px figure closes up, the 12px mono caps open out (uppercase at a
+       * small size needs air between letters to stay readable), and the 16px
+       * heading takes only a hair.
+       */
+      letterSpacing: {
+        figure: "-0.03em", // 30px mono-width figures
+        label: "0.14em", // 12px mono caps — counter labels
+        meta: "0.06em", // 12px mono caps — row state lines
+        heading: "-0.01em", // 16px section titles
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
