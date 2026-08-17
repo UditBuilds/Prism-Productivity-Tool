@@ -15,8 +15,18 @@ import { useCreateTask } from "@/hooks/useTasks";
 import { useCreateNote } from "@/hooks/useNotes";
 import { useLogWorkout } from "@/hooks/useWorkouts";
 
-/** How long the "added to X" line stays up. */
+/** How long the "added to X" confirmation stays up. */
 const CONFIRM_MS = 2600;
+
+/**
+ * The prefix syntax, shown ONLY while the field has focus.
+ *
+ * It rides in the PLACEHOLDER rather than on a line of its own, which is what
+ * keeps the component exactly one line tall in every state — a hint that
+ * appears below on focus would still push the page down the moment the field
+ * is tapped. The resting placeholder carries no instructions at all.
+ */
+const SYNTAX_HINT = "/n note · /w workout · else task";
 
 /**
  * The dashboard's one input. Everything else on this page is a readout.
@@ -46,6 +56,18 @@ const CONFIRM_MS = 2600;
  * counters — router.refresh() is what re-runs the server queries. It fires on
  * settle rather than on submit, because there is nothing new to fetch until
  * the row exists.
+ *
+ * NO BOX, ONE LINE. It shipped as a bordered, rounded, padded card carrying a
+ * permanent two-line mono legend — visually larger than the input itself, and
+ * the page's SECOND bordered element. PR #42 had deliberately left the status
+ * band as the only bordered thing on the dashboard, so that the border still
+ * meant "these are readouts"; a second box took the meaning away. The field now
+ * sits on the page background, is one line in every state, and says nothing at
+ * rest. The syntax moves into the focus placeholder (SYNTAX_HINT) and the
+ * destination/confirmation moves into a trailing slot on the same line.
+ *
+ * Routing is untouched — routeCapture, the three mutations and the confirmation
+ * timing are byte-for-byte what they were. This was presentation only.
  */
 export function CaptureField() {
   const router = useRouter();
@@ -53,6 +75,7 @@ export function CaptureField() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [value, setValue] = useState("");
+  const [focused, setFocused] = useState(false);
   const [confirmed, setConfirmed] = useState<CaptureDestination | null>(null);
 
   const createTask = useCreateTask();
@@ -113,56 +136,61 @@ export function CaptureField() {
   }
 
   return (
-    <form onSubmit={submit} className="rounded-xl border border-border bg-surface p-4">
+    // No border, no surface, no radius: this is not a card. py-2 is the one
+    // spacing value here — space-inside (8) above and below a single 20px text
+    // line gives a 36px row, the same height as the agenda rows' leading bubble.
+    <form onSubmit={submit} className="flex items-center gap-2 py-2">
       <label htmlFor="capture" className="sr-only">
         Capture a task, note or workout
       </label>
-      <div className="flex items-center gap-2">
-        <input
-          id="capture"
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="Capture anything…"
-          autoComplete="off"
-          enterKeyHint="done"
-          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-        />
-        <button
-          type="submit"
-          disabled={!pending}
-          aria-label={
-            pending
-              ? `Add to ${CAPTURE_DESTINATION_LABEL[pending.destination]}`
-              : "Add"
-          }
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
-            pending
-              ? "bg-surface-raised text-foreground hover:text-accent"
-              : "text-muted-foreground/40"
-          )}
-        >
-          <CornerDownLeft className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      <input
+        id="capture"
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        // The ONLY place the syntax is ever stated, and only while focused.
+        placeholder={focused ? SYNTAX_HINT : "Capture anything…"}
+        autoComplete="off"
+        enterKeyHint="done"
+        className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+      />
 
-      {/* space-inside (8): the hint belongs to the field above it. One line,
-          three states — never all three at once, so the field's height only
-          changes between "typing" and "not typing". */}
-      <p className="mt-2 font-mono text-xs text-muted-foreground">
-        {confirmed ? (
-          <span className="text-success">
-            Added to {CAPTURE_DESTINATION_LABEL[confirmed]}
-          </span>
-        ) : pending ? (
-          <span>→ {CAPTURE_DESTINATION_LABEL[pending.destination]}</span>
-        ) : (
-          <span className="text-muted-foreground/70">
-            /n note · /w workout · anything else becomes a task
-          </span>
+      {/* Destination feedback rides on the SAME line as the input rather than
+          under it. Both strings are short ("→ notes", "Added to workouts") and
+          the input is min-w-0 flex-1, so it gives up width smoothly instead of
+          the row growing a second line. */}
+      {confirmed ? (
+        <span
+          className="shrink-0 font-mono text-xs text-success"
+          role="status"
+        >
+          Added to {CAPTURE_DESTINATION_LABEL[confirmed]}
+        </span>
+      ) : pending ? (
+        <span className="shrink-0 font-mono text-xs text-muted-foreground">
+          → {CAPTURE_DESTINATION_LABEL[pending.destination]}
+        </span>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={!pending}
+        aria-label={
+          pending
+            ? `Add to ${CAPTURE_DESTINATION_LABEL[pending.destination]}`
+            : "Add"
+        }
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
+          pending
+            ? "bg-surface-raised text-foreground hover:text-accent"
+            : "text-muted-foreground/40"
         )}
-      </p>
+      >
+        <CornerDownLeft className="h-3.5 w-3.5" />
+      </button>
     </form>
   );
 }
