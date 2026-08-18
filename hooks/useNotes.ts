@@ -75,6 +75,33 @@ export const updateNoteMutationOptions = {
 export const deleteNoteMutationOptions = {
   mutationKey: ["notes", "delete"] as const,
   mutationFn: (id: string) => request<{ id: string }>("DELETE", { id }),
+  /**
+   * ONE retry, against the global mutation default of 3.
+   *
+   * This is the only mutation in the app sitting behind a modal confirm that
+   * BLOCKS on it. At the global 3 (TanStack's ~1s / 2s / 4s backoff) a failing
+   * delete took four attempts and ~9s to reach a terminal state, and for that
+   * whole window the dialog read "Deleting…" with BOTH buttons disabled — the
+   * user could neither retry nor cancel. Measured, not estimated: attempts
+   * landed at t+1.7s, t+2.7s, t+4.7s, t+8.7s, with the error toast at t+9.1s.
+   * One retry is a single ~1s backoff, so the dialog reports failure and hands
+   * the buttons back in about two seconds.
+   *
+   * NOT 0. The retryer only reaches the branch that PAUSES a mutation after a
+   * failure it considers retryable; at retry 0 it rejects on the first failure
+   * instead, so a delete tapped offline would settle as an error rather than
+   * queue. Never paused means never persisted (shouldDehydrateMutation gates on
+   * isPaused), so the delete would be silently lost. 1 is the smallest value
+   * that keeps offline queuing intact.
+   *
+   * The REPLAY path is deliberately untouched and still uses the global 3:
+   * lib/offline-mutations.ts registers only this object's mutationFn with
+   * setMutationDefaults, not the whole object, so a resumed delete keeps the
+   * three retries that exist to bridge the reconnect race (the online event
+   * fires before the network interface is usable). No dialog is waiting on
+   * that path, so its latency costs nothing.
+   */
+  retry: 1,
 };
 
 export function useCreateNote() {

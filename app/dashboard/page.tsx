@@ -12,7 +12,6 @@ import {
   countdownProgressPct,
 } from "@/lib/date";
 import { cn } from "@/lib/utils";
-import { renderMarkdown } from "@/lib/markdown";
 import { groupRecurringBacklog } from "@/components/tasks/group-backlog";
 import type { Countdown, Note, Reminder, Task } from "@/types/database";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
@@ -21,6 +20,7 @@ import { CaptureField } from "@/components/dashboard/CaptureField";
 import { TrainingPanel } from "@/components/dashboard/TrainingPanel";
 import { AgendaTaskRow } from "@/components/dashboard/AgendaTaskRow";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
+import { RevisitNoteRow } from "@/components/dashboard/RevisitNoteRow";
 import { DashboardRow, ROW_META } from "@/components/dashboard/DashboardRow";
 import { StatusBand } from "@/components/dashboard/StatusBand";
 import { SectionPanel } from "@/components/dashboard/SectionPanel";
@@ -525,27 +525,18 @@ export default async function DashboardHome() {
               density="compact"
             />
           ) : (
-            /* Same treatment as the agenda: the title is the sans body rank,
-               anything about the note is one mono-caps meta line. The BookOpen
-               glyph is gone — every row in a section headed "Revisit" is a
-               note, so the icon stated the one thing already true of all of
-               them, and it cost the title its left alignment with every other
-               title on the page. */
+            /* The row moved into a client island so it can carry a delete.
+               The section around it stays server-rendered — only the row needs
+               state, and only the row needs router.refresh() after a delete.
+
+               Its Direction A anatomy lives in that component: title at the
+               sans body rank, no BookOpen glyph — every row in a section
+               headed "Revisit" is a note, so the icon stated the one thing
+               already true of all of them, and it cost the title its left
+               alignment with every other title on the page. */
             <ul className="divide-y">
               {revisitNotes.map((n) => (
-                <li key={n.id} className="px-4 py-4">
-                  <p className="truncate text-sm font-semibold text-foreground">
-                    {n.title}
-                  </p>
-                  {n.content.trim() && (
-                    <div
-                      className="prose-preview mt-2 text-sm text-muted-foreground"
-                      dangerouslySetInnerHTML={{
-                        __html: renderMarkdown(n.content),
-                      }}
-                    />
-                  )}
-                </li>
+                <RevisitNoteRow key={n.id} note={n} />
               ))}
             </ul>
           )}
