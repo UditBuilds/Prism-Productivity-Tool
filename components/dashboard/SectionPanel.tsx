@@ -68,6 +68,40 @@ export function SectionPanel({
    *   0.75rem, which is byte-identical to the default `rounded-xl`. The real
    *   tighter step in this project is `rounded-sm` = calc(var(--radius) - 4px).
    *
+   * WHY THE FILL AND BORDER ARE LITERAL VALUES AND NOT `bg-surface`/`border-
+   * border`. The block first shipped on the tokens and read as barely there.
+   * The reason turned out to be measurable rather than a matter of taste:
+   *
+   *     --background #0F1012  ->  --surface #17181C   =  1.073 : 1
+   *
+   * WCAG's floor for non-text contrast is 3:1, so the token step is not a weak
+   * signal, it is very close to no signal. `--surface-raised` only reaches
+   * 1.157:1, which is why the "step it up one tier" attempt also failed to
+   * register. Four strengths were rendered and judged; these are the pair that
+   * was picked:
+   *
+   *     fill    hsl(228 10% 19%)  #2C2E35  =  1.404 : 1 against --background
+   *     border  hsl(224 10% 32%)  #494E5A  =  2.285 : 1 against --background
+   *
+   * Both stay inside the graphite family (hue 224-228, sat 10%), so neither
+   * introduces a new colour into the system.
+   *
+   * They are LITERALS ON PURPOSE, and they live here — once — rather than at
+   * the call sites. Raising `--surface` itself would move every surface in the
+   * app: `bg-surface` appears 81 times across 63 files and `bg-surface-raised`
+   * 108 times across 46 files, which is a redesign of Prism's depth vocabulary
+   * rather than a dashboard change. Promoting these to tokens is a separate
+   * decision to be taken with the other pages in view.
+   *
+   * KNOWN CONSEQUENCE — the elevation vocabulary inverts INSIDE a block. At
+   * 1.404:1 this fill is brighter than `--surface-raised` (1.157:1), so any
+   * tier-2 element nested in a block renders DARKER than its container. On the
+   * populated path nothing does: the dashboard rows carry no `bg-` class at
+   * all. The one exception is `EmptyState`, which draws `bg-surface` with a
+   * `bg-surface-raised` icon circle and appears on the error branch of all
+   * three sections. It reads as a recess rather than a raise there. Left as-is
+   * deliberately, and rendered rather than assumed.
+   *
    * The `card` variant is deliberately left untouched so the Workout page,
    * which is its only caller, stays byte-identical.
    *
@@ -113,7 +147,7 @@ export function SectionPanel({
       {variant === "plain" ? (
         children
       ) : variant === "block" ? (
-        <div className="rounded-sm border border-border bg-surface p-4 [&>ul]:-m-4">
+        <div className="rounded-sm border border-[hsl(224_10%_32%)] bg-[hsl(228_10%_19%)] p-4 [&>ul]:-m-4">
           {children}
         </div>
       ) : (
