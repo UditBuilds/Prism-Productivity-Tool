@@ -362,7 +362,7 @@ export default async function DashboardHome() {
         <SectionPanel
           title="Today & next 7 days"
           href="/dashboard/tasks"
-          variant="plain"
+          variant="block"
         >
           {agendaError ? (
             <EmptyState
@@ -515,7 +515,7 @@ export default async function DashboardHome() {
           countPlain
           href="/dashboard/notes?kind=revisit"
           linkLabel="View all"
-          variant="plain"
+          variant="block"
         >
           {revisitError ? (
             <EmptyState
