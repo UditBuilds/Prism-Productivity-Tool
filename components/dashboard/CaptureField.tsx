@@ -10,6 +10,7 @@ import {
   routeCapture,
   type CaptureDestination,
 } from "@/lib/capture";
+import { BLOCK_SURFACE } from "@/components/dashboard/SectionPanel";
 import { useCreateTask } from "@/hooks/useTasks";
 import { useCreateNote } from "@/hooks/useNotes";
 import { useLogWorkout } from "@/hooks/useWorkouts";
@@ -135,10 +136,34 @@ export function CaptureField() {
   }
 
   return (
-    // No border, no surface, no radius: this is not a card. py-2 is the one
-    // spacing value here — space-inside (8) above and below a single 20px text
-    // line gives a 36px row, the same height as the agenda rows' leading bubble.
-    <form onSubmit={submit} className="flex items-center gap-2 py-2">
+    // THE FIELD LOOKS LIKE A FIELD.
+    //
+    // It shipped with no fill, border or radius, on the reasoning that the
+    // status band should be the only bordered thing on the page. Two things
+    // undid that. The sections are now contained blocks, so "the only bordered
+    // element" is no longer a property worth protecting; and with nothing
+    // around it the placeholder rendered as 16px muted text alone on the
+    // background — the same size as a section heading — so the one input on
+    // the page read as a heading.
+    //
+    // Measured before changing anything, because the obvious diagnosis was
+    // wrong in three places: the capture->band gap was already exactly 32, the
+    // glyph was already 8px from the input's edge rather than stranded, and
+    // 16px is not the largest type here (the counters are 30px). What was
+    // actually missing was a container, and only that.
+    //
+    // BLOCK_SURFACE, not a copy of its values: the field is supposed to match
+    // the sections, so it follows them wherever they are tuned to.
+    //
+    // h-11 (44px) replaces py-2. The old row was 52px, and that height was
+    // emergent rather than chosen — the 36px submit button plus 2x8 padding.
+    // Stating the height directly makes it a decision. px-4 is the block's own
+    // 16, which also pulls the glyph off the right margin and in against the
+    // padding.
+    <form
+      onSubmit={submit}
+      className={cn(BLOCK_SURFACE, "flex h-11 items-center gap-2 px-4")}
+    >
       <label htmlFor="capture" className="sr-only">
         Capture a task, note or workout
       </label>

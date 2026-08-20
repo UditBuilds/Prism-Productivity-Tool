@@ -2,6 +2,24 @@ import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/shared/SectionHeader";
 
 /**
+ * The dashboard's contained-surface treatment: fill, frame and radius, and the
+ * ONE place any of the three is written down.
+ *
+ * The `block` variant below uses it, and so does the capture field, which is
+ * not a section but is meant to read as the same kind of object. They are
+ * locked to this constant rather than each carrying its own copy because the
+ * whole point of the capture field adopting the treatment is that it MATCHES
+ * the sections — two copies would drift the first time either is tuned, and
+ * this pair has been tuned in every round so far.
+ *
+ * See the `variant` doc below for why these are literal values rather than
+ * `bg-surface` / `border-border`, and why raising the tokens instead is a
+ * different and much larger decision.
+ */
+export const BLOCK_SURFACE =
+  "rounded-sm border border-[hsl(224_10%_32%)] bg-[hsl(228_10%_19%)]";
+
+/**
  * A section: rank-1 header, then its body. Every dashboard content section
  * (Due Today, Workout, Upcoming, Revisit) and both Workout-page sections go
  * through here, so the page cannot drift back into six different section gaps
@@ -147,7 +165,7 @@ export function SectionPanel({
       {variant === "plain" ? (
         children
       ) : variant === "block" ? (
-        <div className="rounded-sm border border-[hsl(224_10%_32%)] bg-[hsl(228_10%_19%)] p-4 [&>ul]:-m-4">
+        <div className={cn(BLOCK_SURFACE, "p-4 [&>ul]:-m-4")}>
           {children}
         </div>
       ) : (
