@@ -286,11 +286,18 @@ export default async function DashboardHome() {
           which on a normal day has an answer, where the old four ("due today",
           "done", "review", "reminders") were three zeros and a number.
 
-          See StatusBand for why this one section bleeds to the viewport edge:
-          the Day Rail is 81px intrinsic and four columns plus any inset gap
-          cannot fit 375px, so it re-applies the page gutter as its own padding
-          and keeps the columns at 82.75px. Unchanged here — only what the
-          cells READ has changed. */}
+          THIS SECTION NO LONGER BLEEDS. It used to: the Day Rail was 81px
+          intrinsic, and four columns plus any inset gap could not fit inside a
+          padded card at 375px, so the band ran to the viewport edge and
+          re-applied the page gutter as its own padding. PR #46 replaced the
+          rail with a text sub-line, which deleted the 81px floor and with it
+          the reason for the workaround — `StatusBand` is now an ordinary
+          inset row (`flex items-start justify-between`) and `DayRail` has no
+          caller left on this page.
+
+          What survives from that arithmetic is the invariant worth checking
+          after any change here: the band and all three section headers share
+          l=16 r=359.2 w=343.2 at 375px. Measured, not assumed. */}
       <StatusBand
         className="mt-8"
         counters={
@@ -362,7 +369,7 @@ export default async function DashboardHome() {
         <SectionPanel
           title="Today & next 7 days"
           href="/dashboard/tasks"
-          variant="plain"
+          variant="block"
         >
           {agendaError ? (
             <EmptyState
@@ -515,7 +522,7 @@ export default async function DashboardHome() {
           countPlain
           href="/dashboard/notes?kind=revisit"
           linkLabel="View all"
-          variant="plain"
+          variant="block"
         >
           {revisitError ? (
             <EmptyState

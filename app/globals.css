@@ -7,12 +7,26 @@
   All tokens defined in HSL so shadcn's `hsl(var(--x))` mappings resolve cleanly.
   The graphite scale is cool-biased (~hue 225), NOT pure gray — deliberate.
 
-  Hex reference:
-    background     #0F1012   surface        #16171B   surface-raised #1D1F24
-    border         #26282E   border-col     #34373F
-    text-primary   #EDEEF2   text-muted     #A3A7B3   text-low       #6A6E7A
-    accent (Iris)  #5B67EE   accent-hover   #6F79F0
-    success (Moss) #56B981   warning (Amber)#E9B44B   danger (Signal)#E45C55
+  Hex reference — these are what the HSL below ACTUALLY computes to in the
+  browser, recomputed and corrected. Nine of the twelve were off by 1-2 per
+  channel, which matters because contrast work on this palette is done in these
+  numbers: #16171B and #17181C look like the same colour in a comment and are
+  not the same value in a ratio.
+
+    background     #0F1012   surface        #17181C   surface-raised #1E2025
+    border         #272930   border-col     #32353E
+    text-primary   #EDEEF2   text-muted     #A2A7B3
+    success (Moss) #56B881   warning (Amber)#E9B449   danger (Signal)#E45A53
+
+  Iris is the one entry where the comment was NOT the wrong number. The brand
+  colour is #5B67EE and that is the literal in --accent-rgb below; the HSL
+  round-trip (235 81% 65%) lands 2 units away at #5D6AEE. Both are live: the
+  HSL feeds shadcn's hsl(var(--accent)) mappings, the RGB triplet feeds the
+  Tailwind accent utilities. Left alone rather than "fixed" — picking one would
+  change rendered colour somewhere.
+
+    accent (Iris)  #5B67EE via --accent-rgb / #5D6AEE via --accent HSL
+    accent-hover   #6F79F0 via --accent-hover-rgb / #707BF0 via HSL
 */
 
 @layer base {

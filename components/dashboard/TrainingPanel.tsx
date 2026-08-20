@@ -56,7 +56,7 @@ export function TrainingPanel() {
 
   if (restoring) {
     return (
-      <SectionPanel title="Training" variant="plain">
+      <SectionPanel title="Training" variant="block">
         {/* A word, not a grey block. A pulsing filled bar is a surface, and it
             was the only one that ever appeared in this section. */}
         <p className="animate-pulse font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
@@ -70,7 +70,7 @@ export function TrainingPanel() {
   // otherwise a broken query renders as "you have never trained".
   if (isError) {
     return (
-      <SectionPanel title="Training" variant="plain">
+      <SectionPanel title="Training" variant="block">
         <EmptyState
           icon={AlertCircle}
           title="Couldn't load your training history"
@@ -114,7 +114,7 @@ export function TrainingPanel() {
       title="Training"
       href="/dashboard/workout"
       linkLabel="View all"
-      variant="plain"
+      variant="block"
     >
       {/* Last session — the one line that answers "am I drifting?". */}
       {data.lastSessionDate && (
