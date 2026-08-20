@@ -11,7 +11,7 @@ Captured on a 375×812 mobile viewport at 2×, against a production build.
 | | |
 |:--|:--|
 | <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="330"> | <img src="docs/screenshots/tasks-list.png" alt="Tasks" width="330"> |
-| **Dashboard** — the day's mood check-in, counters for what is due, and today's tasks, workout, and upcoming items. | **Tasks** — status filter tabs above task rows carrying priority, status, and due date. |
+| **Dashboard** — a capture field, four drift counters (overdue, review, trained, open), then the week's agenda, training and revisit notes as contained sections. | **Tasks** — status filter tabs above task rows carrying priority, status, and due date. |
 | <img src="docs/screenshots/workout-logging.png" alt="Workout logging" width="330"> | <img src="docs/screenshots/srs-review.png" alt="Flashcard review" width="330"> |
 | **Workout** — gym shorthand parsed into individual sets; identical consecutive sets collapse into one row with a set count. | **Review** — the answer side of a due card with the four SM-2 grades and the interval each one would schedule. |
 
