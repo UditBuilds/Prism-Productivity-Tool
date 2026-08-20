@@ -17,7 +17,7 @@ import { SectionHeader } from "@/components/shared/SectionHeader";
  * different and much larger decision.
  */
 export const BLOCK_SURFACE =
-  "rounded-sm border border-[hsl(224_10%_32%)] bg-[hsl(228_10%_19%)]";
+  "rounded-sm border border-[hsl(224_10%_22%)] bg-[hsl(228_10%_13%)]";
 
 /**
  * A section: rank-1 header, then its body. Every dashboard content section
@@ -55,9 +55,6 @@ export function SectionPanel({
    *   Workout page's log form, its day's sets. The card is doing real work
    *   there, because those bodies are a form and a grouped list that need to
    *   read as single objects on a page dedicated to them.
-   * - `plain` — no container. The body sits directly on the page background;
-   *   rows carry their own 16 and separate with hairlines, and an EmptyState
-   *   draws its own dashed surface.
    * - `block` — the dashboard's single-level block. See below.
    *
    * WHY `block` EXISTS AND IS NOT JUST `card`. De-boxing the dashboard (the
@@ -93,13 +90,22 @@ export function SectionPanel({
    *     --background #0F1012  ->  --surface #17181C   =  1.073 : 1
    *
    * WCAG's floor for non-text contrast is 3:1, so the token step is not a weak
-   * signal, it is very close to no signal. `--surface-raised` only reaches
-   * 1.157:1, which is why the "step it up one tier" attempt also failed to
-   * register. Four strengths were rendered and judged; these are the pair that
-   * was picked:
+   * signal, it is very close to no signal. That single measurement is why three
+   * rounds of "the edge is too faint" kept failing: every attempt was tuning a
+   * signal that was never there.
    *
-   *     fill    hsl(228 10% 19%)  #2C2E35  =  1.404 : 1 against --background
-   *     border  hsl(224 10% 32%)  #494E5A  =  2.285 : 1 against --background
+   * The first fix over-corrected to 1.404:1 fill / 2.285:1 frame, which read as
+   * loud. A four-rung ladder was then rendered between the two extremes, and
+   * this is the rung picked — the QUIETEST one:
+   *
+   *     fill    hsl(228 10% 13%)  #1E1F24  =  1.157 : 1 against --background
+   *     frame   hsl(224 10% 22%)  #32353E  =  1.554 : 1 against --background
+   *
+   * WHY THE QUIETEST RUNG IS ENOUGH, which is the non-obvious part. This fill
+   * is the same value that shipped once before and was rejected as invisible —
+   * but that attempt had NO border. Paired with a real frame the identical fill
+   * reads as clearly contained. The frame carries containment; fill strength
+   * never did. So the fill can sit almost on the page and lose nothing.
    *
    * Both stay inside the graphite family (hue 224-228, sat 10%), so neither
    * introduces a new colour into the system.
@@ -108,27 +114,33 @@ export function SectionPanel({
    * the call sites. Raising `--surface` itself would move every surface in the
    * app: `bg-surface` appears 81 times across 63 files and `bg-surface-raised`
    * 108 times across 46 files, which is a redesign of Prism's depth vocabulary
-   * rather than a dashboard change. Promoting these to tokens is a separate
-   * decision to be taken with the other pages in view.
+   * rather than a dashboard change. The 1.073:1 token step is a real app-wide
+   * defect, but fixing it is a separate decision to take with the other pages
+   * in view — not something to smuggle in through the dashboard.
    *
-   * KNOWN CONSEQUENCE — the elevation vocabulary inverts INSIDE a block. At
-   * 1.404:1 this fill is brighter than `--surface-raised` (1.157:1), so any
-   * tier-2 element nested in a block renders DARKER than its container. On the
-   * populated path nothing does: the dashboard rows carry no `bg-` class at
-   * all. The one exception is `EmptyState`, which draws `bg-surface` with a
-   * `bg-surface-raised` icon circle and appears on the error branch of all
-   * three sections. It reads as a recess rather than a raise there. Left as-is
-   * deliberately, and rendered rather than assumed.
+   * ONE MORE THING THIS RUNG BUYS. The brighter fill inverted the elevation
+   * vocabulary: at 1.404:1 it sat ABOVE `--surface-raised` (1.157:1), so a
+   * tier-2 element nested in a block rendered darker than its container. At
+   * 1.157:1 the fill lands level with `--surface-raised` instead, so
+   * `EmptyState` and `PushHealthBanner` no longer read as recesses.
+   *
+   * A CAVEAT ON HOW ALL OF THIS WAS JUDGED: every rung was judged on a Windows
+   * display at 125% scaling, where Chrome snaps the 1px border down to 0.8px.
+   * This rung leans on its frame, so on a device that renders the full 1px it
+   * will read STRONGER than the images it was picked from.
    *
    * The `card` variant is deliberately left untouched so the Workout page,
    * which is its only caller, stays byte-identical.
    *
-   * The dashboard previously used `plain` for all of its sections. Wrapping
-   * each one in an identical bordered card made four different kinds of
-   * content — a task list, a readout, a schedule, saved notes — look like four
-   * instances of one widget, and that repetition (not the content) is what
-   * read as a stack of boxes. `block` is the answer to the opposite problem;
-   * if it ever reads as a widget stack again, that is the trade to revisit.
+   * The dashboard previously used a `plain` variant — no container at all — for
+   * all of its sections. Wrapping each one in an identical bordered card made
+   * four different kinds of content — a task list, a readout, a schedule, saved
+   * notes — look like four instances of one widget, and that repetition (not
+   * the content) is what read as a stack of boxes. `block` is the answer to the
+   * opposite problem; if it ever reads as a widget stack again, that is the
+   * trade to revisit. `plain` itself is gone: it had no call sites left once
+   * every section moved to `block`, the same reason `list` and `bare` were
+   * removed before it.
    */
   variant = "card",
   children,
@@ -141,7 +153,7 @@ export function SectionPanel({
   href?: string;
   linkLabel?: string;
   action?: React.ReactNode;
-  variant?: "card" | "plain" | "block";
+  variant?: "card" | "block";
   children: React.ReactNode;
   className?: string;
 }) {
@@ -162,9 +174,7 @@ export function SectionPanel({
         // component already uses for the header's spacing.
         titleClassName="tracking-heading"
       />
-      {variant === "plain" ? (
-        children
-      ) : variant === "block" ? (
+      {variant === "block" ? (
         <div className={cn(BLOCK_SURFACE, "p-4 [&>ul]:-m-4")}>
           {children}
         </div>
