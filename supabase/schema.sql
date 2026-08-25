@@ -40,6 +40,14 @@ $$;
 ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
 
 
+-- Binds handle_new_user() to auth.users so a profiles row is created on signup.
+-- This trigger exists in the live database but was missing here, so schema.sql
+-- did not reproduce a working deployment. NOTE: pg_dump of the public schema
+-- will NOT re-emit a trigger owned by auth.users -- re-add this by hand if this
+-- file is ever regenerated from a dump.
+CREATE OR REPLACE TRIGGER "on_auth_user_created" AFTER INSERT ON "auth"."users" FOR EACH ROW EXECUTE FUNCTION "public"."handle_new_user"();
+
+
 CREATE OR REPLACE FUNCTION "public"."update_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
