@@ -97,12 +97,23 @@ or, if the budget was merely busy:
 - Draft cards appear and are editable, then save with the usual toast.
 - Cards reference actual content from the PDF, not the filename.
 
-**Watch for silent under-delivery.** Smart mode makes up to 4 sequential Groq
-calls, and on the free tier the later ones can be refused; the route swallows a
-failed chunk and returns HTTP 200 with **fewer cards than requested and no
-error**. So: if you asked for 12 and got 5, that is not a parsing bug — check
-the dev-server console for `PDF chunk generation failed`. See the PR for
-detail; this behaviour predates the migration.
+**Under-delivery is no longer silent.** Smart mode makes up to 4 sequential Groq
+calls, and on the free tier the later ones can be refused. The route still
+carries on with whatever succeeded — but it now says so. If a chunk failed you
+get an amber banner above the drafts:
+
+> ⚠ 3 of 4 sections couldn't be analyzed, so there are fewer cards than usual.
+> Analyzing again in a minute usually picks up the rest.
+
+So a short card list is now self-explaining: banner = chunks failed, no banner =
+the AI simply judged that many cards were warranted. **If you get noticeably
+fewer cards than you asked for and there is NO banner, that is worth reporting**
+— it means the count dropped for a reason nothing is tracking.
+
+Note this is a different banner from the `sampled` one ("Large document —
+content was sampled across X of Y pages"). Sampled means we deliberately read
+only part of the document; partial means a part we *did* read came back empty.
+Both can show at once.
 
 **Fail**
 - A scanned PDF is *meant* to fail with a "scanned" message — that is correct,
@@ -126,10 +137,16 @@ detail; this behaviour predates the migration.
 - Open the deck on **Learn** and confirm the new cards are there.
 - No card says anything like "the video", "the speaker", or "as mentioned" —
   the prompt forbids it and cards must stand alone.
+- If some transcript sections were refused, an amber sub-line appears under the
+  success message: *"N of M transcript sections couldn't be analyzed, so this is
+  fewer cards than usual."* That is informational — the cards that did generate
+  are saved. A long video on a busy minute is the likely trigger.
 
 **Fail**
 - "Card generation failed for this video" → every chunk failed; check console.
 - A video without captions is expected to fail — try another.
+- Noticeably fewer cards than you asked for with **no** sub-line is worth
+  reporting: the count dropped without anything tracking why.
 
 ---
 
@@ -146,9 +163,15 @@ detail; this behaviour predates the migration.
   transcript chunk, up to 6).
 - Same rule as item 4: no "the video"/"the speaker" phrasing.
 - No section ends mid-sentence.
+- If some sections were refused, the toast changes from the plain green
+  "Note created from …" to an amber ⚠ notice naming how many sections are
+  missing. The note is still saved — this tells you it covers only part of the
+  video, so you can re-import later if you want the rest.
 
 **Fail**
 - "Note generation failed for this video" → all chunks failed; check console.
+- A conspicuously short note with a plain success toast is worth reporting —
+  every dropped section should be counted.
 
 ---
 
@@ -176,10 +199,11 @@ shorthand rather than a tidy sentence.
 - A **single row with the raw text and no exercise/weight/reps** is the
   "unparsed row" fallback. It means the Groq call failed or returned unusable
   JSON. The raw text is preserved (nothing is lost), but the parse did not work.
-- Long captures are the risk here. A 12-exercise / 44-set session parses
-  correctly but uses **87% of the output-token budget**, so a substantially
-  longer capture can tip into the fallback. If you hit it, note roughly how many
-  exercises you logged — that number is the useful bug report.
+- Long captures are the risk here, though less so than they were. The output
+  cap was raised 2000 → 3000, which took the 12-exercise / 44-set reference
+  session from **87% of the budget down to 61%**. A very long capture can still
+  tip into the fallback. If you hit it, note roughly how many exercises you
+  logged — that number is the useful bug report.
 
 ---
 
