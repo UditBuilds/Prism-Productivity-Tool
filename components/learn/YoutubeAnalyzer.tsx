@@ -25,6 +25,10 @@ type Stage = "idle" | "fetching" | "generating";
 interface SuccessState {
   count: number;
   deckName: string;
+  /** Some transcript sections failed, so the card count is short. */
+  partial: boolean;
+  chunksFailed: number;
+  chunkCount: number;
 }
 
 export function YoutubeAnalyzer({ onSuccess }: YoutubeAnalyzerProps) {
@@ -80,7 +84,13 @@ export function YoutubeAnalyzer({ onSuccess }: YoutubeAnalyzerProps) {
 
       const resolvedDeck = deckName.trim() || json.data.videoTitle;
       const count = json.data.cards.length;
-      setSuccess({ count, deckName: resolvedDeck });
+      setSuccess({
+        count,
+        deckName: resolvedDeck,
+        partial: json.data.partial,
+        chunksFailed: json.data.chunksFailed,
+        chunkCount: json.data.chunkCount,
+      });
       onSuccess?.(count, resolvedDeck);
       // Reset the form for the next video.
       setUrl("");
@@ -183,6 +193,17 @@ export function YoutubeAnalyzer({ onSuccess }: YoutubeAnalyzerProps) {
               {success.count} card{success.count === 1 ? "" : "s"} added to
               &ldquo;{success.deckName}&rdquo;
             </p>
+            {/* Kept as a sub-line rather than the filled banner the PDF modal
+                uses — this panel's whole voice is "subtle, not loud", and the
+                cards did save. It explains a short count; it is not a failure. */}
+            {success.partial && (
+              <p className="mt-1 pl-6 text-xs text-warning">
+                {success.chunksFailed} of {success.chunkCount} transcript
+                section{success.chunkCount === 1 ? "" : "s"} couldn&rsquo;t be
+                analyzed, so this is fewer cards than usual. Running it again in
+                a minute usually picks up the rest.
+              </p>
+            )}
             <Link
               href="/dashboard/learn"
               className="mt-1 inline-block pl-6 text-xs text-accent underline underline-offset-2"

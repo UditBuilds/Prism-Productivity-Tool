@@ -140,6 +140,10 @@ export async function POST(request: Request) {
           );
 
     const perChunk: GeneratedCard[][] = [];
+    // Counted, not just logged — these chunks run back-to-back against one
+    // per-minute token budget, so later ones can fail while earlier ones
+    // succeeded. See YoutubeAnalyzeSuccess.chunksFailed.
+    let chunksFailed = 0;
     for (const chunk of chunks) {
       try {
         // Sequential on purpose: bounded Groq rate-limit pressure.
@@ -150,6 +154,7 @@ export async function POST(request: Request) {
         );
         perChunk.push(cards);
       } catch (err) {
+        chunksFailed += 1;
         console.error("YouTube chunk generation failed:", err);
       }
     }
@@ -186,6 +191,9 @@ export async function POST(request: Request) {
       videoId,
       videoTitle,
       transcriptLength: text.length,
+      chunkCount: chunks.length,
+      chunksFailed,
+      partial: chunksFailed > 0,
     };
     return ok(data);
   } catch (err) {

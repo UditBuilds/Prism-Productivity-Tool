@@ -37,6 +37,17 @@ export interface YoutubeAnalyzeSuccess {
   videoId: string;
   videoTitle: string;
   transcriptLength: number;
+  /** Transcript chunks sent to the AI (up to 6). */
+  chunkCount: number;
+  /**
+   * Chunks that produced nothing because generation failed — in practice a
+   * rate limit landing partway through the sequence. Without this, "fewer
+   * cards because chunks failed" and "fewer cards because the content only
+   * supported that many" are the same HTTP 200 with a short array.
+   */
+  chunksFailed: number;
+  /** `chunksFailed > 0`. */
+  partial: boolean;
 }
 
 /** Human recovery hint per error code (shown under the error message). */
