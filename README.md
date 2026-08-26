@@ -51,7 +51,7 @@ Captured on a 375×812 mobile viewport at 2×, against a production build.
 
 Three ingestion pipelines converge on one review queue:
 
-- **From notes** — Groq / LLaMA 3.3 70B turns note content into Q&A cards.
+- **From notes** — Groq / GPT-OSS 120B turns note content into Q&A cards.
 - **From PDFs** — a storage-backed pipeline that uploads directly to a private
   Supabase Storage bucket (sidestepping the serverless request-body limit),
   extracts per-page text with `pdf-parse`, chunks it, and merges results with
@@ -78,7 +78,7 @@ Three ingestion pipelines converge on one review queue:
 | Styling | Tailwind CSS v3 · shadcn/ui (Radix primitives) |
 | Server state | TanStack Query v5 |
 | UI state | Zustand v5 |
-| AI | Groq — LLaMA 3.3 70B |
+| AI | Groq — GPT-OSS 120B (`openai/gpt-oss-120b`) |
 | Transcripts | Supadata transcript API |
 | PDF | `pdf-parse` |
 | Charts | Recharts |

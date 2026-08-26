@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import Groq, { APIError, RateLimitError } from "groq-sdk";
 
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -36,6 +36,73 @@ const MAX_CONTENT_CHARS = 24000;
  * and 8,000 leaves room for the added headers, bullets and blank lines.
  */
 const MAX_TOKENS = 8000;
+
+/**
+ * Groq refuses an over-budget request in TWO different ways, and they need
+ * DIFFERENT advice — which is the whole point of this block. Both shapes below
+ * were observed from real calls on 2026-08-26, not inferred from the docs.
+ *
+ * 1. HTTP 413, plain `APIError` — "Request too large … TPM: Limit 8000,
+ *    Requested 12820, please reduce your message size". One request whose
+ *    prompt + max_tokens exceeds the account's ENTIRE per-minute budget.
+ *    DETERMINISTIC: the same note fails every time, so "Try again" is a lie.
+ *    The only fix available to the user is a shorter note.
+ *
+ * 2. HTTP 429, `RateLimitError` — "Rate limit reached … Used 7402, Requested
+ *    1069. Please try again in 3.5s". The budget was spent by RECENT calls.
+ *    TRANSIENT: waiting genuinely fixes it.
+ *
+ * Two traps worth knowing before touching this:
+ *
+ * - `instanceof RateLimitError` is FALSE for case 1. The oversized-request
+ *   error arrives as a bare `APIError` with status 413 even though its JSON
+ *   body says `"code":"rate_limit_exceeded"`. Matching only on RateLimitError
+ *   — the obvious implementation — silently misses the case this route is
+ *   most exposed to.
+ * - The SDK does NOT lift the body's `code`/`type` onto the error object:
+ *   `err.code` and `err.type` are both `undefined` in each case. Only
+ *   `err.status` is reliable, so that is what we branch on.
+ *
+ * Why this route and not the other five: reformat pairs a 24,000-char input
+ * allowance with `max_tokens: 8000`, and Groq reserves prompt + max_tokens up
+ * front, so a large note can exceed the 8,000 TPM budget in a SINGLE call. The
+ * other five either chunk before generating or carry far smaller per-call
+ * ceilings — see the PR for the per-route arithmetic.
+ */
+function capacityFailure(
+  err: unknown
+): { message: string; status: number; retryAfter?: string } | null {
+  if (!(err instanceof APIError)) return null;
+
+  // Case 1 — one request bigger than the whole per-minute budget.
+  if (err.status === 413) {
+    return {
+      message:
+        "This note is too large for the AI's current capacity, so nothing was saved. Split it into smaller notes and reformat them separately.",
+      status: 413,
+    };
+  }
+
+  // Case 2 — budget spent by recent activity; retrying later works.
+  if (err instanceof RateLimitError || err.status === 429) {
+    // Groq's retry-after is usually a small number of seconds (1 and 4 both
+    // observed), so the singular case is common enough to be worth getting
+    // right rather than shipping "in about 1 seconds".
+    const retryAfter = err.headers?.get("retry-after") ?? undefined;
+    const seconds = Number(retryAfter);
+    const wait =
+      retryAfter && Number.isFinite(seconds) && seconds > 0
+        ? ` Try again in about ${retryAfter} second${seconds === 1 ? "" : "s"}.`
+        : " Try again shortly.";
+    return {
+      message: `The AI is at capacity right now, so nothing was saved.${wait}`,
+      status: 429,
+      retryAfter,
+    };
+  }
+
+  return null;
+}
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -140,6 +207,16 @@ export async function POST(request: Request) {
     formatted = stripCodeFence(completion.choices[0]?.message?.content ?? "");
   } catch (err) {
     console.error("Note reformat (Groq) failed:", err);
+    // Capacity refusals get their own wording; everything else keeps the
+    // generic 502 below, unchanged.
+    const capacity = capacityFailure(err);
+    if (capacity) {
+      return json(
+        { data: null, error: capacity.message },
+        capacity.status,
+        capacity.retryAfter ? { "Retry-After": capacity.retryAfter } : undefined
+      );
+    }
     return json({ data: null, error: "AI formatting failed. Try again." }, 502);
   }
 
