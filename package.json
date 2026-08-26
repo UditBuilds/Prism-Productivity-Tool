@@ -2,7 +2,7 @@
   "name": "prism",
   "version": "0.2.0",
   "private": true,
-  "description": "AI-native personal productivity & spaced-repetition learning app — turns notes, PDFs, and YouTube videos into flashcards. Next.js 14, Supabase (RLS), Groq/LLaMA 3.3, PWA with web push.",
+  "description": "AI-native personal productivity & spaced-repetition learning app — turns notes, PDFs, and YouTube videos into flashcards. Next.js 14, Supabase (RLS), Groq/GPT-OSS 120B, PWA with web push.",
   "repository": {
     "type": "git",
     "url": "https://github.com/UditBuilds/Prism-Productivity-Tool"
@@ -17,7 +17,7 @@
     "flashcards",
     "ai",
     "groq",
-    "llama",
+    "gpt-oss",
     "productivity",
     "pwa",
     "web-push",

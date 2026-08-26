@@ -257,7 +257,7 @@ function TrustBar() {
   return (
     <div className="border-y border-border/40 bg-surface/30">
       <div className="mx-auto flex max-w-6xl items-center justify-center px-6 py-4 text-xs text-muted-foreground">
-        <span>Built with Next.js, TypeScript, Supabase, and Groq LLaMA 3.3 70B</span>
+        <span>Built with Next.js, TypeScript, Supabase, and Groq GPT-OSS 120B</span>
       </div>
     </div>
   );
@@ -567,7 +567,7 @@ function TechStack() {
   return (
     <section className="mx-auto max-w-3xl px-6 pb-24 text-center">
       <p className="text-sm text-muted-foreground">
-        Built with Next.js 14, TypeScript, Supabase, and Groq LLaMA 3.3 70B.
+        Built with Next.js 14, TypeScript, Supabase, and Groq GPT-OSS 120B.
       </p>
     </section>
   );

@@ -20,7 +20,7 @@ explains how the pieces fit together and the engineering decisions behind them.
 │   Route Handlers /app/api/* ── auth-guarded JSON endpoints        │
 └───────┬───────────────────┬───────────────────┬──────────────────┘
         ▼                   ▼                   ▼
-   Supabase Postgres   Groq (LLaMA 3.3)   Supadata (transcripts)
+   Supabase Postgres   Groq (GPT-OSS)     Supadata (transcripts)
    + RLS + Storage
         ▲
         │ pg_cron (1-min) → POST /api/push/due (x-cron-secret)
@@ -77,7 +77,7 @@ day index rather than the local time zone.
 Three sources converge on one output (`{ front, back }[]`) and one review queue.
 
 ### Notes → flashcards
-`lib/ai/client.ts` (server-only) sends note content to **Groq / LLaMA 3.3 70B**,
+`lib/ai/client.ts` (server-only) sends note content to **Groq / GPT-OSS 120B** (`openai/gpt-oss-120b`),
 then parses and validates the JSON array of cards.
 
 ### PDF → flashcards (storage-backed)
