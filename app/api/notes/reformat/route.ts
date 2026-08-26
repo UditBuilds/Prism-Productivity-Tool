@@ -12,7 +12,7 @@ import {
 // with their own prompts and keeps its client private, so we instantiate one
 // here for the reformat-specific system prompt rather than modifying it.
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = "openai/gpt-oss-120b";
 
 /**
  * Longest `content` this route will accept.
