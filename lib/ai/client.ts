@@ -49,6 +49,29 @@ function wasTruncated(finishReason: string | null | undefined): boolean {
 }
 
 /**
+ * The call succeeded and the model answered — there was simply nothing usable
+ * in the answer. An empty card array, or a note section with no text.
+ *
+ * This is NOT a technical failure, and the difference matters to any caller
+ * that reports partial results across a sequence of chunks. A 429 means "this
+ * chunk never ran, try again and you may get it"; this means "this stretch of
+ * the source had nothing in it", and retrying changes nothing. Counting the two
+ * together makes a healthy video with a quiet passage — an intro, a sponsor
+ * read, a long silence — report itself as degraded, which spends exactly the
+ * trust the partial flag exists to build.
+ *
+ * The messages are byte-identical to when these were plain `Error`s, so
+ * consumers that surface `err.message` (notably /api/srs/generate, which
+ * string-matches on it) are unaffected.
+ */
+export class EmptyGenerationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmptyGenerationError";
+  }
+}
+
+/**
  * Reads a note and returns spaced-repetition flashcards. SERVER-ONLY — this
  * touches GROQ_API_KEY, so it must only be called from API routes, never a
  * client component.
@@ -126,7 +149,7 @@ JSON array:`;
     }));
 
   if (cards.length === 0) {
-    throw new Error("No valid cards generated. Try again.");
+    throw new EmptyGenerationError("No valid cards generated. Try again.");
   }
 
   return cards;
@@ -184,7 +207,7 @@ Rules:
   }
 
   if (!text) {
-    throw new Error("No note content was generated.");
+    throw new EmptyGenerationError("No note content was generated.");
   }
   return text;
 }
@@ -267,7 +290,7 @@ No preamble. No markdown fences.`;
     }));
 
   if (cards.length === 0) {
-    throw new Error("No valid cards generated. Try again.");
+    throw new EmptyGenerationError("No valid cards generated. Try again.");
   }
 
   return cards;

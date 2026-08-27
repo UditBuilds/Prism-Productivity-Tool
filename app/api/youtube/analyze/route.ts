@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { generateFlashcardsFromTranscript } from "@/lib/ai/client";
+import {
+  EmptyGenerationError,
+  generateFlashcardsFromTranscript,
+} from "@/lib/ai/client";
 import {
   aiRateLimitHeaders,
   aiRateLimitMessage,
@@ -154,8 +157,15 @@ export async function POST(request: Request) {
         );
         perChunk.push(cards);
       } catch (err) {
-        chunksFailed += 1;
-        console.error("YouTube chunk generation failed:", err);
+        if (err instanceof EmptyGenerationError) {
+          // The call worked; this stretch of transcript just had nothing worth
+          // a card — an intro, a sponsor read, a long silence. Not a failure,
+          // and counting it would flag a healthy video as degraded.
+          console.warn("YouTube chunk had nothing to extract:", err.message);
+        } else {
+          chunksFailed += 1;
+          console.error("YouTube chunk generation failed:", err);
+        }
       }
     }
 
