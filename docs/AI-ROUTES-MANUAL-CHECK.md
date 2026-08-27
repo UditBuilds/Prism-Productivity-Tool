@@ -141,6 +141,15 @@ Both can show at once.
   success message: *"N of M transcript sections couldn't be analyzed, so this is
   fewer cards than usual."* That is informational — the cards that did generate
   are saved. A long video on a busy minute is the likely trigger.
+- **A quiet stretch is not a failure and must NOT raise the sub-line.** A long
+  intro, a sponsor read or a silent passage can legitimately produce no cards
+  for that section. The route counts only technical failures (a refused call),
+  so a video like that gives you fewer cards with **no** sub-line — correct, not
+  a bug. Worth knowing because retrying would not change it: there was nothing
+  there to extract. If you see the sub-line on a video that plainly just has a
+  quiet section, that IS worth reporting.
+  ⚠️ The two YouTube routes behave this way; `/api/pdf/analyze` still counts an
+  empty chunk as a failure and can show its banner for that reason.
 
 **Fail**
 - "Card generation failed for this video" → every chunk failed; check console.
@@ -167,11 +176,16 @@ Both can show at once.
   "Note created from …" to an amber ⚠ notice naming how many sections are
   missing. The note is still saved — this tells you it covers only part of the
   video, so you can re-import later if you want the rest.
+- **A quiet stretch is not a refusal.** A silent or filler passage can
+  legitimately yield no section, and that does NOT turn the toast amber: only a
+  technical failure (a refused call) counts. Retrying such a video would not
+  produce more, because there was nothing in that stretch to summarise.
 
 **Fail**
 - "Note generation failed for this video" → all chunks failed; check console.
-- A conspicuously short note with a plain success toast is worth reporting —
-  every dropped section should be counted.
+- A short note with a plain success toast is only worth reporting if the video
+  was talking the whole way through. Genuinely quiet stretches are expected to
+  drop out silently; refused sections are the ones that must be counted.
 
 ---
 
