@@ -38,6 +38,19 @@ export interface AnalyzeData {
   mode: AnalyzeMode;
   /** Number of text chunks sent to the AI. */
   chunkCount: number;
+  /**
+   * Chunks that came back with nothing because generation itself failed —
+   * almost always a rate limit landing mid-sequence, since the chunks run
+   * back-to-back against a per-minute token budget.
+   *
+   * This exists to separate two situations that used to look identical from
+   * the outside: fewer cards because some chunks never ran, versus fewer cards
+   * because the AI judged the content only supported that many. Both returned
+   * HTTP 200 with a short array and no way to tell them apart.
+   */
+  chunksFailed: number;
+  /** `chunksFailed > 0` — the card list is short for a reason worth showing. */
+  partial: boolean;
   /** True when the document had more text than we analyzed (sampled). */
   sampled: boolean;
   totalChars: number;

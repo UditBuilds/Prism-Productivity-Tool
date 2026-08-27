@@ -5,13 +5,29 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 const MODEL = "openai/gpt-oss-120b";
 
 /**
- * Output cap. A 12-exercise / 44-set session measured 937 completion tokens,
- * so 2000 leaves roughly double the headroom for the longest realistic single
- * capture. Set explicitly because this endpoint is called several times per
+ * Output cap. Set explicitly because this endpoint is called several times per
  * gym session — an unbounded completion on a pathological input would be both
  * slow and expensive.
+ *
+ * Sized on the 12-exercise / 44-set reference capture. That case cost 937
+ * completion tokens on llama-3.3-70b, which is where the old 2000 came from
+ * ("roughly double the headroom").
+ *
+ * `openai/gpt-oss-120b` is a REASONING model and its reasoning tokens are
+ * billed against this same cap, so the identical capture now costs 1,737
+ * (873 reasoning + 864 visible) — 1.85x, and 87% of a 2000 ceiling. The old
+ * margin was gone: past that reference case the budget is exhausted before the
+ * JSON is finished, and because this call runs in `response_format:
+ * json_object` mode the failure arrives as `400 json_validate_failed` with an
+ * empty `failed_generation` rather than a truncated body. parseWorkoutInput
+ * then throws and POST /api/workouts stores the unparsed row — no data is
+ * lost, but the parse silently stops working.
+ *
+ * 3000 restores a real margin (1,737 = 58%) and stays cheap against the
+ * account's 8,000 TPM ceiling: prompt + max_tokens for this call is ~1,050 +
+ * 3,000 = 4,050, still half the per-minute budget.
  */
-const MAX_TOKENS = 2000;
+const MAX_TOKENS = 3000;
 
 /** Longest raw_input we will send to the model (and store). */
 export const MAX_RAW_INPUT_LENGTH = 2000;

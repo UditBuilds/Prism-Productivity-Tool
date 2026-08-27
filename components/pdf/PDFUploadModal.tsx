@@ -563,6 +563,22 @@ export function PDFUploadModal() {
               </div>
             )}
 
+            {/* Distinct from `sampled`: that one means we deliberately read
+                part of the document, this one means a section we DID read came
+                back empty. Both can be true at once, so they are separate
+                blocks rather than one either/or notice. */}
+            {result.partial && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  {result.chunksFailed} of {result.chunkCount} section
+                  {result.chunkCount === 1 ? "" : "s"} couldn&rsquo;t be
+                  analyzed, so there are fewer cards than usual. Analyzing again
+                  in a minute usually picks up the rest.
+                </span>
+              </div>
+            )}
+
             {/* Analysis summary */}
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <FileText className="h-4 w-4 shrink-0 text-accent" />

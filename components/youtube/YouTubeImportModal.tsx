@@ -70,7 +70,12 @@ export function YouTubeImportModal({
         body: JSON.stringify({ url: url.trim() }),
       });
       const json = (await res.json()) as {
-        data: { note: Note } | null;
+        data: {
+          note: Note;
+          chunkCount: number;
+          chunksFailed: number;
+          partial: boolean;
+        } | null;
         error:
           | { code: YoutubeErrorCode; message: string; hint: string }
           | string
@@ -91,7 +96,17 @@ export function YouTubeImportModal({
       }
 
       qc.invalidateQueries({ queryKey: ["notes"] });
-      toast.success(`Note created from “${json.data.note.title}”`);
+      // The note saved either way, so this stays a notice rather than an
+      // error — same shape as the workout "logged but couldn't read the sets"
+      // toast. Without it a note missing a third of the video looks complete.
+      if (json.data.partial) {
+        toast(
+          `Note created from “${json.data.note.title}” — ${json.data.chunksFailed} of ${json.data.chunkCount} sections couldn't be generated, so part of the video is missing.`,
+          { icon: "⚠️", duration: 8000 }
+        );
+      } else {
+        toast.success(`Note created from “${json.data.note.title}”`);
+      }
       onClose();
     } catch {
       setError({

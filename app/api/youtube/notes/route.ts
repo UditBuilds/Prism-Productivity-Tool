@@ -42,6 +42,17 @@ interface YoutubeNotesSuccess {
   note: Note;
   videoId: string;
   videoTitle: string;
+  /** Transcript chunks sent to the AI (up to 6); one markdown section each. */
+  chunkCount: number;
+  /**
+   * Chunks that contributed no section — either generation threw (typically a
+   * rate limit partway through the sequence) or it came back empty. Both mean
+   * the saved note is missing a stretch of the video, which used to be
+   * indistinguishable from a legitimately shorter note.
+   */
+  chunksFailed: number;
+  /** `chunksFailed > 0`. */
+  partial: boolean;
 }
 
 type SuccessBody = { data: YoutubeNotesSuccess; error: null };
@@ -131,11 +142,15 @@ export async function POST(request: Request) {
       try {
         const section = await generateNotesFromTranscript(videoTitle, chunk);
         const trimmed = section.trim();
+        // An empty section is counted as failed too: from the reader's side a
+        // missing stretch of the video is a missing stretch, whether the call
+        // threw or just came back with nothing.
         if (trimmed) sections.push(trimmed);
       } catch (err) {
         console.error("YouTube note generation failed for a chunk:", err);
       }
     }
+    const chunksFailed = chunks.length - sections.length;
 
     if (sections.length === 0) {
       return fail("GROQ_ERROR", "Note generation failed for this video", 502);
@@ -164,7 +179,14 @@ export async function POST(request: Request) {
       );
     }
 
-    return ok({ note, videoId, videoTitle });
+    return ok({
+      note,
+      videoId,
+      videoTitle,
+      chunkCount: chunks.length,
+      chunksFailed,
+      partial: chunksFailed > 0,
+    });
   } catch (err) {
     if (err instanceof YoutubeExtractError) {
       const status =

@@ -255,6 +255,11 @@ export async function POST(request: Request) {
     );
 
     const perChunkCards: GeneratedCard[][] = [];
+    // Counted, not just logged. Sequential chunks share one per-minute token
+    // budget, so a long document can genuinely exhaust it partway through and
+    // the later chunks fail while the earlier ones succeeded. Swallowing that
+    // silently returns a short card list that looks like a normal result.
+    let chunksFailed = 0;
     for (const chunk of chunks) {
       try {
         // Sequential on purpose: bounded Groq rate-limit pressure.
@@ -265,6 +270,7 @@ export async function POST(request: Request) {
         );
         perChunkCards.push(cards);
       } catch (err) {
+        chunksFailed += 1;
         console.error("PDF chunk generation failed:", err);
       }
     }
@@ -294,6 +300,8 @@ export async function POST(request: Request) {
       pagesUsed: usedPages.length,
       mode,
       chunkCount: chunks.length,
+      chunksFailed,
+      partial: chunksFailed > 0,
       sampled: wasSampled,
       totalChars,
     };
