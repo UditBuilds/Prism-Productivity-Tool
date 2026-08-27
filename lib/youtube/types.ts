@@ -40,13 +40,18 @@ export interface YoutubeAnalyzeSuccess {
   /** Transcript chunks sent to the AI (up to 6). */
   chunkCount: number;
   /**
-   * Chunks that produced nothing because generation failed — in practice a
-   * rate limit landing partway through the sequence. Without this, "fewer
-   * cards because chunks failed" and "fewer cards because the content only
-   * supported that many" are the same HTTP 200 with a short array.
+   * Chunks lost to a TECHNICAL failure — in practice a rate limit landing
+   * partway through the sequence. Without this, "fewer cards because chunks
+   * failed" and "fewer cards because the content only supported that many" are
+   * the same HTTP 200 with a short array.
+   *
+   * Excludes chunks the model processed successfully but found nothing worth a
+   * card in (an intro, a sponsor read, a silence). Those also yield no cards,
+   * but retrying cannot recover them, so counting them would raise the partial
+   * flag on a perfectly healthy video.
    */
   chunksFailed: number;
-  /** `chunksFailed > 0`. */
+  /** `chunksFailed > 0` — some cards are missing and a retry may recover them. */
   partial: boolean;
 }
 

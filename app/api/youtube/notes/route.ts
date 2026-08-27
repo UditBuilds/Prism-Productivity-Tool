@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { generateNotesFromTranscript } from "@/lib/ai/client";
+import {
+  EmptyGenerationError,
+  generateNotesFromTranscript,
+} from "@/lib/ai/client";
 import {
   aiRateLimitHeaders,
   aiRateLimitMessage,
@@ -45,13 +48,13 @@ interface YoutubeNotesSuccess {
   /** Transcript chunks sent to the AI (up to 6); one markdown section each. */
   chunkCount: number;
   /**
-   * Chunks that contributed no section — either generation threw (typically a
-   * rate limit partway through the sequence) or it came back empty. Both mean
-   * the saved note is missing a stretch of the video, which used to be
-   * indistinguishable from a legitimately shorter note.
+   * Chunks lost to a TECHNICAL failure — typically a rate limit landing partway
+   * through the sequence. Deliberately excludes chunks the model handled fine
+   * but found nothing in: those produce no section either, yet retrying cannot
+   * recover them, so flagging them would tell the user to retry for nothing.
    */
   chunksFailed: number;
-  /** `chunksFailed > 0`. */
+  /** `chunksFailed > 0` — the note is missing a stretch that a retry may recover. */
   partial: boolean;
 }
 
@@ -138,19 +141,28 @@ export async function POST(request: Request) {
 
     // One markdown section per chunk (sequential — bounded Groq rate pressure).
     const sections: string[] = [];
+    // Counted directly rather than derived as `chunks.length - sections.length`.
+    // That subtraction cannot tell the two reasons a chunk yields no section
+    // apart, and they need opposite treatment: a rate limit means "retry and
+    // you may get it", an empty stretch of transcript means "there was nothing
+    // here". Only the first is a failure.
+    let chunksFailed = 0;
     for (const chunk of chunks) {
       try {
         const section = await generateNotesFromTranscript(videoTitle, chunk);
         const trimmed = section.trim();
-        // An empty section is counted as failed too: from the reader's side a
-        // missing stretch of the video is a missing stretch, whether the call
-        // threw or just came back with nothing.
+        // A successful call that returns nothing is the same "nothing here"
+        // case as EmptyGenerationError — no section, but nothing broke.
         if (trimmed) sections.push(trimmed);
       } catch (err) {
-        console.error("YouTube note generation failed for a chunk:", err);
+        if (err instanceof EmptyGenerationError) {
+          console.warn("YouTube chunk had nothing to summarise:", err.message);
+        } else {
+          chunksFailed += 1;
+          console.error("YouTube note generation failed for a chunk:", err);
+        }
       }
     }
-    const chunksFailed = chunks.length - sections.length;
 
     if (sections.length === 0) {
       return fail("GROQ_ERROR", "Note generation failed for this video", 502);

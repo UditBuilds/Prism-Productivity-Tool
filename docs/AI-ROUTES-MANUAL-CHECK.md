@@ -106,9 +106,18 @@ get an amber banner above the drafts:
 > Analyzing again in a minute usually picks up the rest.
 
 So a short card list is now self-explaining: banner = chunks failed, no banner =
-the AI simply judged that many cards were warranted. **If you get noticeably
-fewer cards than you asked for and there is NO banner, that is worth reporting**
-— it means the count dropped for a reason nothing is tracking.
+the AI simply judged that many cards were warranted.
+
+**A page with nothing to learn from is not a failure and must NOT raise the
+banner.** A title page, a references list, a page of figure captions — the model
+reads those fine and correctly produces no cards. Only a refused call counts, so
+a document padded with front- and back-matter gives you fewer cards with **no**
+banner. That is correct: retrying cannot conjure cards out of a bibliography.
+
+Which means the thing worth reporting is narrower than it looks. Fewer cards
+with no banner is only suspicious if the pages that were read were genuinely
+full of teachable content. Seeing the banner on a document that is mostly
+references IS worth reporting.
 
 Note this is a different banner from the `sampled` one ("Large document —
 content was sampled across X of Y pages"). Sampled means we deliberately read
@@ -141,6 +150,14 @@ Both can show at once.
   success message: *"N of M transcript sections couldn't be analyzed, so this is
   fewer cards than usual."* That is informational — the cards that did generate
   are saved. A long video on a busy minute is the likely trigger.
+- **A quiet stretch is not a failure and must NOT raise the sub-line.** A long
+  intro, a sponsor read or a silent passage can legitimately produce no cards
+  for that section. The route counts only technical failures (a refused call),
+  so a video like that gives you fewer cards with **no** sub-line — correct, not
+  a bug. Worth knowing because retrying would not change it: there was nothing
+  there to extract. If you see the sub-line on a video that plainly just has a
+  quiet section, that IS worth reporting.
+  All three AI-analysis routes behave this way — PDF included.
 
 **Fail**
 - "Card generation failed for this video" → every chunk failed; check console.
@@ -167,11 +184,16 @@ Both can show at once.
   "Note created from …" to an amber ⚠ notice naming how many sections are
   missing. The note is still saved — this tells you it covers only part of the
   video, so you can re-import later if you want the rest.
+- **A quiet stretch is not a refusal.** A silent or filler passage can
+  legitimately yield no section, and that does NOT turn the toast amber: only a
+  technical failure (a refused call) counts. Retrying such a video would not
+  produce more, because there was nothing in that stretch to summarise.
 
 **Fail**
 - "Note generation failed for this video" → all chunks failed; check console.
-- A conspicuously short note with a plain success toast is worth reporting —
-  every dropped section should be counted.
+- A short note with a plain success toast is only worth reporting if the video
+  was talking the whole way through. Genuinely quiet stretches are expected to
+  drop out silently; refused sections are the ones that must be counted.
 
 ---
 

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { generateFlashcardsFromNote } from "@/lib/ai/client";
+import {
+  EmptyGenerationError,
+  generateFlashcardsFromNote,
+} from "@/lib/ai/client";
 import {
   aiRateLimitHeaders,
   aiRateLimitMessage,
@@ -270,8 +273,16 @@ export async function POST(request: Request) {
         );
         perChunkCards.push(cards);
       } catch (err) {
-        chunksFailed += 1;
-        console.error("PDF chunk generation failed:", err);
+        if (err instanceof EmptyGenerationError) {
+          // The call worked; this stretch of the document just had nothing
+          // worth a card — a title page, a references list, a figure caption.
+          // Not a failure, and counting it would flag a healthy PDF as
+          // degraded and tell the user to retry for nothing.
+          console.warn("PDF chunk had nothing to extract:", err.message);
+        } else {
+          chunksFailed += 1;
+          console.error("PDF chunk generation failed:", err);
+        }
       }
     }
 
