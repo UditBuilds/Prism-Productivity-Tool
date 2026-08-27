@@ -39,17 +39,23 @@ export interface AnalyzeData {
   /** Number of text chunks sent to the AI. */
   chunkCount: number;
   /**
-   * Chunks that came back with nothing because generation itself failed —
-   * almost always a rate limit landing mid-sequence, since the chunks run
-   * back-to-back against a per-minute token budget.
+   * Chunks lost to a TECHNICAL failure — almost always a rate limit landing
+   * mid-sequence, since the chunks run back-to-back against a per-minute token
+   * budget.
    *
    * This exists to separate two situations that used to look identical from
    * the outside: fewer cards because some chunks never ran, versus fewer cards
    * because the AI judged the content only supported that many. Both returned
    * HTTP 200 with a short array and no way to tell them apart.
+   *
+   * Excludes chunks the model processed successfully but found nothing worth a
+   * card in — a title page, a references list, a page of figure captions.
+   * Those yield no cards either, but retrying cannot recover what was never
+   * there, so counting them would raise the partial flag on a healthy document
+   * and advise a retry that changes nothing.
    */
   chunksFailed: number;
-  /** `chunksFailed > 0` — the card list is short for a reason worth showing. */
+  /** `chunksFailed > 0` — some cards are missing and a retry may recover them. */
   partial: boolean;
   /** True when the document had more text than we analyzed (sampled). */
   sampled: boolean;

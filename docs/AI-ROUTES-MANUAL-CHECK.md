@@ -106,9 +106,18 @@ get an amber banner above the drafts:
 > Analyzing again in a minute usually picks up the rest.
 
 So a short card list is now self-explaining: banner = chunks failed, no banner =
-the AI simply judged that many cards were warranted. **If you get noticeably
-fewer cards than you asked for and there is NO banner, that is worth reporting**
-— it means the count dropped for a reason nothing is tracking.
+the AI simply judged that many cards were warranted.
+
+**A page with nothing to learn from is not a failure and must NOT raise the
+banner.** A title page, a references list, a page of figure captions — the model
+reads those fine and correctly produces no cards. Only a refused call counts, so
+a document padded with front- and back-matter gives you fewer cards with **no**
+banner. That is correct: retrying cannot conjure cards out of a bibliography.
+
+Which means the thing worth reporting is narrower than it looks. Fewer cards
+with no banner is only suspicious if the pages that were read were genuinely
+full of teachable content. Seeing the banner on a document that is mostly
+references IS worth reporting.
 
 Note this is a different banner from the `sampled` one ("Large document —
 content was sampled across X of Y pages"). Sampled means we deliberately read
@@ -148,8 +157,7 @@ Both can show at once.
   a bug. Worth knowing because retrying would not change it: there was nothing
   there to extract. If you see the sub-line on a video that plainly just has a
   quiet section, that IS worth reporting.
-  ⚠️ The two YouTube routes behave this way; `/api/pdf/analyze` still counts an
-  empty chunk as a failure and can show its banner for that reason.
+  All three AI-analysis routes behave this way — PDF included.
 
 **Fail**
 - "Card generation failed for this video" → every chunk failed; check console.
