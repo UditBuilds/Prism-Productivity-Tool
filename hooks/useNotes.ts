@@ -2,6 +2,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type MutationMeta,
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
@@ -104,10 +105,20 @@ export const deleteNoteMutationOptions = {
   retry: 1,
 };
 
-export function useCreateNote() {
+/**
+ * `meta` is an opt-in for call sites whose result is rendered by a Server
+ * Component (only CaptureField, on the dashboard). It is passed through to the
+ * mutation rather than acted on here: the single handler in app/providers.tsx
+ * reads it, so the behaviour is identical for an online success and for a
+ * capture replayed from the offline queue. Every other call site of this hook
+ * lives on a "use client" page and passes nothing, so nothing else is dragged
+ * into a router refresh it has no use for.
+ */
+export function useCreateNote(meta?: MutationMeta) {
   const qc = useQueryClient();
   return useMutation({
     ...createNoteMutationOptions,
+    meta,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: NOTES_KEY });
       const previous = qc.getQueryData<Note[]>(NOTES_KEY) ?? [];

@@ -1,11 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MutationCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Toaster } from "react-hot-toast";
 
 import { registerResumableMutations } from "@/lib/offline-mutations";
+import { requestServerDataRefresh } from "@/lib/rsc-refresh";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 
 // Persistence is NOT wired here on purpose. The root provider mounts before
@@ -16,6 +21,25 @@ import { ThemeProvider } from "@/components/providers/ThemeProvider";
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => {
     const qc = new QueryClient({
+      // ONE place decides that a mutation's result needs the Server Components
+      // re-rendered, and it is here rather than at any call site.
+      //
+      // This is the only callback layer handed the mutation object, so it is
+      // the only one that can read `meta` — options.onSuccess is not, and a
+      // per-key setMutationDefaults handler would additionally be overridden by
+      // the live useMutation. Being on the CACHE also means it fires for a
+      // mutation resumed from IndexedDB after a reload, whose call-site
+      // callbacks no longer exist; `meta` is dehydrated alongside
+      // mutationKey/state/scope, so the flag survives that trip.
+      //
+      // onSuccess, deliberately NOT onSettled. A failed capture has already
+      // been rolled back and toasted by its own hook; refreshing after it was
+      // the blank-page bug — see lib/rsc-refresh.ts.
+      mutationCache: new MutationCache({
+        onSuccess: (_data, _variables, _context, mutation) => {
+          if (mutation.meta?.refreshServerData) requestServerDataRefresh();
+        },
+      }),
       defaultOptions: {
         queries: {
           staleTime: 30_000,
