@@ -2,6 +2,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type MutationMeta,
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
@@ -119,10 +120,20 @@ export const deleteTaskMutationOptions = {
   mutationFn: (id: string) => request<{ id: string }>("DELETE", { id }),
 };
 
-export function useCreateTask() {
+/**
+ * `meta` is an opt-in for call sites whose result is rendered by a Server
+ * Component (only CaptureField, on the dashboard). It is passed through to the
+ * mutation rather than acted on here: the single handler in app/providers.tsx
+ * reads it, so the behaviour is identical for an online success and for a
+ * capture replayed from the offline queue. Every other call site of this hook
+ * lives on a "use client" page and passes nothing, so nothing else is dragged
+ * into a router refresh it has no use for.
+ */
+export function useCreateTask(meta?: MutationMeta) {
   const qc = useQueryClient();
   return useMutation({
     ...createTaskMutationOptions,
+    meta,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: TASKS_KEY });
       const previous = qc.getQueryData<Task[]>(TASKS_KEY) ?? [];

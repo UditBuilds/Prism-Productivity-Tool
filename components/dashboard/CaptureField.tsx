@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { CalendarIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -17,6 +16,7 @@ import {
   workoutPerformedAtIso,
   workoutToday,
 } from "@/lib/workouts";
+import { REFRESH_SERVER_DATA } from "@/lib/rsc-refresh";
 import { BLOCK_SURFACE } from "@/components/dashboard/SectionPanel";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -65,10 +65,23 @@ const SYNTAX_HINT = "/n note · /w workout · else task";
  * toasts carry the server-confirmed detail (including, for /w, whether the
  * shorthand actually parsed).
  *
- * The dashboard is a Server Component, so a query invalidation cannot move its
- * counters — router.refresh() is what re-runs the server queries. It fires on
- * settle rather than on submit, because there is nothing new to fetch until
- * the row exists.
+ * THE REFRESH IS A PROPERTY OF THE MUTATION, NOT OF THIS COMPONENT. The
+ * dashboard is a Server Component, so a query invalidation cannot move its
+ * counters — only router.refresh() re-runs the server queries. That used to be
+ * an `onSettled` handed to each .mutate() call, and `onSettled` fires on
+ * FAILURE too: with the server unreachable but navigator.onLine still true,
+ * all three capture types exhausted their retries, rolled back and toasted
+ * correctly — and then refreshed anyway, re-fetching the route from a dead
+ * server, which Next turned into a hard reload onto the browser's error page.
+ * A capture that had already reported failure blanked the screen.
+ *
+ * Moving to a call-site `onSuccess` would have fixed the blanking and quietly
+ * introduced a second problem: .mutate() callbacks are not part of the
+ * mutation, so nothing hung off this call site survives a capture that is
+ * queued offline and replayed after a reload. REFRESH_SERVER_DATA is `meta`
+ * instead, which IS dehydrated, and one handler in app/providers.tsx acts on
+ * it — for an online success and a replay alike, and never on failure. See
+ * lib/rsc-refresh.ts.
  *
  * NO BOX, ONE LINE. It shipped as a bordered, rounded, padded card carrying a
  * permanent two-line mono legend — visually larger than the input itself, and
@@ -92,7 +105,6 @@ const SYNTAX_HINT = "/n note · /w workout · else task";
  * persists and replays.
  */
 export function CaptureField() {
-  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -105,9 +117,13 @@ export function CaptureField() {
   // next action is Enter.
   const [dateOpen, setDateOpen] = useState(false);
 
-  const createTask = useCreateTask();
-  const createNote = useCreateNote();
-  const logWorkout = useLogWorkout();
+  // The opt-in is on the hook instances, so it applies to THESE mutations and
+  // not to the same hooks used by TaskForm, NoteModal, WorkoutLogSheet or the
+  // workout page — all of which sit on client-rendered pages with no server
+  // data to re-fetch.
+  const createTask = useCreateTask(REFRESH_SERVER_DATA);
+  const createNote = useCreateNote(REFRESH_SERVER_DATA);
+  const logWorkout = useLogWorkout(REFRESH_SERVER_DATA);
 
   // A pending timer outliving the component would setState on an unmounted
   // tree when the user navigates away inside the confirmation window.
@@ -140,27 +156,23 @@ export function CaptureField() {
     // is optimistic, so the row is already in the cache by the time this runs.
     setValue("");
     confirm(route.destination);
-    const settled = () => router.refresh();
 
     switch (route.destination) {
       case "notes":
         // Spark: the body IS the note. The API accepts an empty title for
         // capture kinds and leaves Spark untitled rather than deriving one,
         // which would just duplicate the body on the card.
-        createNote.mutate(
-          { title: "", content: route.body, kind: "spark" },
-          { onSettled: settled }
-        );
+        createNote.mutate({ title: "", content: route.body, kind: "spark" });
         break;
       case "workouts":
         // Raw text, parsed server-side inside POST. One request = one offline
         // queue entry, and the parse happens on replay — `performed_at` rides
         // in the same variables, so a backdated set queued in a basement
         // replays with the day it was logged for.
-        logWorkout.mutate(
-          { raw_input: route.body, performed_at: workoutPerformedAtIso(date) },
-          { onSettled: settled }
-        );
+        logWorkout.mutate({
+          raw_input: route.body,
+          performed_at: workoutPerformedAtIso(date),
+        });
         // RESET, unlike the workout page's free-text field. That one is a
         // screen you navigate to with its date visible beside it; this bar is
         // always present and one line, so a date persisting invisibly behind
@@ -170,7 +182,7 @@ export function CaptureField() {
       case "tasks":
         // NO due date. An undated task is valid, and defaulting to today would
         // refill the very list this rebuild exists to keep honest.
-        createTask.mutate({ title: route.body }, { onSettled: settled });
+        createTask.mutate({ title: route.body });
         break;
     }
   }

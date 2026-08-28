@@ -12,6 +12,7 @@ import {
   PERSISTED_QUERY_KEYS,
 } from "@/lib/query-persister";
 import { isResumableMutationKey } from "@/lib/offline-mutations";
+import { registerServerDataRefresh } from "@/lib/rsc-refresh";
 
 /**
  * Tracks which user's data the in-memory query cache belongs to. Module
@@ -59,6 +60,18 @@ export function PersistBoundary({
   useEffect(() => {
     void dropLegacySharedCache();
   }, []);
+
+  // Publish this segment's router.refresh so the MutationCache handler in
+  // app/providers.tsx can reach it. That handler lives outside React and has no
+  // router; this boundary already owns "re-run the Server Components after a
+  // queued write lands" (below), so refresh plumbing stays in one file.
+  //
+  // Registered HERE rather than in CaptureField because the refresh is not the
+  // dashboard's alone: a capture replayed from the offline queue can land while
+  // the user is on any authenticated route, and this boundary wraps all of
+  // them. Unregistering on unmount means a coalesced refresh can never fire
+  // into a torn-down tree.
+  useEffect(() => registerServerDataRefresh(() => router.refresh()), [router]);
 
   // When connectivity returns after an offline period, replay any paused
   // mutations that were waiting at mount time (or accumulated since).  Once
