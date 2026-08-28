@@ -54,6 +54,24 @@ export function chunkText(
     return { chunks: all, sampled: false, totalCandidates: all.length };
   }
 
+  // Asking for a single chunk has no span to sample across, and the formula
+  // below divides by (maxChunks - 1) — zero in that case, giving NaN, then
+  // all[NaN] === undefined. The route passed that undefined straight into
+  // generateFlashcardsFromNote, which threw on `.trim()` and surfaced as a 502
+  // "Card generation failed for this document". MAX_CHUNKS.quick is 1, so
+  // Quick Extract hit this on every document long enough to need a second
+  // chunk — roughly any 10+ page PDF, and Quick is the default mode.
+  //
+  // Same guard chunkTranscript already uses in lib/youtube/extract.ts
+  // ("if (count <= 1) return …"), adapted to this file's ChunkResult shape.
+  // Take the head, matching that sibling and this function's own "always
+  // including the first chunk" contract. `sampled` stays true because content
+  // past the first chunk really is being dropped — this branch is only
+  // reachable when all.length > maxChunks, which also guarantees all[0] exists.
+  if (maxChunks <= 1) {
+    return { chunks: [all[0]], sampled: true, totalCandidates: all.length };
+  }
+
   // Evenly sample maxChunks indices across [0, all.length - 1].
   const picked: number[] = [];
   for (let i = 0; i < maxChunks; i++) {
