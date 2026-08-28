@@ -1,4 +1,9 @@
-import { istDateString } from "@/lib/date";
+import {
+  istCivilToLocalDate,
+  istDateString,
+  istDateTimeToIso,
+  localCivilKey,
+} from "@/lib/date";
 import type { WorkoutSet } from "@/types/database";
 
 /**
@@ -294,4 +299,80 @@ export function lastSetForExercise(
   }
 
   return best;
+}
+
+// ── Backdating ────────────────────────────────────────────────────────
+//
+// Every logging path stamps `performed_at` client-side and the route writes it
+// verbatim (app/api/workouts/route.ts). Backdating is therefore entirely a
+// question of what instant these helpers produce — no API change, and the
+// analysis endpoint already groups sessions by the IST calendar day of
+// performed_at, so a backdated set merges into that day's session on its own.
+
+/**
+ * Wall-clock time given to a BACKDATED capture: noon IST.
+ *
+ * Nothing knows what time a forgotten session actually happened, so this is a
+ * marker, not a claim. Noon is the choice with the widest margin — 12h either
+ * side of the IST civil-day boundary — which is the same reason a task's
+ * due_date is pinned there (`pickedDateToIso` in components/tasks/TaskForm).
+ * Only the day is ever read back: `useTodaysSets` filters on the IST day
+ * window and `analyseWorkoutSets` buckets on `istDateString(performed_at)`.
+ */
+const BACKDATED_TIME = "12:00";
+
+/**
+ * A picked calendar day → the ISO instant to store as `performed_at`.
+ *
+ * `picked` follows the date-picker contract used everywhere in this codebase:
+ * a Date whose LOCAL civil fields carry the intended calendar day. WHICH day
+ * is "today" comes from `istDateString()`, never the browser clock.
+ *
+ * TODAY IS DELIBERATELY NOT ROUTED THROUGH istDateTimeToIso. Sending it there
+ * would round the stamp to the minute, and two captures inside one minute
+ * would then tie on `performed_at` — the sort key the Today panel orders by.
+ * Logging today therefore produces byte-identical behaviour to before this
+ * feature existed: the live instant. Only a past day is constructed, and only
+ * via istDateTimeToIso.
+ */
+export function workoutPerformedAtIso(picked: Date): string {
+  if (localCivilKey(picked) === istDateString()) {
+    return new Date().toISOString();
+  }
+  return istDateTimeToIso(picked, BACKDATED_TIME);
+}
+
+/**
+ * Today as the pickers' Date shape — the default selection everywhere, and the
+ * `disabled={{ after }}` bound that keeps future days unselectable.
+ *
+ * Call it per render rather than memoising on mount, so a sheet or dialog left
+ * open across IST midnight offers the new today (the same rule TaskForm's
+ * due-date chips follow).
+ */
+export function workoutToday(): Date {
+  return istCivilToLocalDate(istDateString());
+}
+
+/** Trigger label for a picked day: "Today", else "Sat 23 Aug". */
+export function workoutDateLabel(picked: Date): string {
+  if (localCivilKey(picked) === istDateString()) return "Today";
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(picked);
+}
+
+/** Short form for tight rows (the dashboard capture bar): "23 Aug". */
+export function workoutDateShortLabel(picked: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+  }).format(picked);
+}
+
+/** True when the picked day is not today (IST) — i.e. this capture is backdated. */
+export function isBackdated(picked: Date): boolean {
+  return localCivilKey(picked) !== istDateString();
 }

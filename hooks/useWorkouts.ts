@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
-import { istDayContext } from "@/lib/date";
+import { istDateString, istDayContext } from "@/lib/date";
 import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import {
   countSessionDays,
@@ -26,7 +26,12 @@ export type LogWorkoutInput =
   | {
       raw_input: string;
       sets?: undefined;
-      /** Stamped client-side so an offline replay keeps the log time. */
+      /**
+       * Stamped client-side. It carries two jobs at once: an offline replay
+       * keeps the time the set was logged rather than the time it synced, and
+       * a backdated capture keeps the DAY it was logged for. The route writes
+       * it verbatim (app/api/workouts/route.ts).
+       */
       performed_at?: string;
     }
   | {
@@ -191,12 +196,29 @@ export function useLogWorkout() {
       toast.error(err instanceof Error ? err.message : "Failed to log");
     },
     onSuccess: (rows) => {
+      // A backdated capture lands on a day the screen it was logged from may
+      // not be showing — the Today panel filters to today, so a set logged for
+      // Saturday leaves no visible trace. Naming the day in the toast is the
+      // only confirmation that it went where it was meant to. Read from the
+      // SAVED row, so it states what the server actually stored.
+      const day = rows[0] ? istDateString(Date.parse(rows[0].performed_at)) : "";
+      const suffix =
+        day && day !== istDateString()
+          ? ` on ${new Intl.DateTimeFormat("en-GB", {
+              timeZone: "Asia/Kolkata",
+              day: "numeric",
+              month: "short",
+            }).format(Date.parse(rows[0].performed_at))}`
+          : "";
+
       // A single row with no exercise means the parse found nothing usable —
       // say so, because the card will show it as an uncorrected raw entry.
       if (rows.length === 1 && rows[0].exercise === null) {
-        toast("Logged — couldn't read the sets, tap to fill them in");
+        toast(`Logged${suffix} — couldn't read the sets, tap to fill them in`);
       } else {
-        toast.success(`Logged ${rows.length} set${rows.length === 1 ? "" : "s"}`);
+        toast.success(
+          `Logged ${rows.length} set${rows.length === 1 ? "" : "s"}${suffix}`
+        );
       }
     },
     onSettled: () => {
