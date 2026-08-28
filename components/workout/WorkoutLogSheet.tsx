@@ -13,6 +13,8 @@ import {
   formatSetLine,
   groupStructuredSets,
   lastSetForExercise,
+  workoutPerformedAtIso,
+  workoutToday,
   type StructuredSetInput,
 } from "@/lib/workouts";
 import { useLogWorkout, useWorkoutsQuery } from "@/hooks/useWorkouts";
@@ -25,6 +27,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MonoLabel } from "@/components/shared/MonoLabel";
+import { WorkoutDatePicker } from "@/components/workout/WorkoutDatePicker";
 
 /**
  * Stepper increment for weight. 2.5 kg is the smallest plate pair on a
@@ -55,17 +58,28 @@ const MAX_SETS_PER_CAPTURE = 50;
  * The draft lives in the Workout page, NOT here, so closing the sheet
  * mid-session doesn't discard eight exercises of work — only a successful save
  * or an explicit Clear empties it.
+ *
+ * THE DATE LIVES THERE TOO, for a second reason on top of that one. This
+ * component is not reliably remounted between opens (Radix keeps content
+ * mounted through the exit animation), so a date held here could survive a
+ * save and silently backdate the NEXT session behind a closed sheet. Owning it
+ * beside the draft means one place resets both, and the date travels with the
+ * session it belongs to across an accidental backdrop tap.
  */
 export function WorkoutLogSheet({
   open,
   onOpenChange,
   session,
   setSession,
+  date,
+  setDate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   session: StructuredSetInput[];
   setSession: Dispatch<SetStateAction<StructuredSetInput[]>>;
+  date: Date;
+  setDate: Dispatch<SetStateAction<Date>>;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -73,6 +87,8 @@ export function WorkoutLogSheet({
         <SheetBody
           session={session}
           setSession={setSession}
+          date={date}
+          setDate={setDate}
           onClose={() => onOpenChange(false)}
         />
       </DialogContent>
@@ -85,10 +101,14 @@ type View = "session" | "picker" | "builder";
 function SheetBody({
   session,
   setSession,
+  date,
+  setDate,
   onClose,
 }: {
   session: StructuredSetInput[];
   setSession: Dispatch<SetStateAction<StructuredSetInput[]>>;
+  date: Date;
+  setDate: Dispatch<SetStateAction<Date>>;
   onClose: () => void;
 }) {
   const logWorkout = useLogWorkout();
@@ -123,11 +143,15 @@ function SheetBody({
     if (logWorkout.isPending || session.length === 0) return;
     logWorkout.mutate({
       sets: session,
-      // Stamped here so a session queued offline keeps the time it was logged,
-      // not the time it eventually synced.
-      performed_at: new Date().toISOString(),
+      // Stamped here so a session queued offline keeps the day it was logged
+      // FOR, not the time it eventually synced. For today that is still the
+      // live instant, byte-identical to before backdating existed.
+      performed_at: workoutPerformedAtIso(date),
     });
     setSession([]);
+    // The draft is gone, so its date goes with it — a date left behind a
+    // closed sheet would silently backdate the next session.
+    setDate(workoutToday());
     onClose();
   }
 
@@ -177,6 +201,8 @@ function SheetBody({
       <SessionDraft
         session={session}
         setSession={setSession}
+        date={date}
+        setDate={setDate}
         remaining={remaining}
         saving={logWorkout.isPending}
         onAddExercise={() => setView("picker")}
@@ -194,6 +220,8 @@ function SheetBody({
 function SessionDraft({
   session,
   setSession,
+  date,
+  setDate,
   remaining,
   saving,
   onAddExercise,
@@ -201,6 +229,8 @@ function SessionDraft({
 }: {
   session: StructuredSetInput[];
   setSession: Dispatch<SetStateAction<StructuredSetInput[]>>;
+  date: Date;
+  setDate: Dispatch<SetStateAction<Date>>;
   remaining: number;
   saving: boolean;
   onAddExercise: () => void;
@@ -273,6 +303,14 @@ function SessionDraft({
         >
           Clear
         </Button>
+      </div>
+
+      {/* Directly above Save, because the date is part of what gets saved and
+          nothing else on this view is. Default is today, so the common case is
+          one glance and no tap. */}
+      <div>
+        <MonoLabel>Date</MonoLabel>
+        <WorkoutDatePicker value={date} onChange={setDate} className="mt-2" />
       </div>
 
       <Button

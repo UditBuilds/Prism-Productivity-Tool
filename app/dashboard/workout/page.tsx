@@ -4,11 +4,16 @@ import { useState } from "react";
 import { Dumbbell, Loader2, Plus } from "lucide-react";
 
 import { useLogWorkout } from "@/hooks/useWorkouts";
-import type { StructuredSetInput } from "@/lib/workouts";
+import {
+  workoutPerformedAtIso,
+  workoutToday,
+  type StructuredSetInput,
+} from "@/lib/workouts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionPanel } from "@/components/dashboard/SectionPanel";
+import { WorkoutDatePicker } from "@/components/workout/WorkoutDatePicker";
 import { WorkoutLogSheet } from "@/components/workout/WorkoutLogSheet";
 import { WorkoutTodayPanel } from "@/components/workout/WorkoutTodayPanel";
 import { WorkoutProgressPanel } from "@/components/workout/WorkoutProgressPanel";
@@ -59,17 +64,34 @@ export default function WorkoutPage() {
    * competes with a screen the user is passing through.
    */
   const [session, setSession] = useState<StructuredSetInput[]>([]);
+  /**
+   * WHEN the drafted session happened. Owned here for the same reason the
+   * draft is — see the note in WorkoutLogSheet — and reset to today by the
+   * sheet's own save, alongside emptying the draft.
+   */
+  const [sessionDate, setSessionDate] = useState<Date>(workoutToday);
+  /**
+   * The free-text field's date, SEPARATE from the session's. Two submissions,
+   * two independent dates; sharing one would mean a session drafted for
+   * Saturday silently re-dating a shorthand line typed for today.
+   */
+  const [textDate, setTextDate] = useState<Date>(workoutToday);
 
   function submit() {
     const raw = input.trim();
     if (!raw || logWorkout.isPending) return;
     logWorkout.mutate({
       raw_input: raw,
-      // Stamped here so a set queued offline keeps the time it was logged,
-      // not the time it eventually synced.
-      performed_at: new Date().toISOString(),
+      // Stamped here so a set queued offline keeps the day it was logged FOR,
+      // not the time it eventually synced. Today still resolves to the live
+      // instant, exactly as before backdating existed.
+      performed_at: workoutPerformedAtIso(textDate),
     });
     setInput("");
+    // The date deliberately SURVIVES the submit, unlike the dashboard capture
+    // bar's. Catching up on a missed session is several shorthand lines for
+    // one past day, and this trigger is on screen stating which day it is —
+    // the stale-date hazard the capture bar has does not exist here.
   }
 
   return (
@@ -102,6 +124,8 @@ export default function WorkoutPage() {
           onOpenChange={setSheetOpen}
           session={session}
           setSession={setSession}
+          date={sessionDate}
+          setDate={setSessionDate}
         />
 
         {/* The free-text fallback, unchanged. 16 from the primary CTA — it is a
@@ -111,29 +135,42 @@ export default function WorkoutPage() {
             e.preventDefault();
             submit();
           }}
-          className="mt-4 flex items-center gap-2"
+          className="mt-4"
         >
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={PLACEHOLDER}
-            aria-label="Log a set in gym shorthand"
-            enterKeyHint="done"
-            className="h-9 rounded-md font-mono text-sm"
+          <div className="flex items-center gap-2">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={PLACEHOLDER}
+              aria-label="Log a set in gym shorthand"
+              enterKeyHint="done"
+              className="h-9 rounded-md font-mono text-sm"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!input.trim() || logWorkout.isPending}
+              className="shrink-0 rounded-md"
+            >
+              {logWorkout.isPending ? (
+                <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus aria-hidden className="h-4 w-4" />
+              )}
+              <span className="sr-only">Log set</span>
+            </Button>
+          </div>
+
+          {/* BELOW the field, not beside it: at 375px the input and its submit
+              already own the row, and the date qualifies what is typed rather
+              than competing with it. w-auto so it sizes to its label instead
+              of reading as a second full-width action. */}
+          <WorkoutDatePicker
+            value={textDate}
+            onChange={setTextDate}
+            className="mt-2"
+            triggerClassName="w-auto"
           />
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!input.trim() || logWorkout.isPending}
-            className="shrink-0 rounded-md"
-          >
-            {logWorkout.isPending ? (
-              <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus aria-hidden className="h-4 w-4" />
-            )}
-            <span className="sr-only">Log set</span>
-          </Button>
         </form>
       </SectionPanel>
 
