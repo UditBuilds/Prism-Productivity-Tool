@@ -10,23 +10,28 @@
  * should be revisited before signups ever reopen — the durable version is a
  * counter table or a shared store, which is deliberately out of scope here.
  *
- * TWO TIERS, and the split is deliberate:
+ * THREE TIERS, and every split is deliberate:
  *
- *   checkAiRateLimit      — 20/60s, ONE budget shared by the five routes that
- *                           generate content (notes/reformat, srs/generate,
- *                           pdf/analyze, youtube/analyze, youtube/notes).
- *   checkWorkoutRateLimit — 100/60s, a SEPARATE budget for /api/workouts only.
+ *   checkAiRateLimit       — 20/60s, ONE budget shared by the five routes a
+ *                            user drives by hand (notes/reformat,
+ *                            srs/generate, pdf/analyze, youtube/analyze,
+ *                            youtube/notes/start).
+ *   checkWorkoutRateLimit  — 100/60s, a SEPARATE budget for /api/workouts.
+ *   checkYoutubeContinueRateLimit
+ *                          — 100/60s, a SEPARATE budget for
+ *                            /api/youtube/notes/continue.
  *
- * The two are fully decoupled: exhausting one leaves the other untouched.
+ * The three are fully decoupled: exhausting one leaves the others untouched.
  * See MAX_WORKOUT_REQUESTS_PER_WINDOW for why workouts can't share the low
  * ceiling — a rejection there destroys user input, which is not true of the
  * other five.
  *
  * WHAT THEY COUNT: one HTTP request to an AI route, checked at the handler.
  * NOT a Groq-call quota. /api/pdf/analyze issues up to 4 sequential Groq calls
- * per request (smart mode) and the two YouTube routes up to 6 (one per
+ * per request (smart mode) and /api/youtube/analyze up to 6 (one per sampled
  * transcript chunk), so the real per-window Groq ceiling on the shared tier is
- * a multiple of its limit. Bounding token spend per call is the job of the
+ * a multiple of its limit. The note-job routes are the exception and are 1:1 —
+ * /start makes no Groq call at all and /continue makes exactly one. Bounding token spend per call is the job of the
  * max_tokens/input caps already on those paths; these bound how often the
  * paths can be entered at all.
  */
@@ -89,6 +94,38 @@ const MAX_REQUESTS_PER_WINDOW = 20;
  * with the data rather than nudging the number again.
  */
 const MAX_WORKOUT_REQUESTS_PER_WINDOW = 100;
+
+/**
+ * Ceiling for /api/youtube/notes/continue alone.
+ *
+ * WHY THIS ROUTE CANNOT SHARE THE 20/60s TIER: a continuation is not a user
+ * action. One note job is N sequential /continue calls, one per transcript
+ * chunk, issued by the client's poll loop — a 40-minute video is ~15 of them
+ * and a 2-hour lecture ~45. Every one of those would land on the shared budget
+ * and, at 20/60s, a single long video would exhaust it partway through and
+ * then block itself. Worse, it would also block the four genuinely interactive
+ * routes that share that budget (notes/reformat, srs/generate, pdf/analyze,
+ * youtube/analyze) for the rest of the minute — generating one note would stop
+ * the user making a flashcard.
+ *
+ * The entry point stays governed: POST /api/youtube/notes/start is on the
+ * shared 20/60s tier, so a user still cannot kick off more than 20 jobs a
+ * minute. This tier bounds the follow-through of jobs that were already
+ * allowed to begin.
+ *
+ * WHY 100. The client polls one chunk at a time and awaits each response, so a
+ * single job's real rate is bounded by round-trip latency (a Groq call per
+ * chunk, seconds each) — nowhere near 100/min. 100 leaves room for several
+ * concurrent jobs, or a resumed job racing a fresh one, while still cutting off
+ * a runaway loop hard: a broken client firing at network speed does hundreds
+ * per minute.
+ *
+ * Cost is bounded by construction, not just by this number: /continue makes
+ * exactly ONE Groq call per request, and a job stops calling entirely once
+ * completed_chunks + chunks_failed reaches total_chunks — a client that keeps
+ * polling a finished job gets the completed row back without touching Groq.
+ */
+const MAX_YOUTUBE_CONTINUE_REQUESTS_PER_WINDOW = 100;
 
 /**
  * Backstop on each map. Entries are pruned lazily per user on their own next
@@ -177,6 +214,9 @@ function createRateLimiter(maxPerWindow: number): RateLimiter {
 
 const sharedLimiter = createRateLimiter(MAX_REQUESTS_PER_WINDOW);
 const workoutLimiter = createRateLimiter(MAX_WORKOUT_REQUESTS_PER_WINDOW);
+const youtubeContinueLimiter = createRateLimiter(
+  MAX_YOUTUBE_CONTINUE_REQUESTS_PER_WINDOW
+);
 
 /**
  * Record one request against the SHARED five-route budget and say whether it
@@ -200,6 +240,18 @@ export function checkWorkoutRateLimit(userId: string): AiRateLimitResult {
   return workoutLimiter.check(userId);
 }
 
+/**
+ * Record one request against the /api/youtube/notes/continue budget. Same
+ * contract as checkAiRateLimit, separate counter, higher ceiling — see
+ * MAX_YOUTUBE_CONTINUE_REQUESTS_PER_WINDOW. Exhausting this leaves the shared
+ * interactive tier untouched, which is the entire point of the split.
+ */
+export function checkYoutubeContinueRateLimit(
+  userId: string
+): AiRateLimitResult {
+  return youtubeContinueLimiter.check(userId);
+}
+
 /** The user-facing 429 message. One wording across every AI route. */
 export function aiRateLimitMessage(retryAfterSeconds: number): string {
   return `Too many AI requests in a short time. Try again in ${retryAfterSeconds} second${
@@ -219,16 +271,19 @@ export const AI_RATE_LIMITS = {
   windowMs: WINDOW_MS,
   shared: MAX_REQUESTS_PER_WINDOW,
   workouts: MAX_WORKOUT_REQUESTS_PER_WINDOW,
+  youtubeContinue: MAX_YOUTUBE_CONTINUE_REQUESTS_PER_WINDOW,
 } as const;
 
 /** Test-only: requests currently in-window per tier. Not called by app code. */
 export function __peekAiRateLimit(userId: string): {
   shared: number;
   workouts: number;
+  youtubeContinue: number;
 } {
   return {
     shared: sharedLimiter.peek(userId),
     workouts: workoutLimiter.peek(userId),
+    youtubeContinue: youtubeContinueLimiter.peek(userId),
   };
 }
 
@@ -236,4 +291,5 @@ export function __peekAiRateLimit(userId: string): {
 export function __resetAiRateLimit(): void {
   sharedLimiter.reset();
   workoutLimiter.reset();
+  youtubeContinueLimiter.reset();
 }

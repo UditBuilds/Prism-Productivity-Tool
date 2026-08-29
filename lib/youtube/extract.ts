@@ -221,3 +221,72 @@ export function chunkTranscript(
   }
   return chunks;
 }
+
+/**
+ * Sequential, FULL-COVERAGE chunking — every character of the transcript ends
+ * up in exactly one chunk, in order, with no cap on the number of chunks.
+ *
+ * This is a different algorithm from chunkTranscript above, not a tuned
+ * constant. chunkTranscript SAMPLES up to 6 windows spread across the
+ * transcript, so a 90-minute video is summarised from ~24k of its ~130k
+ * characters and the gaps are invisible in the output. That is fine for
+ * flashcards (which only need enough material to reach a card count) and wrong
+ * for a note, which reads as a complete account of the video.
+ *
+ * chunkTranscript is DELIBERATELY LEFT IN PLACE: /api/youtube/analyze still
+ * calls it, and that route is out of scope here. Changing it underneath would
+ * silently alter the flashcard path.
+ *
+ * Boundaries prefer sentence ends (same accumulation as lib/pdf/chunk.ts) so a
+ * chunk reads as prose to the model. A final remainder shorter than MIN_TAIL is
+ * merged into the previous chunk rather than shipped on its own:
+ * generateNotesFromTranscript rejects anything under 100 characters, so a short
+ * tail would be counted as a FAILED chunk on every long video — a permanent
+ * false "part of this video is missing" warning.
+ */
+export function chunkTranscriptSequential(
+  text: string,
+  chunkSize: number
+): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length === 0) return [];
+  if (clean.length <= chunkSize) return [clean];
+
+  // A tail below this is folded back into the previous chunk. 500 sits well
+  // clear of generateNotesFromTranscript's 100-char floor without letting a
+  // chunk grow past ~1.125x chunkSize.
+  const MIN_TAIL = 500;
+
+  // Sentence-ish segments; hard-slice anything longer than a whole chunk so
+  // unpunctuated auto-captions can't produce one giant segment.
+  const segments: string[] = [];
+  for (const part of clean.split(/(?<=[.!?])\s+/)) {
+    if (part.length <= chunkSize) {
+      segments.push(part);
+    } else {
+      for (let i = 0; i < part.length; i += chunkSize) {
+        segments.push(part.slice(i, i + chunkSize));
+      }
+    }
+  }
+
+  const chunks: string[] = [];
+  let current = "";
+  for (const segment of segments) {
+    if (current.length + segment.length + 1 > chunkSize && current.length > 0) {
+      chunks.push(current);
+      current = segment;
+    } else {
+      current = current ? `${current} ${segment}` : segment;
+    }
+  }
+  if (current.length > 0) {
+    if (current.length < MIN_TAIL && chunks.length > 0) {
+      chunks[chunks.length - 1] = `${chunks[chunks.length - 1]} ${current}`;
+    } else {
+      chunks.push(current);
+    }
+  }
+
+  return chunks;
+}
