@@ -14,6 +14,11 @@ export type TaskStatus = "todo" | "in_progress" | "done";
 export type TaskPriority = "low" | "medium" | "high";
 export type PlanStatus = "active" | "completed" | "archived";
 export type MoodValue = "great" | "good" | "neutral" | "tired" | "stressed";
+export type YoutubeNoteJobStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
 
 export interface Database {
   public: {
@@ -516,6 +521,63 @@ export interface Database {
         };
         Relationships: [];
       };
+      // One row per YouTube -> note generation job. The transcript itself is
+      // NOT stored: /api/youtube/notes/continue re-derives the chunk list from
+      // the video each time it needs one (in-memory cached per warm instance),
+      // so this row only has to carry progress and the markdown assembled so
+      // far. completed_chunks + chunks_failed is the index of the next
+      // unprocessed chunk, which is what makes resume-after-reload exact.
+      youtube_note_jobs: {
+        Row: {
+          id: string;
+          user_id: string;
+          video_id: string;
+          video_title: string | null;
+          video_url: string;
+          total_chunks: number;
+          completed_chunks: number;
+          chunks_failed: number;
+          partial_content: string;
+          status: YoutubeNoteJobStatus;
+          error_message: string | null;
+          created_at: string;
+          updated_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          video_id: string;
+          video_title?: string | null;
+          video_url: string;
+          total_chunks: number;
+          completed_chunks?: number;
+          chunks_failed?: number;
+          partial_content?: string;
+          status?: YoutubeNoteJobStatus;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          video_id?: string;
+          video_title?: string | null;
+          video_url?: string;
+          total_chunks?: number;
+          completed_chunks?: number;
+          chunks_failed?: number;
+          partial_content?: string;
+          status?: YoutubeNoteJobStatus;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          completed_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -550,3 +612,5 @@ export type FocusCategory =
 export type Countdown = Database["public"]["Tables"]["countdowns"]["Row"];
 export type MoodLog = Database["public"]["Tables"]["mood_logs"]["Row"];
 export type WorkoutSet = Database["public"]["Tables"]["workout_sets"]["Row"];
+export type YoutubeNoteJob =
+  Database["public"]["Tables"]["youtube_note_jobs"]["Row"];

@@ -365,6 +365,28 @@ CREATE TABLE IF NOT EXISTS "public"."workout_sets" (
 ALTER TABLE "public"."workout_sets" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."youtube_note_jobs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "video_id" "text" NOT NULL,
+    "video_title" "text",
+    "video_url" "text" NOT NULL,
+    "total_chunks" integer NOT NULL,
+    "completed_chunks" integer DEFAULT 0 NOT NULL,
+    "chunks_failed" integer DEFAULT 0 NOT NULL,
+    "partial_content" "text" DEFAULT ''::"text" NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "error_message" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "completed_at" timestamp with time zone,
+    CONSTRAINT "youtube_note_jobs_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'processing'::"text", 'completed'::"text", 'failed'::"text"])))
+);
+
+
+ALTER TABLE "public"."youtube_note_jobs" OWNER TO "postgres";
+
+
 ALTER TABLE ONLY "public"."applications"
     ADD CONSTRAINT "applications_pkey" PRIMARY KEY ("id");
 
@@ -485,6 +507,11 @@ ALTER TABLE ONLY "public"."workout_sets"
 
 
 
+ALTER TABLE ONLY "public"."youtube_note_jobs"
+    ADD CONSTRAINT "youtube_note_jobs_pkey" PRIMARY KEY ("id");
+
+
+
 CREATE INDEX "idx_listings_undiscovered" ON "public"."job_listings" USING "btree" ("discovered_at" DESC) WHERE ("sent_to_user" = false);
 
 
@@ -510,6 +537,18 @@ CREATE UNIQUE INDEX "idx_tasks_recurring_unique_per_day" ON "public"."tasks" USI
 
 
 CREATE INDEX "workout_sets_user_performed_idx" ON "public"."workout_sets" USING "btree" ("user_id", "performed_at" DESC);
+
+
+
+CREATE INDEX "idx_youtube_note_jobs_status" ON "public"."youtube_note_jobs" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_youtube_note_jobs_user_id" ON "public"."youtube_note_jobs" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_youtube_note_jobs_video_id" ON "public"."youtube_note_jobs" USING "btree" ("video_id");
 
 
 
@@ -795,6 +834,14 @@ CREATE POLICY "workout_sets_update_own" ON "public"."workout_sets" FOR UPDATE US
 
 
 
+ALTER TABLE "public"."youtube_note_jobs" ENABLE ROW LEVEL SECURITY;
+
+
+
+CREATE POLICY "Users can manage their own youtube note jobs" ON "public"."youtube_note_jobs" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
 GRANT USAGE ON SCHEMA "public" TO "postgres";
 GRANT USAGE ON SCHEMA "public" TO "anon";
 GRANT USAGE ON SCHEMA "public" TO "authenticated";
@@ -925,6 +972,12 @@ GRANT ALL ON TABLE "public"."tasks" TO "service_role";
 GRANT ALL ON TABLE "public"."workout_sets" TO "anon";
 GRANT ALL ON TABLE "public"."workout_sets" TO "authenticated";
 GRANT ALL ON TABLE "public"."workout_sets" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."youtube_note_jobs" TO "anon";
+GRANT ALL ON TABLE "public"."youtube_note_jobs" TO "authenticated";
+GRANT ALL ON TABLE "public"."youtube_note_jobs" TO "service_role";
 
 
 

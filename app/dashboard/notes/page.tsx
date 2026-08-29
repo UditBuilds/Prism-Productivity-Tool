@@ -255,6 +255,11 @@ function NotesPageInner() {
       <YouTubeImportModal
         open={youtubeOpen}
         onClose={() => setYoutubeOpen(false)}
+        onViewNote={(noteId) => {
+          const note = (notes ?? []).find((n) => n.id === noteId);
+          setYoutubeOpen(false);
+          if (note) setViewer({ note, mode: "read" });
+        }}
       />
       </PullToRefresh>
     </div>
