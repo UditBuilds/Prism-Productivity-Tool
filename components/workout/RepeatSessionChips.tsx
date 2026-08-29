@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RotateCcw } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatCivilDate } from "@/lib/workout-analysis";
@@ -20,13 +19,22 @@ import { MonoLabel } from "@/components/shared/MonoLabel";
  * established way this app offers a small set of quick choices, so this adds
  * no new vocabulary.
  *
- * WHY THE VERB IS IN THE HEADING AND NOT ON EVERY CHIP. "Repeat last Legs
- * day" is ~130px at this type size; four of those wrap to three rows inside a
- * 311px card and turn a shortcut into the tallest thing in the Log section —
- * on a page whose length is the other half of this work. The heading says
- * "repeat" once and each chip carries only what differs: which day, and when.
- * The full sentence survives verbatim in aria-label, so the control still
- * announces itself as "Repeat last Legs day" to a screen reader.
+ * EVERY REPEATED WORD LIVES IN THE HEADING; THE CHIP IS THE ONE WORD THAT
+ * DIFFERS. "Repeat last Legs day" is ~130px at this type size, so four of them
+ * wrap to three rows inside a 311px card. The first pass moved the verb into
+ * the heading but kept the date on the chip ("Legs  20 Aug", ~95px), which
+ * still wrapped to two rows — measured, not assumed. Bare body-part names fit
+ * one row with room to spare.
+ *
+ * The date is NOT lost, it is relocated: it stays in aria-label and is added
+ * as `title`, so it is still reachable and still announced. That is a real
+ * trade — the visible date was what made a chip a promise ("this exact day")
+ * rather than a guess — and the session view the chip opens states every set
+ * it loaded before anything is saved, so the claim is verifiable one tap in.
+ *
+ * The RotateCcw icon went with it. Once the heading carries the verb, a
+ * per-chip repeat glyph restates it four more times for ~18px each, and its
+ * absence puts these chips byte-for-byte on TaskForm's pattern.
  *
  * Sourced from the ["workouts"] cache, which this page already holds — no
  * extra request. That cache is the 60-day window (see GET /api/workouts), so
@@ -77,7 +85,9 @@ export function RepeatSessionChips({
 
   return (
     <div className="mt-4">
-      <MonoLabel>Repeat a session</MonoLabel>
+      {/* Carries the verb, the recency and the noun, so the chip beneath it
+          only has to say WHICH. Reads as "repeat last session: Legs". */}
+      <MonoLabel>Repeat last session</MonoLabel>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {sessions.map((session) => {
           // The 50-set capture ceiling is a server rule (MAX_STRUCTURED_SETS),
@@ -102,24 +112,21 @@ export function RepeatSessionChips({
               title={
                 overflows
                   ? `That would take this session past ${maxSets} sets — save what you have first.`
-                  : undefined
+                  : // Names the exact day about to be copied, so a Chest chip
+                    // pointing at 11 Aug is not mistaken for the chest work
+                    // done on 17 Aug inside an Arms day.
+                    `${session.sets.length} set${
+                      session.sets.length === 1 ? "" : "s"
+                    } from ${formatCivilDate(session.date)}`
               }
               className={cn(
-                "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition",
+                "rounded-full border px-3 py-1 text-xs font-medium transition",
                 overflows
                   ? "cursor-not-allowed border-border text-muted-foreground/50"
                   : "border-border text-muted-foreground hover:border-accent/60 hover:text-foreground"
               )}
             >
-              <RotateCcw aria-hidden className="h-3 w-3 shrink-0" />
               {session.bodyPart}
-              {/* The date is what makes the chip a promise rather than a
-                  guess: it names the exact day about to be copied, so a
-                  Chest chip pointing at 11 Aug cannot be mistaken for the
-                  chest work done on 17 Aug inside an Arms day. */}
-              <span className="font-mono tabular-nums text-muted-foreground">
-                {formatCivilDate(session.date)}
-              </span>
             </button>
           );
         })}
