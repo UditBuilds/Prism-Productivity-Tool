@@ -1,33 +1,76 @@
 "use client";
 
-import { AlertCircle, Dumbbell, Minus, TrendingDown, TrendingUp } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  AlertCircle,
+  ChevronDown,
+  Dumbbell,
+  Minus,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
   formatChange,
   formatCivilDate,
+  formatDaysSince,
   formatSessionTopSet,
+  type BodyPartLoad,
   type ExerciseProgression,
 } from "@/lib/workout-analysis";
+import { UNCLASSIFIED_BODY_PART } from "@/lib/exercise-library";
 import { useWorkoutAnalysis } from "@/hooks/useWorkoutAnalysis";
 import { EmptyState } from "@/components/shared/EmptyState";
 
 /**
- * Progressive overload: one row per exercise, heaviest-set-first.
+ * Progressive overload AND body-part balance, in one grouped, collapsible
+ * view. This section replaced two — the flat per-exercise list and the
+ * standalone Balance panel, which is deleted.
  *
- * DELIBERATELY NOT A CHART. The real table has five exercises and not one of
- * them has been logged on two different days, so every line chart this could
- * draw would be a single point — an axis, a grid, and one dot, which reads as
- * broken rather than as new. A row that states the top set and the date is
- * true at one session and gains a delta chip at two, with no layout change and
- * nothing that ever looks empty.
+ * WHY THE TWO MERGED. Flat, Progress was one row per distinct exercise with no
+ * cap: 13 rows and 1239px on the real table, and it had gone 4 -> 5 -> 9 -> 13
+ * over four sessions. Balance sat directly beneath restating the same sets
+ * from the other direction, at another 548px. Together they were 71.5% of a
+ * page 3+ screens tall, and the two things a user comes here to DO (log a set,
+ * see today) were 14%. Balance's per-part facts are exactly the summary a
+ * progression group's header wants, so folding one into the other removes a
+ * whole section rather than shortening it.
  *
- * The "no exercise logged twice yet" note is stated ONCE at section level
- * rather than per row. With five baselines, a per-row "first session" would
- * print the same sentence five times and drown the numbers that differ.
+ * GROUPING IS CLIENT-SIDE, DELIBERATELY. The endpoint already returns
+ * everything this needs — `progressions[]` each carrying its own `bodyPart`,
+ * and `bodyParts[]` carrying every group including the zeros, pre-sorted, with
+ * daysSince and set counts. Grouping here is a pure regrouping of data already
+ * in hand. Doing it server-side would change the shape of a PERSISTED cache
+ * (["workout-analysis"] is dehydrated to IndexedDB), which needs a buster bump
+ * and breaks in-flight snapshots, to solve a presentation problem. The brief
+ * for this change also draws the line there: the data and queries behind these
+ * two views are not being changed, only their container.
+ *
+ * ORDER IS MOST-RECENTLY-TRAINED FIRST, AND THAT INVERTS BALANCE'S OWN
+ * RANKING — flagged for review. `bodyParts` arrives sorted most-neglected
+ * first, which is the ranking that panel was named for, and the UI was told
+ * not to re-sort it. That ordering is right for a section whose subject is
+ * neglect; it is wrong for one whose subject is progression, because it puts
+ * two empty groups above everything the user actually did and leaves the one
+ * open group at the bottom of the section. Recency-first here, zeros last,
+ * still visible.
  */
 export function WorkoutProgressPanel() {
   const { data, isLoading, isError } = useWorkoutAnalysis();
+
+  const groups = useMemo(
+    () => buildGroups(data?.bodyParts ?? [], data?.progressions ?? []),
+    [data]
+  );
+
+  /**
+   * Which groups the user has toggled, as an override map over the default.
+   * An override rather than seeded state: the default depends on `data`, which
+   * arrives asynchronously, and seeding from it would need an effect that then
+   * fights every refetch.
+   */
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
 
   if (isLoading) {
     return (
@@ -62,13 +105,18 @@ export function WorkoutProgressPanel() {
   }
 
   const comparable = data?.comparableExercises ?? 0;
+  const windowDays = data?.windowDays ?? 0;
+  // The default: only the first group carrying work is open. Everything else,
+  // including every untrained group, starts closed.
+  const defaultOpen = groups.find((g) => g.rows.length > 0)?.part.bodyPart;
 
   return (
     <>
       {comparable === 0 && (
-        // The honest headline for the current data, not a placeholder. Saying
-        // "not enough data" would be vaguer than the truth, which is specific
-        // and actionable: repeat ONE exercise and this section starts working.
+        // Unchanged from the flat version, and still stated ONCE at section
+        // level rather than per row. With this many baselines a per-row
+        // "first session" would print the same sentence a dozen times and
+        // drown the numbers that differ.
         <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
           No exercise logged twice yet — these are your starting points. Repeat
           one and its change appears here.
@@ -76,14 +124,172 @@ export function WorkoutProgressPanel() {
       )}
 
       <ul className="space-y-2">
-        {progressions.map((p) => (
-          <ProgressRow key={p.key} progression={p} />
+        {groups.map((group) => (
+          <BodyPartGroup
+            key={group.part.bodyPart}
+            group={group}
+            windowDays={windowDays}
+            open={
+              overrides[group.part.bodyPart] ??
+              group.part.bodyPart === defaultOpen
+            }
+            onToggle={() =>
+              setOverrides((prev) => ({
+                ...prev,
+                [group.part.bodyPart]:
+                  !(prev[group.part.bodyPart] ??
+                  group.part.bodyPart === defaultOpen),
+              }))
+            }
+          />
         ))}
       </ul>
     </>
   );
 }
 
+interface Group {
+  part: BodyPartLoad;
+  rows: ExerciseProgression[];
+}
+
+/**
+ * Join the two arrays the endpoint already returns.
+ *
+ * `bodyPart` is nullable on a progression (the library doesn't know the name),
+ * and `analyseWorkoutSets` counts those same sets under UNCLASSIFIED_BODY_PART
+ * in `bodyParts`. Resolving null the same way here is what keeps the two
+ * halves agreeing — the real table's "Hacksquat" is exactly this case, and it
+ * must land in the same "Other" group its sets were counted in.
+ */
+function buildGroups(
+  bodyParts: BodyPartLoad[],
+  progressions: ExerciseProgression[]
+): Group[] {
+  const byPart: Record<string, ExerciseProgression[]> = {};
+  for (const p of progressions) {
+    const part = p.bodyPart ?? UNCLASSIFIED_BODY_PART;
+    (byPart[part] ??= []).push(p);
+  }
+
+  return bodyParts
+    .map((part) => ({ part, rows: byPart[part.bodyPart] ?? [] }))
+    .sort((a, b) => {
+      // Trained before untrained, then most recently trained first. The
+      // progressions inside each group keep the endpoint's own ordering
+      // (comparable-first, then recency), which is not re-sorted here.
+      const aT = a.part.lastTrained;
+      const bT = b.part.lastTrained;
+      if (aT === null || bT === null) {
+        if (aT === bT) return 0;
+        return aT === null ? 1 : -1;
+      }
+      return aT < bT ? 1 : aT > bT ? -1 : 0;
+    });
+}
+
+function BodyPartGroup({
+  group,
+  windowDays,
+  open,
+  onToggle,
+}: {
+  group: Group;
+  windowDays: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { part, rows } = group;
+  const untrained = part.sets === 0;
+
+  const summary = untrained
+    ? // Scoped to the window, NOT "Never trained" — carried over verbatim from
+      // the Balance panel this replaced. The analysis reads 180 days; a group
+      // last trained 200 days ago is invisible to it, and asserting "never"
+      // would state as fact something it cannot see.
+      `Nothing in the last ${windowDays} days`
+    : `${part.sets} set${part.sets === 1 ? "" : "s"} · last trained ${formatDaysSince(
+        part.daysSince ?? 0
+      )}`;
+
+  /**
+   * An untrained group has nothing to expand, so it is a static row rather
+   * than a dead button — a control that visibly does nothing is worse than no
+   * control. It still occupies a full row and still states its own zero, which
+   * is the whole reason empty groups are kept.
+   */
+  if (untrained) {
+    return (
+      <li className="rounded-md border border-transparent bg-surface-raised px-4 py-3">
+        <GroupHeading part={part} summary={summary} untrained />
+      </li>
+    );
+  }
+
+  return (
+    <li className="rounded-md border border-transparent bg-surface-raised">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 rounded-md px-4 py-3 text-left transition-colors hover:bg-surface-raised/70"
+      >
+        <GroupHeading part={part} summary={summary} />
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+
+      {open && (
+        // 8 between rows, and the list carries the 16 inset itself so the
+        // rows line up under the header's text rather than under its edge.
+        <ul className="space-y-2 px-4 pb-4">
+          {rows.map((p) => (
+            <ProgressRow key={p.key} progression={p} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function GroupHeading({
+  part,
+  summary,
+  untrained = false,
+}: {
+  part: BodyPartLoad;
+  summary: string;
+  untrained?: boolean;
+}) {
+  return (
+    <span className="min-w-0 flex-1">
+      <span
+        className={cn(
+          "block truncate font-mono text-xs font-medium uppercase tracking-[0.1em]",
+          untrained ? "text-muted-foreground" : "text-foreground"
+        )}
+      >
+        {part.bodyPart}
+      </span>
+      {/* 8 inside one object — the group's label to its own summary. */}
+      <span className="mt-2 block truncate font-mono text-xs tabular-nums text-muted-foreground">
+        {summary}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * One exercise. UNCHANGED from the flat version except that it now sits inside
+ * a group, so the body part is dropped from its meta line — the group heading
+ * two lines above already says it, and repeating it on every row was the most
+ * duplicated string on the page.
+ */
 function ProgressRow({ progression }: { progression: ExerciseProgression }) {
   const { change, latest } = progression;
 
@@ -110,7 +316,7 @@ function ProgressRow({ progression }: { progression: ExerciseProgression }) {
           : Minus;
 
   return (
-    <li className="rounded-md border border-transparent bg-surface-raised p-4">
+    <li className="rounded-md border border-border bg-surface p-4">
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 flex-1 truncate text-sm text-foreground">
           {progression.exercise}
@@ -120,12 +326,9 @@ function ProgressRow({ progression }: { progression: ExerciseProgression }) {
         </span>
       </div>
 
-      {/* 8 inside one object. The meta line carries the body part and the day
-          the top set happened, so a number is never shown without saying when
-          it was true. */}
       <div className="mt-2 flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-          {progression.bodyPart ?? "Other"} · {formatCivilDate(latest.date)}
+          {formatCivilDate(latest.date)}
         </span>
         {change && Icon && (
           <span
