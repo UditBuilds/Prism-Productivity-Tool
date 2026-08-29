@@ -2,6 +2,7 @@ import {
   istCivilToLocalDate,
   istDateString,
   istDateTimeToIso,
+  istDayNumber,
   localCivilKey,
 } from "@/lib/date";
 import type { WorkoutSet } from "@/types/database";
@@ -77,14 +78,36 @@ export function groupSetsByExercise(sets: WorkoutSet[]): ExerciseGroup[] {
 }
 
 /**
+ * The window "N sessions in the last 21 days" actually means.
+ *
+ * Deliberately NOT the same number as GET /api/workouts' fetch window, which
+ * is 60 so the picker's Recent list can reach the user's own older exercises.
+ * Two different questions, two different windows; the one place they used to
+ * be the same constant is exactly where the bug would have been.
+ */
+export const SESSION_COUNT_WINDOW_DAYS = 21;
+
+/**
  * Number of distinct IST days in `sets` that have at least one set — i.e.
  * sessions. This is the feature measuring its own use, so it counts days with
  * ANY row, parsed or not.
  */
-export function countSessionDays(sets: WorkoutSet[]): number {
+export function countSessionDays(
+  sets: WorkoutSet[],
+  windowDays: number = SESSION_COUNT_WINDOW_DAYS
+): number {
+  // Bounded HERE rather than inherited from whatever GET /api/workouts happens
+  // to fetch. Until the Recent list needed a longer reach the route's window
+  // was 21 and this function counted everything it was handed, so the label
+  // "N sessions in the last 21 days" was true only by coincidence — widening
+  // the route to 60 would silently have turned it into a 60-day count with
+  // 21-day wording. The window this sentence names is now the window it counts.
+  const cutoff = istDayNumber(Date.now()) - (windowDays - 1);
   const days = new Set<string>();
   for (const set of sets) {
-    days.add(istDateString(Date.parse(set.performed_at)));
+    const at = Date.parse(set.performed_at);
+    if (istDayNumber(at) < cutoff) continue;
+    days.add(istDateString(at));
   }
   return days.size;
 }

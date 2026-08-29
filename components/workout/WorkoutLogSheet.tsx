@@ -37,8 +37,14 @@ import { WorkoutDatePicker } from "@/components/workout/WorkoutDatePicker";
  */
 const WEIGHT_STEP = 2.5;
 
-/** Matches MAX_STRUCTURED_SETS in app/api/workouts/route.ts. */
-const MAX_SETS_PER_CAPTURE = 50;
+/**
+ * Matches MAX_STRUCTURED_SETS in app/api/workouts/route.ts.
+ *
+ * Exported so the repeat-session chips can refuse to overflow a draft past the
+ * server's ceiling rather than discovering it at save time. Deliberately NOT a
+ * third copy of the number.
+ */
+export const MAX_SETS_PER_CAPTURE = 50;
 
 /**
  * Structured logging: build a whole session locally, then save it in ONE
@@ -73,6 +79,7 @@ export function WorkoutLogSheet({
   setSession,
   date,
   setDate,
+  resetKey = 0,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -80,11 +87,36 @@ export function WorkoutLogSheet({
   setSession: Dispatch<SetStateAction<StructuredSetInput[]>>;
   date: Date;
   setDate: Dispatch<SetStateAction<Date>>;
+  /**
+   * Bumped by the page when a whole session is loaded from outside the sheet
+   * (the "Repeat last X day" chips). Used as SheetBody's `key`, which forces a
+   * fresh mount and therefore a freshly derived initial view.
+   *
+   * THIS IS NOT BELT-AND-BRACES, it fixes a reproduced bug. SheetBody picks
+   * its opening view ONCE, from `useState(session.length ? "session" :
+   * "picker")` — and Radix keeps DialogContent mounted between opens, which
+   * this file already documents as the reason `effectiveView` is derived
+   * rather than reset. That guard only covers the direction it was written
+   * for: session view with an emptied draft falls through to the picker.
+   * Loading a draft from OUTSIDE while a stale `view: "picker"` is retained is
+   * the opposite direction and slips straight past it.
+   *
+   * Measured: on a cold page a chip opens correctly onto Session; open and
+   * close the sheet once first and the same chip opens onto "Pick an
+   * exercise", with the loaded session invisible behind it.
+   *
+   * `effectiveView` is NOT enough on its own here and cannot be made enough —
+   * "picker view with a non-empty session" is a legitimate state, reached
+   * every time the user taps "Add exercise". Only an explicit signal can tell
+   * the two apart, so this is a signal rather than another derivation.
+   */
+  resetKey?: number;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <SheetBody
+          key={resetKey}
           session={session}
           setSession={setSession}
           date={date}
@@ -727,7 +759,27 @@ function Stepper({
             "h-9 min-w-0 rounded-md text-center font-mono text-sm tabular-nums",
             // Native spinners would sit next to the −/+ buttons doing the same
             // job at a third the tap target.
-            "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+            // A FILLED well, not another outlined box. This field has always
+            // accepted a typed number — typing "82.5" works today — but nobody
+            // finds it, and the measurement says why: the Input default fill
+            // is #0D0D0D against a #0E0E0E dialog (1.00:1, no signal), and its
+            // border is #32353E, BYTE-IDENTICAL to the outline on the − and +
+            // buttons either side. All three read as one row of outlined
+            // buttons; nothing says the middle one takes text.
+            //
+            // So the fill has to carry it, and the frame cannot — which is the
+            // exact inverse of the BLOCK_SURFACE finding in CLAUDE.md, where
+            // the frame carried containment and the fill was free to sit
+            // almost on the page. There the frame was unique to the block;
+            // here it is the one property the field SHARES with the controls
+            // it must be distinguished from.
+            //
+            // Picked off a four-rung ladder rendered in place at 375px
+            // (current / raised / raised+brighter frame / brighter fill). This
+            // is the quietest rung that separates, and it reuses an existing
+            // token rather than adding a literal.
+            "bg-surface-raised"
           )}
         />
         <Button

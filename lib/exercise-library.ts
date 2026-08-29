@@ -205,8 +205,25 @@ export function bodyPartForExercise(name: string | null): string | null {
  * How many history names the "Recent" section shows. Recency stops being
  * information somewhere, and a picker whose first screen is 30 names is the
  * scrolling problem the picker exists to remove.
+ *
+ * 16, RAISED FROM 8, AND THE TWO NUMBERS ARE COUPLED. 8 was sized against a
+ * 21-day source window. GET /api/workouts now reaches 60 days precisely so
+ * that a body part trained three weeks ago is still reachable without
+ * scrolling the library — and widening the window alone did NOT deliver that.
+ * Measured on the real table the moment the window changed: 13 distinct
+ * exercises came into range, the 8 most recent (one Legs day plus one Arms
+ * day) filled the list exactly, and the 2026-08-04 Back session ranked 9th
+ * through 12th and was still cut. Lat Pulldown stayed 1267px down the library,
+ * Pull Up 1391px — byte-identical to before the window moved.
+ *
+ * So the cap, not the window, was the binding constraint. 16 is one full
+ * training rotation (four sessions of four exercises), which is the unit that
+ * matters here: it is the smallest number that lets a four-way split come all
+ * the way back round without a name falling off the end. Raising the window
+ * without raising this is a no-op for the user, and lowering this back to 8
+ * silently re-breaks the thing the 60-day window was for.
  */
-const MAX_RECENT = 8;
+const MAX_RECENT = 16;
 
 export interface ExerciseOption {
   /** Normalised identity — stable React key, and the dedupe key. */

@@ -6,6 +6,7 @@ import { AlertCircle, Dumbbell, Loader2, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
+  SESSION_COUNT_WINDOW_DAYS,
   collapseConsecutiveSets,
   formatSetLine,
   groupSetsByExercise,
@@ -138,8 +139,12 @@ export function WorkoutTodayPanel() {
           report, so a brand-new user isn't greeted by a zero. */}
       {!restoring && (sessionCount ?? 0) > 0 && (
         <p className="mt-4 border-t border-border pt-4 font-mono text-xs tabular-nums text-muted-foreground">
-          {sessionCount} session{sessionCount === 1 ? "" : "s"} in the last 21
-          days
+          {/* The number in this sentence comes from the same constant that
+              bounds the count, so the wording cannot drift from the window.
+              It is NOT the route's fetch window (60) — see
+              SESSION_COUNT_WINDOW_DAYS. */}
+          {sessionCount} session{sessionCount === 1 ? "" : "s"} in the last{" "}
+          {SESSION_COUNT_WINDOW_DAYS} days
         </p>
       )}
     </>

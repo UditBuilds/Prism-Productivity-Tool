@@ -36,13 +36,31 @@ function json<T>(
 export const maxDuration = 30;
 
 /**
- * How far back GET reaches. The card needs today's sets AND a 21-day session
- * count, so one window feeds both and the client derives each with `select`
- * off the single ["workouts"] cache — the same trick useTodaysMood uses.
+ * How far back GET reaches. THREE things derive from this one window via
+ * `select` off the single ["workouts"] cache — today's sets, the session
+ * count, and the picker's "Recent" list — so widening it is not a local
+ * change. Read the next paragraph before touching it.
+ *
+ * 60, not 21. The picker's Recent list is sourced from this window, and at 21
+ * days it was EVICTING the user's own exercises: the real table's 2026-08-04
+ * Back session (Lat Pulldown, Close Grip Row, Pull Up, Chin Up) aged out on
+ * 2026-08-25, so four exercises actually trained became reachable only by
+ * scrolling the full 66-name library — measured at 1267px and 1391px of scroll
+ * against 0px for a library name the user has never done. Recency that makes
+ * your own history harder to reach than a stranger's is backwards.
+ *
+ * THE SESSION COUNT DID NOT MOVE WITH IT. "N sessions in the last 21 days" is
+ * a different claim with its own window, and it is now enforced explicitly in
+ * countSessionDays(sets, SESSION_COUNT_WINDOW_DAYS) rather than falling out of
+ * whatever this constant happens to be. That coupling was silent before: this
+ * number was the only thing making that label true.
+ *
+ * The Today panel is unaffected either way — useTodaysSets filters to the
+ * current IST day, so a wider window changes nothing it renders.
  */
-const WINDOW_DAYS = 21;
+const WINDOW_DAYS = 60;
 const DAY_MS = 86_400_000;
-/** Backstop only. 21 days of heavy lifting is a few hundred rows. */
+/** Backstop only. 60 days of heavy lifting is a few hundred rows. */
 const MAX_ROWS = 1000;
 
 /**
