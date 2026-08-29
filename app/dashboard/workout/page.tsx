@@ -14,7 +14,11 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionPanel } from "@/components/dashboard/SectionPanel";
 import { WorkoutDatePicker } from "@/components/workout/WorkoutDatePicker";
-import { WorkoutLogSheet } from "@/components/workout/WorkoutLogSheet";
+import {
+  MAX_SETS_PER_CAPTURE,
+  WorkoutLogSheet,
+} from "@/components/workout/WorkoutLogSheet";
+import { RepeatSessionChips } from "@/components/workout/RepeatSessionChips";
 import { WorkoutTodayPanel } from "@/components/workout/WorkoutTodayPanel";
 import { WorkoutProgressPanel } from "@/components/workout/WorkoutProgressPanel";
 import { BodyPartBalancePanel } from "@/components/workout/BodyPartBalancePanel";
@@ -76,6 +80,37 @@ export default function WorkoutPage() {
    * Saturday silently re-dating a shorthand line typed for today.
    */
   const [textDate, setTextDate] = useState<Date>(workoutToday);
+  /**
+   * Bumped whenever a session is loaded into the draft from outside the sheet,
+   * to remount the sheet body onto the right view. See WorkoutLogSheet's
+   * `resetKey`.
+   */
+  const [sheetResetKey, setSheetResetKey] = useState(0);
+
+  /**
+   * Load a past day's exercises into the draft and open the sheet on it.
+   *
+   * APPENDS rather than replaces, and that is the same principle that put the
+   * draft in the page instead of the sheet: no single tap may destroy work
+   * already entered. On an empty draft — the overwhelmingly common case — the
+   * two are indistinguishable. On a non-empty one, groupStructuredSets merges
+   * by exercise, so repeating a Legs day onto two Leg Press sets already
+   * logged reads as one Leg Press group, which is also what actually happened.
+   * Clear is one tap away in the sheet if the merge wasn't wanted.
+   *
+   * The date resets to TODAY, not the date being copied. The session being
+   * repeated is a template for the one happening now; the existing picker is
+   * right there if this is a catch-up entry for another day.
+   */
+  function repeatSession(sets: StructuredSetInput[]) {
+    setSession((prev) => prev.concat(sets));
+    setSessionDate(workoutToday());
+    // Forces the sheet body to remount so it opens onto the session it was
+    // just handed. Without it a chip tapped after any earlier open lands on
+    // the picker — see WorkoutLogSheet's `resetKey` note.
+    setSheetResetKey((n) => n + 1);
+    setSheetOpen(true);
+  }
 
   function submit() {
     const raw = input.trim();
@@ -119,6 +154,15 @@ export default function WorkoutPage() {
             : "Log sets"}
         </Button>
 
+        {/* Between the primary CTA and the free-text fallback, because that is
+            what it is: a shortcut INTO the same picker flow, not a third way
+            to log. Order reads primary -> shortcut -> fallback. */}
+        <RepeatSessionChips
+          onRepeat={repeatSession}
+          draftSetCount={session.length}
+          maxSets={MAX_SETS_PER_CAPTURE}
+        />
+
         <WorkoutLogSheet
           open={sheetOpen}
           onOpenChange={setSheetOpen}
@@ -126,6 +170,7 @@ export default function WorkoutPage() {
           setSession={setSession}
           date={sessionDate}
           setDate={setSessionDate}
+          resetKey={sheetResetKey}
         />
 
         {/* The free-text fallback, unchanged. 16 from the primary CTA — it is a
