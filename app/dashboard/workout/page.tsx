@@ -21,7 +21,6 @@ import {
 import { RepeatSessionChips } from "@/components/workout/RepeatSessionChips";
 import { WorkoutTodayPanel } from "@/components/workout/WorkoutTodayPanel";
 import { WorkoutProgressPanel } from "@/components/workout/WorkoutProgressPanel";
-import { BodyPartBalancePanel } from "@/components/workout/BodyPartBalancePanel";
 
 const PLACEHOLDER = "bench 3x5 @ 80kg, squat 100x5";
 
@@ -228,15 +227,16 @@ export default function WorkoutPage() {
       </SectionPanel>
 
       {/* The analysis layer, reading 180 days where the two sections above read
-          21. Both are one readout each, so `card` like Today — and both sit
-          BELOW logging, which stays the first thing on the page. Order zooms
-          out: today's sets, then each exercise over time, then the whole body. */}
+          60. It sits BELOW logging, which stays the first thing on the page.
+          Order zooms out: today's sets, then the body over time.
+
+          ONE SECTION, NOT TWO. "Body-part balance" used to follow this one,
+          restating the same sets from the other direction; between them they
+          were 71.5% of a page three screens tall. Balance's per-part facts are
+          now the summary line on each collapsed group header inside Progress,
+          which removes a section rather than shortening one. */}
       <SectionPanel title="Progress">
         <WorkoutProgressPanel />
-      </SectionPanel>
-
-      <SectionPanel title="Body-part balance">
-        <BodyPartBalancePanel />
       </SectionPanel>
     </div>
   );
