@@ -114,6 +114,42 @@ export function istCivilToLocalDate(dateStr: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/**
+ * An IST civil date ("YYYY-MM-DD") as the instant a task's `due_date` stores:
+ * 12:00 IST that day, i.e. 06:30 UTC.
+ *
+ * The noon anchor is the convention every task-creation path already follows —
+ * `pickedDateToIso` in components/tasks/TaskForm.tsx does the identical
+ * `Date.UTC(y, m, d, 6, 30)`, from a Date whose LOCAL civil fields carry the
+ * day rather than from a civil string. This is that same arithmetic for callers
+ * that already hold the civil date, which is what a server route has.
+ *
+ * SERVER-SAFE BY CONSTRUCTION: it reads no clock and no local timezone, so it
+ * produces the same instant on a UTC Vercel box as on an IST laptop. Note the
+ * anchor is a convention, not a guarantee about existing rows — cron-spawned
+ * recurring instances land on 00:00 UTC (05:30 IST) instead, so never compare a
+ * stored due_date against a literal 06:30.
+ *
+ * Returns null for anything that isn't a real calendar date, so a bad string
+ * becomes an undated task rather than a silently rolled-over one (Date.UTC
+ * turns 2026-02-30 into March 2 without complaint).
+ */
+export function istCivilDateToNoonIso(dateStr: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const [y, m, d] = dateStr.split("-").map((n) => Number.parseInt(n, 10));
+  const ms = Date.UTC(y, m - 1, d, 6, 30, 0);
+  const back = new Date(ms);
+  // 06:30 UTC is the same civil day in UTC as in IST, so these compare directly.
+  if (
+    back.getUTCFullYear() !== y ||
+    back.getUTCMonth() !== m - 1 ||
+    back.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return back.toISOString();
+}
+
 /** Inverse of istCivilToLocalDate: the local civil day as "YYYY-MM-DD". */
 export function localCivilKey(d: Date): string {
   const y = d.getFullYear();

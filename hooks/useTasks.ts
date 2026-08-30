@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 
 import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import { istWeekday, nextIstMatchingDayName } from "@/lib/date";
+import { MAX_SPLIT_TASKS, type SplitTasksResult } from "@/lib/task-split";
 import type {
   RecurringTask,
   Task,
@@ -188,6 +189,111 @@ export function useCreateTask(meta?: MutationMeta) {
       // the reminders cache (and what it feeds) is no longer independent.
       qc.invalidateQueries({ queryKey: REMINDERS_KEY });
       invalidateDerivedCaches(qc, "reminders");
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AI capture split (POST /api/tasks/split)
+
+export interface SplitTasksInput {
+  /** The raw capture text, exactly as typed. */
+  text: string;
+}
+
+async function requestSplit(input: SplitTasksInput): Promise<SplitTasksResult<Task>> {
+  const res = await fetch("/api/tasks/split", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const json = (await res.json()) as ApiResponse<SplitTasksResult<Task>>;
+  if (!res.ok || json.error || json.data === null) {
+    throw new Error(json.error ?? `Request failed (${res.status})`);
+  }
+  return json.data;
+}
+
+/**
+ * A SECOND task-creating mutation key, which CaptureField was explicitly built
+ * without — so it is worth saying why this one has to exist.
+ *
+ * Only mutations registered in lib/offline-mutations.ts are persisted at all;
+ * anything else is DROPPED on reload rather than replayed. If the split path
+ * dispatched over an unregistered key, a multi-item capture typed with no
+ * signal would be silently discarded — strictly worse than today, where it
+ * survives as one task. Registering it means the capture is queued once and the
+ * split happens server-side on replay, which is exactly how the workout capture
+ * already carries its AI parse through an offline gym session.
+ */
+export const splitTasksMutationOptions = {
+  mutationKey: ["tasks", "split"] as const,
+  mutationFn: (input: SplitTasksInput) => requestSplit(input),
+};
+
+/**
+ * Send a capture to be read as several tasks. ONLY CaptureField calls this, and
+ * only when lib/task-split.ts sees a reason to; everything else keeps
+ * useCreateTask.
+ *
+ * The optimistic row is ONE task holding the literal text — the same floor the
+ * route guarantees. It cannot know the real split until the server answers, and
+ * claiming a number it might not get would be worse than briefly under-showing:
+ * the onSettled invalidation replaces it with whatever was actually created.
+ */
+export function useSplitTasks(meta?: MutationMeta) {
+  const qc = useQueryClient();
+  return useMutation({
+    ...splitTasksMutationOptions,
+    meta,
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: TASKS_KEY });
+      const previous = qc.getQueryData<Task[]>(TASKS_KEY) ?? [];
+      const now = new Date().toISOString();
+      const optimistic: Task = {
+        id: `optimistic-${crypto.randomUUID()}`,
+        user_id: "optimistic",
+        title: input.text,
+        description: null,
+        status: "todo",
+        priority: "medium",
+        due_date: null,
+        plan_id: null,
+        created_at: now,
+        updated_at: now,
+        completed_at: null,
+      };
+      qc.setQueryData<Task[]>(TASKS_KEY, [optimistic, ...previous]);
+      return { previous };
+    },
+    onError: (err, _input, ctx) => {
+      if (ctx?.previous) qc.setQueryData(TASKS_KEY, ctx.previous);
+      toast.error(err instanceof Error ? err.message : "Failed to create task");
+    },
+    onSuccess: (result) => {
+      // Counted from the SERVER's rows, never from the request — the same rule
+      // useLogWorkout follows, so the toast states what was actually stored.
+      const n = result.tasks.length;
+      const headline =
+        n === 1 ? "Task created" : `${n} tasks created`;
+
+      // The ` · ` suffix carries one secondary fact, matching the established
+      // pattern in useSaveGeneratedCards / PDFUploadModal.
+      //
+      // "empty" gets NO apology: the call succeeded and the model judged the
+      // capture to be one thing. Saying the AI failed there would be false, and
+      // it is the same distinction EmptyGenerationError exists to draw.
+      const suffix = result.truncated
+        ? ` · kept the first ${MAX_SPLIT_TASKS}`
+        : result.fallback && result.fallback !== "empty"
+          ? " · couldn't split it just now"
+          : "";
+
+      toast.success(headline + suffix);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: TASKS_KEY });
+      invalidateDerivedCaches(qc, "tasks");
     },
   });
 }

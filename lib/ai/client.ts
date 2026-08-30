@@ -1,5 +1,7 @@
 import Groq from "groq-sdk";
 
+import { MAX_SPLIT_TASKS } from "@/lib/task-split";
+
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 
 const MODEL = "openai/gpt-oss-120b";
@@ -21,6 +23,22 @@ const MODEL = "openai/gpt-oss-120b";
  */
 const MAX_TOKENS_CARDS = 4000;
 const MAX_TOKENS_NOTES = 2000;
+
+/**
+ * Output cap for the capture split.
+ *
+ * The answer is at most MAX_SPLIT_TASKS objects of {title, due_date} — a few
+ * hundred visible tokens at the very top end. The budget is dominated by
+ * reasoning tokens, which `openai/gpt-oss-120b` bills against this same cap
+ * (one measured reformat spent 1,133 reasoning tokens to emit 154 visible
+ * ones). 1,500 leaves room for that on a ten-item list while keeping
+ * prompt + max_tokens far under the account's 8,000 TPM ceiling, so a capture
+ * cannot be the call that trips the shared budget.
+ *
+ * It fails SAFE if ever hit: a truncated JSON array does not parse, which
+ * throws, which the route degrades into the single literal task.
+ */
+const MAX_TOKENS_TASK_SPLIT = 1500;
 
 /**
  * Backstop on what any single call may send to the model.
@@ -294,4 +312,173 @@ No preamble. No markdown fences.`;
   }
 
   return cards;
+}
+
+/**
+ * One actionable item pulled out of a dashboard capture.
+ *
+ * `due_date` is a PLAIN CIVIL DATE ("YYYY-MM-DD") or null — never an instant.
+ * The model is not allowed anywhere near a timestamp: tasks.due_date is a
+ * noon-IST-anchored ISO string and the anchoring is done by the same helper
+ * every other task-creation path uses, so an AI answer cannot invent a
+ * timezone convention of its own.
+ */
+export interface SplitTaskDraft {
+  title: string;
+  due_date: string | null;
+}
+
+/** Longest title we will accept back from the model. */
+const MAX_SPLIT_TITLE_CHARS = 200;
+/** Furthest ahead a returned due date may sit before it reads as a mistake. */
+const MAX_SPLIT_DUE_DAYS = 730;
+
+const CIVIL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+/** Midnight-UTC instant for a civil "YYYY-MM-DD", or NaN if it isn't one. */
+function civilDateToUtcMs(dateStr: string): number {
+  if (!CIVIL_DATE_RE.test(dateStr)) return NaN;
+  const [y, m, d] = dateStr.split("-").map((n) => Number.parseInt(n, 10));
+  const ms = Date.UTC(y, m - 1, d);
+  const back = new Date(ms);
+  // Rejects 2026-02-30 and friends, which Date.UTC silently rolls over.
+  if (
+    back.getUTCFullYear() !== y ||
+    back.getUTCMonth() !== m - 1 ||
+    back.getUTCDate() !== d
+  ) {
+    return NaN;
+  }
+  return ms;
+}
+
+/**
+ * Read a capture as a list of actionable tasks with optional due dates.
+ * SERVER-ONLY — touches GROQ_API_KEY, so it may only be called from an API
+ * route.
+ *
+ * `today` is the caller's IST civil date. It is passed in rather than read here
+ * because "what day is it" is an IST question the app answers in exactly one
+ * place (lib/date.ts), and a model asked to resolve "friday" needs the same
+ * answer the rest of the app would give.
+ *
+ * THROWS EmptyGenerationError when the call succeeded and produced nothing
+ * usable, and a plain Error for a real technical failure. That is the same
+ * split the other generators in this file draw, and the caller reports the two
+ * differently: an empty answer is the model saying "there is nothing here",
+ * which a retry cannot improve on.
+ */
+export async function splitCaptureIntoTasks(
+  capture: string,
+  today: string
+): Promise<SplitTaskDraft[]> {
+  const text = capture.trim();
+  if (!text) {
+    throw new EmptyGenerationError("Nothing to split.");
+  }
+
+  const todayMs = civilDateToUtcMs(today);
+  if (Number.isNaN(todayMs)) {
+    // A caller bug, not a model failure — fail loudly rather than let the model
+    // resolve "tomorrow" against a date nobody supplied.
+    throw new Error("splitCaptureIntoTasks: `today` must be YYYY-MM-DD.");
+  }
+  const todayWeekday = WEEKDAY_NAMES[new Date(todayMs).getUTCDay()];
+
+  const systemPrompt = `You turn a quick capture typed into a productivity app into a list of tasks.
+
+Today is ${today} (${todayWeekday}).
+
+Return ONLY a JSON object of this exact shape:
+{"tasks":[{"title":"Call mom","due_date":"2026-09-01"},{"title":"Submit the report","due_date":null}]}
+
+Rules:
+- ONE object per distinct actionable item.
+- If the text does NOT actually describe more than one distinct actionable item, return a SINGLE-item array. Do not force a split that does not make sense. "buy milk and eggs and bread" is ONE shopping task, not three. "call mom and submit the report" is two.
+- title: a short imperative task name in sentence case. Strip the date words out of it — "call mom tomorrow" has the title "Call mom", not "Call mom tomorrow". Never invent a task the text does not contain.
+- due_date: a plain calendar date as "YYYY-MM-DD", or null.
+- Use null whenever the text does not actually state when the item is due. NEVER guess a date, never default to today, and never add a date just because the other items have one.
+- Resolve relative dates against today (${today}): "today" is ${today}, "tomorrow" is the next day, a bare weekday name is the NEXT occurrence of that weekday, "next week" is seven days ahead.
+- Never return a date before ${today}.
+- NEVER output a time, a timezone, or a full timestamp. Date only.
+- Return at most ${MAX_SPLIT_TASKS} items, the most important ones first.
+- Return the JSON object only. No prose, no markdown fences.`;
+
+  let content: string;
+  try {
+    const completion = await groq.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text.slice(0, MAX_SOURCE_CHARS) },
+      ],
+      // 0: the same input should split the same way twice. This is an
+      // extraction, not a piece of writing.
+      temperature: 0,
+      max_tokens: MAX_TOKENS_TASK_SPLIT,
+      response_format: { type: "json_object" },
+    });
+    content = (completion.choices[0]?.message?.content ?? "").trim();
+  } catch (err) {
+    console.error("Groq generate error (task split):", err);
+    throw err;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    // json_object mode makes this unlikely, but a completion truncated at the
+    // token ceiling lands here. A technical failure, not an empty answer — the
+    // caller degrades to the literal task either way, and says which happened.
+    throw new Error("AI returned invalid JSON.");
+  }
+
+  const items = (parsed as { tasks?: unknown })?.tasks;
+  if (!Array.isArray(items)) {
+    throw new Error("AI returned unexpected format.");
+  }
+
+  const drafts = items
+    .filter(
+      (t): t is Record<string, unknown> => typeof t === "object" && t !== null
+    )
+    .map((t): SplitTaskDraft | null => {
+      const title = typeof t.title === "string" ? t.title.trim() : "";
+      // A task with no title is not a task. Dropped rather than patched from
+      // the raw capture, which would silently duplicate a sibling item.
+      if (!title) return null;
+
+      const raw = typeof t.due_date === "string" ? t.due_date.trim() : "";
+      const ms = raw ? civilDateToUtcMs(raw) : NaN;
+      // Anything that isn't a real calendar date in a sane window becomes null.
+      // A wrong date is worse than no date: it puts the task in the agenda on a
+      // day the user never asked for, where an undated task is simply undated.
+      // A past date is caught here too — it can only be a resolution error,
+      // since the prompt forbids one.
+      const dueDate =
+        !Number.isNaN(ms) &&
+        ms >= todayMs &&
+        ms <= todayMs + MAX_SPLIT_DUE_DAYS * 86_400_000
+          ? raw
+          : null;
+
+      return { title: title.slice(0, MAX_SPLIT_TITLE_CHARS), due_date: dueDate };
+    })
+    .filter((t): t is SplitTaskDraft => t !== null);
+
+  if (drafts.length === 0) {
+    throw new EmptyGenerationError("Nothing actionable found in that capture.");
+  }
+
+  return drafts;
 }
