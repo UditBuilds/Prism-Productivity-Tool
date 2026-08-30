@@ -17,6 +17,7 @@ import {
   workoutToday,
 } from "@/lib/workouts";
 import { REFRESH_SERVER_DATA } from "@/lib/rsc-refresh";
+import { looksLikeMultipleTasks } from "@/lib/task-split";
 import { BLOCK_SURFACE } from "@/components/dashboard/SectionPanel";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -24,7 +25,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useCreateTask } from "@/hooks/useTasks";
+import { useCreateTask, useSplitTasks } from "@/hooks/useTasks";
 import { useCreateNote } from "@/hooks/useNotes";
 import { useLogWorkout } from "@/hooks/useWorkouts";
 
@@ -50,12 +51,19 @@ const SYNTAX_HINT = "/n note · /w workout · else task";
  * present, needs no modal, no type picker and no due date is the cheapest
  * possible path from "thought" to "row in a table".
  *
- * NO NEW MUTATION KEY. All three destinations already have keyed, optimistic,
- * offline-registered create mutations (lib/offline-mutations.ts). This
- * component is a DISPATCHER over them, which is why nothing had to be added to
- * RESUMABLE_MUTATION_KEYS: a capture made offline is queued, persisted and
- * replayed by exactly the machinery that already carries a task, a note or a
- * gym set. Routing to a brand-new key would have been dropped on reload.
+ * IT IS A DISPATCHER, NOT AN OWNER. Every destination is a keyed, optimistic,
+ * offline-registered mutation (lib/offline-mutations.ts), so a capture made
+ * offline is queued, persisted and replayed by exactly the machinery that
+ * already carries a task, a note or a gym set. Nothing here holds state that a
+ * reload would lose.
+ *
+ * This shipped with a stronger property — "NO NEW MUTATION KEY" — and that is
+ * NO LONGER TRUE: the AI split path added ["tasks","split"]. The rule the old
+ * wording was really protecting still holds and is the one to keep: a
+ * destination may only route to a key REGISTERED in RESUMABLE_MUTATION_KEYS,
+ * because an unregistered key is dropped on reload rather than replayed, and a
+ * capture that vanishes is the one outcome this field must never produce. Add a
+ * destination and you must add its key there too.
  *
  * THE WRITE NEVER BLOCKS. `mutate` is fire-and-forget: with networkMode
  * "offlineFirst" the mutation pauses rather than rejecting when there is no
@@ -122,6 +130,7 @@ export function CaptureField() {
   // workout page — all of which sit on client-rendered pages with no server
   // data to re-fetch.
   const createTask = useCreateTask(REFRESH_SERVER_DATA);
+  const splitTasks = useSplitTasks(REFRESH_SERVER_DATA);
   const createNote = useCreateNote(REFRESH_SERVER_DATA);
   const logWorkout = useLogWorkout(REFRESH_SERVER_DATA);
 
@@ -180,9 +189,26 @@ export function CaptureField() {
         setDate(workoutToday());
         break;
       case "tasks":
-        // NO due date. An undated task is valid, and defaulting to today would
-        // refill the very list this rebuild exists to keep honest.
-        createTask.mutate({ title: route.body });
+        // TWO PATHS, decided locally and deterministically. A capture with no
+        // sign of holding more than one task — no line break, no list marker,
+        // no separator, no conjunction, no date word — takes the EXISTING
+        // create exactly as before: no AI call, no rate-limit budget, no new
+        // failure mode. "buy milk" is byte-for-byte what it always was.
+        //
+        // NO DUE DATE on that path, still. An undated task is valid, and
+        // defaulting to today would refill the very list this rebuild exists to
+        // keep honest. The split path only ever sets a date the user actually
+        // typed; the model is told never to invent one.
+        //
+        // The heuristic leans toward asking (lib/task-split.ts) because a miss
+        // is uncorrectable — nothing downstream re-reads a capture that never
+        // went to the model — while a false positive costs one cheap call and
+        // comes back as the single task it always was.
+        if (looksLikeMultipleTasks(route.body)) {
+          splitTasks.mutate({ text: route.body });
+        } else {
+          createTask.mutate({ title: route.body });
+        }
         break;
     }
   }

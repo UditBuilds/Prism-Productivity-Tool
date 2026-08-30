@@ -5,6 +5,7 @@ import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import {
   createTaskMutationOptions,
   deleteTaskMutationOptions,
+  splitTasksMutationOptions,
   stopRecurringTemplateMutationOptions,
   updateTaskMutationOptions,
 } from "@/hooks/useTasks";
@@ -65,6 +66,12 @@ function replayToastId(entity: string, operation: string): string {
 
 const RESUMABLE_MUTATION_KEYS: ReadonlyArray<MutationKey> = [
   createTaskMutationOptions.mutationKey,
+  // The dashboard capture's AI split path. It MUST be here: an unregistered key
+  // is dropped on reload rather than replayed, so a multi-item capture typed
+  // with no signal would vanish — strictly worse than the one task it becomes
+  // today. Registered, it queues once and the split runs server-side on replay,
+  // exactly as the workout capture carries its parse through a dead zone.
+  splitTasksMutationOptions.mutationKey,
   updateTaskMutationOptions.mutationKey,
   deleteTaskMutationOptions.mutationKey,
   stopRecurringTemplateMutationOptions.mutationKey,
@@ -120,6 +127,23 @@ export function registerResumableMutations(qc: QueryClient): void {
     onError: (err, variables) => {
       console.error(
         "[offline-replay] task create failed",
+        { variables },
+        err
+      );
+      toast.error("Couldn't sync a task you created while offline", {
+        id: replayToastId("task", "create"),
+      });
+    },
+  });
+  qc.setMutationDefaults(splitTasksMutationOptions.mutationKey, {
+    mutationFn: splitTasksMutationOptions.mutationFn,
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+      invalidateDerivedCaches(qc, "tasks");
+    },
+    onError: (err, variables) => {
+      console.error(
+        "[offline-replay] task split failed",
         { variables },
         err
       );
