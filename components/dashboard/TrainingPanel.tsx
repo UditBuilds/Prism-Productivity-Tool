@@ -190,12 +190,25 @@ export function TrainingPanel() {
                 looser than the progression rows directly above it — which are
                 a column.
 
-                TWO COLUMNS IS THE PHONE-WIDTH CEILING, and the binding string
-                is the untrained one. Measured at 375: cells are 146.5 and
-                "Nothing in 180d" needs 108, so it clears by 38. A third column
-                would leave ~93 and clip it. The same arithmetic puts the floor
-                at a ~298px viewport — below the 375 this app supports, but
-                worth knowing before the window constant or a group name grows.
+                TWO COLUMNS IS THE PHONE-WIDTH CEILING, and the binding
+                string is the untrained one. At 375 with default text the cell
+                is 146.5 and "Nothing in 180d" needs 108. A third column would
+                leave ~93 and not fit it.
+
+                CELLS WRAP, THEY DO NOT TRUNCATE, and that is the whole point
+                of this pair of <p>s carrying no `truncate`. They had it, and
+                on a real phone with a larger text setting the untrained cells
+                rendered "Nothing in 1…" — clipping away the "180d", which is
+                the exact thing this wording exists to say. Text scaling makes
+                the cell fail from BOTH ends at once: the type grows while the
+                cell shrinks, because Tailwind's p-4 and gap-4 are rem-based
+                and scale with it. Reproduced at a 1.36x setting (root 22px):
+                type 12 -> 16.5px, string 108 -> 148.5px, cell 146.5 -> 131.5.
+
+                So do not reach for `truncate` here again, and do not chase a
+                width threshold — there isn't a fixed one. A wrap costs a
+                second line in the one cell that needs it; an ellipsis costs
+                the information.
 
                 An odd count leaves the last cell alone, deliberately. A filler
                 cell would be a body part that does not exist. */}
@@ -206,7 +219,7 @@ export function TrainingPanel() {
                   <li key={b.bodyPart} className="min-w-0">
                     <p
                       className={cn(
-                        "truncate text-sm",
+                        "break-words text-sm",
                         untrained ? "text-muted-foreground" : "text-foreground"
                       )}
                     >
@@ -216,7 +229,7 @@ export function TrainingPanel() {
                         gap BETWEEN cells is 16, so the pair reads as a pair. */}
                     <p
                       className={cn(
-                        "mt-2 truncate font-mono text-xs tabular-nums",
+                        "mt-2 break-words font-mono text-xs tabular-nums",
                         untrained
                           ? "text-muted-foreground/70"
                           : "text-muted-foreground"
