@@ -34,8 +34,15 @@ const DIRECTION_TINT: Record<ProgressDirection, string> = {
 };
 
 /**
- * Training drift: when you last trained, what each body part is owed, and
- * whether the weight is moving.
+ * Training drift: what each body part is owed, and whether the weight is
+ * moving.
+ *
+ * It states each of those ONCE. The panel used to open with "Last session
+ * <date> · N sessions in 180 days" and close with "N groups untrained in
+ * 180d", and both were restatements — the date of the last session is on the
+ * progression rows, which each end in their own date, and the untrained count
+ * is the number of body-part cells that say so. Two lines of summary wrapped
+ * around two lists that already said it.
  *
  * Sources the PR #43 analysis endpoint (180 IST days) rather than the logging
  * cache (21 days). That split is load-bearing: at 21 days the only baseline
@@ -106,8 +113,24 @@ export function TrainingPanel() {
     )
     .slice(0, PROGRESSION_LIMIT);
 
-  const trained = data.bodyParts.filter((b) => b.daysSince !== null);
-  const untrained = data.bodyParts.filter((b) => b.daysSince === null);
+  /**
+   * Trained groups first, untrained after — NOT the endpoint's own order.
+   *
+   * `analyseWorkoutSets` sorts most-neglected-first, which is right for the
+   * workout page's ranking but wrong for a grid: the two groups with nothing
+   * behind them would take the top-left cells, and the emptier the history the
+   * louder the section would get. Each half keeps the endpoint's ordering
+   * inside itself (longest-untrained, then least work), so the ranking is
+   * intact within the part of the list that has anything to rank.
+   *
+   * Same rule the workout page's grouped Progress section applies, and the
+   * same reading order this panel already had when the trained groups were
+   * chips and the rest were a summary line.
+   */
+  const ordered = [
+    ...data.bodyParts.filter((b) => b.daysSince !== null),
+    ...data.bodyParts.filter((b) => b.daysSince === null),
+  ];
 
   return (
     <SectionPanel
@@ -116,94 +139,106 @@ export function TrainingPanel() {
       linkLabel="View all"
       variant="block"
     >
-      {/* Last session — the one line that answers "am I drifting?". */}
-      {data.lastSessionDate && (
-        <p className="text-sm text-foreground">
-          Last session{" "}
-          <span className="font-mono tabular-nums">
-            {formatCivilDate(data.lastSessionDate)}
-          </span>
-          <span className="text-muted-foreground">
-            {" "}
-            · {data.sessionDays} session{data.sessionDays === 1 ? "" : "s"} in{" "}
-            {data.windowDays} days
-          </span>
-        </p>
-      )}
-
-      {progressing.length > 0 && (
-        <div className="mt-4">
-          <MonoLabel as="p">Progression</MonoLabel>
-          <ul className="mt-2 divide-y">
-            {progressing.map((p) => (
-              <li
-                key={p.key}
-                className="flex items-center justify-between gap-4 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-foreground">
-                    {p.exercise}
-                  </p>
-                  <p className="mt-2 font-mono text-xs tabular-nums text-muted-foreground">
-                    {formatSessionTopSet(p.latest)} ·{" "}
-                    {formatCivilDate(p.latest.date)}
-                  </p>
-                </div>
-                {/* Every row here HAS a change — the baseline case is filtered
-                    out above rather than rendered as "First session", so this
-                    chip always states a real comparison. */}
-                <span
-                  className={cn(
-                    "shrink-0 font-mono text-xs tabular-nums",
-                    DIRECTION_TINT[p.change.direction]
-                  )}
+      {/* The two sub-sections, 16 apart, carried by the wrapper rather than a
+          `mt-4` on each. The "Last session" line that used to sit first is
+          gone, and with it the child that those top margins were measured
+          from — a leading `mt-4` would now add a second 16 on top of the
+          block's own p-4 and read as a void above the first label. */}
+      <div className="space-y-4">
+        {progressing.length > 0 && (
+          <div>
+            <MonoLabel as="p">Progression</MonoLabel>
+            <ul className="mt-2 divide-y">
+              {progressing.map((p) => (
+                <li
+                  key={p.key}
+                  className="flex items-center justify-between gap-4 py-2"
                 >
-                  {formatChange(p.change)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {data.bodyParts.length > 0 && (
-        <div className="mt-4">
-          <MonoLabel as="p">Body parts</MonoLabel>
-
-          {/* A chip is spent only on a group with actual work behind it. Six
-              chips, four of them saying "nothing in 180d", wrapped to three
-              lines and gave the absence of training more room than the
-              training — the emptier the history, the louder the section got. */}
-          {/* The chips lost their fill. A body part and its staleness are a
-              noun and a number, and they read as a pair from the weight
-              difference alone — the capsule was doing no work the type wasn't
-              already doing. Wrapping is now on a wider gap so the pairs stay
-              distinguishable without a box to bound them. */}
-          {trained.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
-              {trained.map((b) => (
-                <li key={b.bodyPart} className="text-sm text-foreground">
-                  {b.bodyPart}{" "}
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {formatDaysSince(b.daysSince as number).toLowerCase()}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-foreground">
+                      {p.exercise}
+                    </p>
+                    <p className="mt-2 font-mono text-xs tabular-nums text-muted-foreground">
+                      {formatSessionTopSet(p.latest)} ·{" "}
+                      {formatCivilDate(p.latest.date)}
+                    </p>
+                  </div>
+                  {/* Every row here HAS a change — the baseline case is filtered
+                      out above rather than rendered as "First session", so this
+                      chip always states a real comparison. */}
+                  <span
+                    className={cn(
+                      "shrink-0 font-mono text-xs tabular-nums",
+                      DIRECTION_TINT[p.change.direction]
+                    )}
+                  >
+                    {formatChange(p.change)}
                   </span>
                 </li>
               ))}
             </ul>
-          )}
+          </div>
+        )}
 
-          {/* The rest collapse to one line. Still counted, never dropped — and
-              still "nothing in N days", never "never": the analysis cannot see
-              past its window, so "never" would assert what it has no evidence
-              for. Muted, not alarming: an untrained group is information. */}
-          {untrained.length > 0 && (
-            <p className="mt-2 font-mono text-xs text-muted-foreground/70">
-              {untrained.length} group{untrained.length === 1 ? "" : "s"}{" "}
-              untrained in {data.windowDays}d
-            </p>
-          )}
-        </div>
-      )}
+        {ordered.length > 0 && (
+          <div>
+            <MonoLabel as="p">Body parts</MonoLabel>
+
+            {/* A GRID, not a wrapped tag list. As inline chips the pairs broke
+                wherever the previous label's length happened to leave room, so
+                every group started at a different x and the section read as
+                looser than the progression rows directly above it — which are
+                a column.
+
+                TWO COLUMNS IS THE PHONE-WIDTH CEILING, and the binding string
+                is the untrained one. Measured at 375: cells are 146.5 and
+                "Nothing in 180d" needs 108, so it clears by 38. A third column
+                would leave ~93 and clip it. The same arithmetic puts the floor
+                at a ~298px viewport — below the 375 this app supports, but
+                worth knowing before the window constant or a group name grows.
+
+                An odd count leaves the last cell alone, deliberately. A filler
+                cell would be a body part that does not exist. */}
+            <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-4">
+              {ordered.map((b) => {
+                const untrained = b.daysSince === null;
+                return (
+                  <li key={b.bodyPart} className="min-w-0">
+                    <p
+                      className={cn(
+                        "truncate text-sm",
+                        untrained ? "text-muted-foreground" : "text-foreground"
+                      )}
+                    >
+                      {b.bodyPart}
+                    </p>
+                    {/* 8 inside one object: the group and its own recency. The
+                        gap BETWEEN cells is 16, so the pair reads as a pair. */}
+                    <p
+                      className={cn(
+                        "mt-2 truncate font-mono text-xs tabular-nums",
+                        untrained
+                          ? "text-muted-foreground/70"
+                          : "text-muted-foreground"
+                      )}
+                    >
+                      {untrained
+                        ? // Still "nothing in N days", never "never" — the
+                          // analysis cannot see past its window, so "never"
+                          // would assert what it has no evidence for. This is
+                          // where that signal lives now that the "N groups
+                          // untrained" summary line is gone: in the cell
+                          // itself, next to the group it is about.
+                          `Nothing in ${data.windowDays}d`
+                        : formatDaysSince(b.daysSince as number)}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </div>
     </SectionPanel>
   );
 }
