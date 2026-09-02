@@ -275,6 +275,13 @@ async function finalize(supabase: SupabaseServerClient, job: YoutubeNoteJob) {
       title: videoTitle,
       content,
       tags: ["youtube-import"],
+      // Without this the row lands with kind NULL, which is the "legacy,
+      // pre-capture-kinds note" state — it never matches the Revisit filter on
+      // /dashboard/notes, never reaches the dashboard's Revisit section, and
+      // gets no kind switcher in NoteModal (that control is gated on a
+      // non-null kind). A note distilled from a video is precisely the thing
+      // you want resurfaced to re-read, so it is born a Revisit.
+      kind: "revisit",
     })
     .select()
     .single();
