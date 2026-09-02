@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { markdownExcerpt, renderMarkdown } from "@/lib/markdown";
+import { NoteActionsMenu } from "@/components/notes/NoteActionsMenu";
 import { useCreateNote, useUpdateNote } from "@/hooks/useNotes";
 import { useCreateCard } from "@/hooks/useSRS";
 import type { Note } from "@/types/database";
@@ -284,6 +285,14 @@ export function NoteModal({
                 >
                   Edit
                 </button>
+                {/* Copy / Share / Export PDF. Reads the LOCAL title+content
+                    state, not `note`, so an AI reformat that has just landed
+                    is what gets exported. */}
+                <NoteActionsMenu
+                  title={title}
+                  content={content}
+                  tags={tags}
+                />
               </div>
             </DialogHeader>
 
