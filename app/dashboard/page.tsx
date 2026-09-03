@@ -21,6 +21,7 @@ import { TrainingPanel } from "@/components/dashboard/TrainingPanel";
 import { AgendaTaskRow } from "@/components/dashboard/AgendaTaskRow";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
 import { RevisitNoteRow } from "@/components/dashboard/RevisitNoteRow";
+import { dailyRevisitIndex } from "@/lib/notes/revisit-summary";
 import { DashboardRow, ROW_META } from "@/components/dashboard/DashboardRow";
 import { StatusBand } from "@/components/dashboard/StatusBand";
 import { SectionPanel } from "@/components/dashboard/SectionPanel";
@@ -148,19 +149,69 @@ export default async function DashboardHome() {
       .select("performed_at")
       .order("performed_at", { ascending: false })
       .limit(1),
+    // COUNT ONLY — the note itself is a second, ranged query below, because
+    // the index to fetch depends on this count. Head query, so zero rows come
+    // back: the badge needs the real total, and picking one of N needs N.
     supabase
       .from("notes")
-      .select("*")
-      .eq("kind", "revisit")
-      .order("updated_at", { ascending: false })
-      .limit(3),
+      .select("*", { count: "exact", head: true })
+      .eq("kind", "revisit"),
   ]);
 
   const overdueCount = overdueRes.count ?? 0;
   const openCount = openRes.count ?? 0;
   const cardsCount = cardsRes.count ?? 0;
-  const revisitNotes: Note[] = revisitRes.data ?? [];
-  const revisitError = revisitRes.error ? "Couldn't load your revisit notes" : null;
+  /**
+   * ONE Revisit note, chosen by the IST day, not the three most recent.
+   *
+   * The section rendered up to three notes, each a 2-4 bullet summary that
+   * wrapped to several lines — on a phone it was comfortably the tallest thing
+   * on the dashboard, in a section whose job is passive re-reading rather than
+   * drift. One note a day is the whole pile over time, at a fraction of the
+   * height, and a Revisit pile is exactly the shape that wants to come round
+   * rather than have its newest member always win.
+   *
+   * TWO QUERIES, SEQUENTIALLY, AND THE SECOND ONE IS WHY. `dailyRevisitIndex`
+   * needs the count before it can name a row, so the count cannot ride in the
+   * same request as the row. The extra round trip buys a much smaller payload
+   * than the query it replaces: the live Revisit corpus is 13 notes totalling
+   * 223,409 characters, and the old `.limit(3)` pulled three FULL rows —
+   * including, by `updated_at`, the 114,787-character one. This pulls exactly
+   * one.
+   *
+   * ORDERED BY created_at, TIEBROKEN ON id — a key that does not move. Ordering
+   * by `updated_at` (what the old query used) would reshuffle the rotation
+   * every time any note was edited, so the note "today" pointed at would change
+   * under an unrelated save.
+   */
+  const revisitTotal = revisitRes.count ?? 0;
+  const revisitIndex = dailyRevisitIndex(istDayNumber(Date.now()), revisitTotal);
+
+  const revisitNoteRes =
+    revisitIndex === null
+      ? null
+      : await supabase
+          .from("notes")
+          .select("*")
+          .eq("kind", "revisit")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(revisitIndex, revisitIndex);
+
+  const revisitNote: Note | null = revisitNoteRes?.data?.[0] ?? null;
+  // Either query failing is the same thing to the reader: the section could not
+  // be read. A count that failed leaves revisitIndex null, so the second query
+  // never runs and its error is not the one to report.
+  //
+  // The two queries can also disagree without either failing — delete the last
+  // note between them and the range lands past the end, returning zero rows and
+  // no error. That is not an error state: revisitNote stays null, the section
+  // omits itself for one render, and the next load has the right count. Better
+  // than reporting a failure that did not happen.
+  const revisitError =
+    revisitRes.error || revisitNoteRes?.error
+      ? "Couldn't load your revisit notes"
+      : null;
 
   // ── TRAINED ────────────────────────────────────────────────────────
   // Days since the last set, as IST CIVIL day distance — not elapsed hours.
@@ -515,10 +566,14 @@ export default async function DashboardHome() {
 
       {/* Revisit — notes saved to be re-read, never quizzed. Moved to the
           bottom: it is the only section here that is not about drift. */}
-      {(revisitError || revisitNotes.length > 0) && (
+      {(revisitError || revisitNote !== null) && (
         <SectionPanel
           title="Revisit"
-          count={revisitNotes.length}
+          /* The REAL total, not the 1 that renders. The badge answers "how
+             many are in the pile", and a pile of 13 showing today's one must
+             not report itself as a pile of one — that is also what makes
+             "View all" worth tapping. */
+          count={revisitTotal}
           countPlain
           href="/dashboard/notes?kind=revisit"
           linkLabel="View all"
@@ -540,11 +595,15 @@ export default async function DashboardHome() {
                sans body rank, no BookOpen glyph — every row in a section
                headed "Revisit" is a note, so the icon stated the one thing
                already true of all of them, and it cost the title its left
-               alignment with every other title on the page. */
-            <ul className="divide-y">
-              {revisitNotes.map((n) => (
-                <RevisitNoteRow key={n.id} note={n} />
-              ))}
+               alignment with every other title on the page.
+
+               ONE ROW, so `divide-y` is gone — it emits nothing on a single
+               child anyway, and keeping it would imply a list that can grow.
+               The <ul> STAYS: SectionPanel's `block` variant cancels its own
+               padding with `[&>ul]:-m-4`, a DIRECT-child selector, so swapping
+               in a <div> would leave the row double-inset at both ends. */
+            <ul>
+              {revisitNote && <RevisitNoteRow note={revisitNote} />}
             </ul>
           )}
         </SectionPanel>
