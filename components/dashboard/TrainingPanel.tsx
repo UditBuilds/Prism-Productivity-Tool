@@ -8,8 +8,8 @@ import { useWorkoutAnalysis } from "@/hooks/useWorkoutAnalysis";
 import {
   formatChange,
   formatCivilDate,
-  formatDaysSince,
   formatSessionTopSet,
+  untrainedBodyParts,
   type ExerciseProgression,
   type ProgressChange,
   type ProgressDirection,
@@ -34,8 +34,15 @@ const DIRECTION_TINT: Record<ProgressDirection, string> = {
 };
 
 /**
- * Training drift: what each body part is owed, and whether the weight is
+ * Training drift: which body parts are owed work, and whether the weight is
  * moving.
+ *
+ * BOTH LISTS NOW SHOW ONLY WHAT IS ACTIONABLE. Progression drops exercises with
+ * nothing to progress from; Body parts drops groups that were trained inside
+ * the window. What is left is the two questions the panel exists to answer —
+ * what has been neglected, and whether the lifts that repeat are moving — with
+ * nothing in between restating a session the user was present for. On the live
+ * table the body-part block goes from seven cells to two.
  *
  * It states each of those ONCE. The panel used to open with "Last session
  * <date> · N sessions in 180 days" and close with "N groups untrained in
@@ -114,23 +121,37 @@ export function TrainingPanel() {
     .slice(0, PROGRESSION_LIMIT);
 
   /**
-   * Trained groups first, untrained after — NOT the endpoint's own order.
+   * ONLY the groups with nothing logged in the window.
    *
-   * `analyseWorkoutSets` sorts most-neglected-first, which is right for the
-   * workout page's ranking but wrong for a grid: the two groups with nothing
-   * behind them would take the top-left cells, and the emptier the history the
-   * louder the section would get. Each half keeps the endpoint's ordering
-   * inside itself (longest-untrained, then least work), so the ranking is
-   * intact within the part of the list that has anything to rank.
+   * The grid rendered all seven, which on a real phone is seven rows of which
+   * six say "you trained this recently" — a fact the user was present for. The
+   * one cell that carries a decision is the one that says a group is owed
+   * work, so that is the only cell left. On the live table this takes the block
+   * from seven cells to two.
    *
-   * Same rule the workout page's grouped Progress section applies, and the
-   * same reading order this panel already had when the trained groups were
-   * chips and the rest were a summary line.
+   * THE TRAINED-FIRST RE-ORDER GOES WITH THEM. It existed to stop the two
+   * emptiest groups taking the top-left cells; with the trained half gone there
+   * is no half to sort behind, and the endpoint's own most-neglected-first
+   * ranking is exactly the right order for what remains.
+   *
+   * Filtered by `untrainedBodyParts` in lib/workout-analysis rather than
+   * inline, so the rule can be tested without a renderer.
    */
-  const ordered = [
-    ...data.bodyParts.filter((b) => b.daysSince !== null),
-    ...data.bodyParts.filter((b) => b.daysSince === null),
-  ];
+  const untrained = untrainedBodyParts(data.bodyParts);
+
+  /**
+   * Both sub-blocks empty: no section at all, header included.
+   *
+   * This branch is NEW and is a direct consequence of the filter above.
+   * `analyseWorkoutSets` seeds every library group, so `bodyParts` was never
+   * shorter than six and the grid always rendered — the panel could not be
+   * empty while it showed all seven cells. It can now: train every group
+   * recently, repeat no exercise, and both lists come back empty. A "Training"
+   * heading over a void is the empty state this dashboard specifically does not
+   * do, so the panel omits itself the same way it already does for a user with
+   * no history at all.
+   */
+  if (progressing.length === 0 && untrained.length === 0) return null;
 
   return (
     <SectionPanel
@@ -180,7 +201,7 @@ export function TrainingPanel() {
           </div>
         )}
 
-        {ordered.length > 0 && (
+        {untrained.length > 0 && (
           <div>
             <MonoLabel as="p">Body parts</MonoLabel>
 
@@ -211,43 +232,32 @@ export function TrainingPanel() {
                 the information.
 
                 An odd count leaves the last cell alone, deliberately. A filler
-                cell would be a body part that does not exist. */}
+                cell would be a body part that does not exist — and with only
+                untrained groups here, an odd count is now the common case
+                rather than the edge one.
+
+                THE GRID AND THE CELL STYLING ARE UNCHANGED. Every cell used to
+                pick between a trained and an untrained treatment; only
+                untrained cells reach this list now, so the ternaries are gone
+                and their untrained branch is inlined verbatim. Same classes,
+                same wording, fewer of them. */}
             <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-4">
-              {ordered.map((b) => {
-                const untrained = b.daysSince === null;
-                return (
-                  <li key={b.bodyPart} className="min-w-0">
-                    <p
-                      className={cn(
-                        "break-words text-sm",
-                        untrained ? "text-muted-foreground" : "text-foreground"
-                      )}
-                    >
-                      {b.bodyPart}
-                    </p>
-                    {/* 8 inside one object: the group and its own recency. The
-                        gap BETWEEN cells is 16, so the pair reads as a pair. */}
-                    <p
-                      className={cn(
-                        "mt-2 break-words font-mono text-xs tabular-nums",
-                        untrained
-                          ? "text-muted-foreground/70"
-                          : "text-muted-foreground"
-                      )}
-                    >
-                      {untrained
-                        ? // Still "nothing in N days", never "never" — the
-                          // analysis cannot see past its window, so "never"
-                          // would assert what it has no evidence for. This is
-                          // where that signal lives now that the "N groups
-                          // untrained" summary line is gone: in the cell
-                          // itself, next to the group it is about.
-                          `Nothing in ${data.windowDays}d`
-                        : formatDaysSince(b.daysSince as number)}
-                    </p>
-                  </li>
-                );
-              })}
+              {untrained.map((b) => (
+                <li key={b.bodyPart} className="min-w-0">
+                  <p className="break-words text-sm text-muted-foreground">
+                    {b.bodyPart}
+                  </p>
+                  {/* 8 inside one object: the group and its own recency. The
+                      gap BETWEEN cells is 16, so the pair reads as a pair.
+
+                      Still "nothing in N days", never "never" — the analysis
+                      cannot see past its window, so "never" would assert what
+                      it has no evidence for. */}
+                  <p className="mt-2 break-words font-mono text-xs tabular-nums text-muted-foreground/70">
+                    {`Nothing in ${data.windowDays}d`}
+                  </p>
+                </li>
+              ))}
             </ul>
           </div>
         )}
