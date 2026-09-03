@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { renderMarkdown } from "@/lib/markdown";
+import { revisitPreview } from "@/lib/notes/revisit-summary";
 import { useDeleteNote } from "@/hooks/useNotes";
 import type { Note } from "@/types/database";
 import { ROW_META } from "@/components/dashboard/DashboardRow";
@@ -63,11 +64,38 @@ import {
  * already listed in RESUMABLE_MUTATION_KEYS with replay defaults registered in
  * lib/offline-mutations.ts, so a delete made offline is persisted and replayed
  * by machinery that predates this component.
+ *
+ * WHY THE BODY IS BOUNDED, AND WHY line-clamp WAS NOT THE FIX.
+ *
+ * This row used to render `renderMarkdown(note.content)` in full. That went
+ * unnoticed while Revisit held short hand-written notes and became obvious the
+ * moment 13 YouTube-import notes were switched to kind 'revisit' — the largest
+ * is 114,787 characters, rendered complete, headings and all.
+ *
+ * The Notes tab does NOT share this bug, and it is worth being precise about
+ * why: `NoteCard` renders `markdownExcerpt(content)`, which caps the string at
+ * 180 characters BEFORE it becomes markup, into a `line-clamp-3` paragraph.
+ * Two independent bounds. Adding `line-clamp` here would have fixed nothing —
+ * `renderMarkdown` emits a multi-block tree (h2 / ul / p) and
+ * `-webkit-line-clamp` only clamps a single block container.
+ *
+ * So the bound is on the CONTENT, decided by `revisitPreview`:
+ *
+ *   short note (<= 600 chars)  -> the raw markdown, exactly as before.
+ *   long note with a summary   -> the cached AI key points, as markdown.
+ *   long note, summary null    -> a truncated plain-text excerpt.
+ *
+ * The third branch is a stopgap, never a live AI call: this is inside a
+ * Server-Component section, and a dashboard that waits on Groq to paint is a
+ * worse failure than a slightly blunt preview. Summaries are written on save
+ * (app/api/notes/route.ts) and were backfilled once for the existing rows.
  */
 export function RevisitNoteRow({ note }: { note: Note }) {
   const router = useRouter();
   const deleteNote = useDeleteNote();
   const [open, setOpen] = useState(false);
+
+  const preview = revisitPreview(note.content, note.summary);
 
   async function confirmDelete() {
     try {
@@ -94,11 +122,35 @@ export function RevisitNoteRow({ note }: { note: Note }) {
         {note.title}
       </p>
 
-      {note.content.trim() && (
+      {preview.mode === "summary" && (
+        <>
+          {/* Says the row is showing key points, not the note. Set in ROW_META
+              — the same 12px mono-caps rank as the Delete control below and as
+              AgendaTaskRow's state line, so it adds a label, not a new rank. */}
+          <p className={cn(ROW_META, "mt-2 text-muted-foreground/70")}>
+            Key points
+          </p>
+          <div
+            className="prose-preview mt-1 text-sm text-muted-foreground"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(preview.markdown) }}
+          />
+        </>
+      )}
+
+      {preview.mode === "raw" && (
         <div
           className="prose-preview mt-2 text-sm text-muted-foreground"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(note.content) }}
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(preview.markdown) }}
         />
+      )}
+
+      {/* No summary yet. Plain text in a clamped paragraph — the same shape
+          the Notes tab uses, so an unsummarized row can never be the tall one
+          again even if the excerpt cap is later raised. */}
+      {preview.mode === "fallback" && (
+        <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+          {preview.text}
+        </p>
       )}
 
       <button

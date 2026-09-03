@@ -1,6 +1,7 @@
 import Groq from "groq-sdk";
 
 import { MAX_SPLIT_TASKS } from "@/lib/task-split";
+import { buildSummarySource, clampSummary } from "@/lib/notes/revisit-summary";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 
@@ -23,6 +24,34 @@ const MODEL = "openai/gpt-oss-120b";
  */
 const MAX_TOKENS_CARDS = 4000;
 const MAX_TOKENS_NOTES = 2000;
+
+/**
+ * Output cap for a Revisit summary.
+ *
+ * The visible answer is 2-4 bullets — under 300 characters, well below 100
+ * tokens. The budget is dominated by reasoning tokens, which
+ * `openai/gpt-oss-120b` bills against this same cap.
+ *
+ * It also has to stay SMALL for a reason the other caps don't share. Groq
+ * reserves `prompt_tokens + max_tokens` up front against an 8,000 TPM
+ * account-wide ceiling, and this call runs INSIDE a user's note save — if the
+ * reservation were large, saving a long note could be refused outright. With
+ * a ~5,000-char digest (~1,300 tokens) plus 800 the whole reservation lands
+ * near 2,200, leaving most of the minute's budget for everything else.
+ *
+ * It fails SAFE: a truncated completion is rejected by wasTruncated below, the
+ * route catches it, and the note saves with summary null — which the widget
+ * renders as a truncated excerpt.
+ *
+ * 1500, NOT 800, AND MEASURED RATHER THAN GUESSED. At 800 the backfill failed
+ * on 6 of 12 real notes with finish_reason "length" — the cap was spent on
+ * REASONING before a single visible token was emitted (2,042 reasoning tokens
+ * across the 6 that did succeed). Reasoning is not proportional to output on
+ * this model: the 114,787-char note needed 424, while several mid-size notes
+ * blew past 800. The paired fix is reasoning_effort "low" below, which treats
+ * the cause; this cap is the headroom behind it.
+ */
+const MAX_TOKENS_SUMMARY = 1500;
 
 /**
  * Output cap for the capture split.
@@ -228,6 +257,86 @@ Rules:
     throw new EmptyGenerationError("No note content was generated.");
   }
   return text;
+}
+
+/**
+ * 2-4 bullet key points for a long Revisit note. SERVER-ONLY (touches
+ * GROQ_API_KEY).
+ *
+ * Same shape as generateNotesFromTranscript above — same client, same model,
+ * same truncation guard, same EmptyGenerationError — deliberately, so there is
+ * one AI-calling pattern in this module rather than two.
+ *
+ * The two differences are both budget, not style: the source is a digest built
+ * by buildSummarySource (opening prose + heading outline) rather than a raw
+ * slice, because a leading slice of a 114,787-character note summarizes only
+ * its introduction; and max_tokens is MAX_TOKENS_SUMMARY, because this call
+ * runs inside a user-facing save.
+ *
+ * The caller is expected to treat a throw as "save without a summary". This
+ * function never returns a partial or truncated answer — a half-written
+ * summary shown as fact is worse than the excerpt fallback.
+ */
+export async function summarizeNoteContent(
+  title: string,
+  content: string
+): Promise<string> {
+  const source = buildSummarySource(content);
+  if (source.trim().length < 100) {
+    throw new Error("Note is too short to summarize.");
+  }
+
+  const systemPrompt = `You write ultra-short "what is this about" summaries of study notes, so someone scanning a dashboard can tell what a note covers without opening it.
+
+Rules:
+- Output 2 to 4 Markdown bullet points, each starting with "- ". Nothing else: no heading, no preamble, no closing line, no code fence.
+- LENGTH IS THE HARDEST RULE: the whole summary must be 150-300 characters and must never exceed 340. Count as you go. Each bullet is a short phrase of roughly 60-90 characters — one clause, no padding, no sub-clauses after a semicolon.
+- State what the note is ABOUT and its main takeaways. Do not recap it section by section.
+- You may be given the note's opening followed by a "--- Section outline ---" list of its headings. The outline tells you the note's full scope; use it so the summary covers the whole note, not only the opening.
+- Never mention 'the note', 'this document', 'the outline', 'the video', or 'the speaker'.
+- Plain text inside bullets. No bold, no links, no nested bullets.
+- Do not invent anything the source does not support.`;
+
+  const userContent = `Title: ${title.slice(0, 300)}
+
+Note:
+${source}`;
+
+  let text: string;
+  try {
+    const completion = await groq.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+      temperature: 0.3,
+      max_tokens: MAX_TOKENS_SUMMARY,
+      // "Condense this into 3 bullets" needs no deliberation, and on
+      // openai/gpt-oss-120b reasoning tokens bill against max_tokens — at the
+      // default effort they consumed the entire budget on half the real notes
+      // and returned EMPTY content. Low effort is the fix; the raised cap is
+      // only the safety margin. Measured: 6/12 failures became 0/6.
+      reasoning_effort: "low",
+    });
+    // Persisted and shown as the note's stand-in. A completion cut off at the
+    // ceiling would store a bullet list ending mid-word, so treat it as a
+    // failure and let the caller fall back to the excerpt.
+    if (wasTruncated(completion.choices[0]?.finish_reason)) {
+      throw new Error("AI output was truncated.");
+    }
+    text = (completion.choices[0]?.message?.content ?? "").trim();
+  } catch (err) {
+    console.error("Groq generate error (note summary):", err);
+    throw err;
+  }
+
+  if (!text) {
+    throw new EmptyGenerationError("No summary was generated.");
+  }
+  // The length rule is enforced here, not left to the prompt — see
+  // clampSummary. Whole bullets are dropped; nothing is cut mid-word.
+  return clampSummary(text);
 }
 
 /**
