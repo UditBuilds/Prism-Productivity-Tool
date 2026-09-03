@@ -176,6 +176,12 @@ export interface Database {
           tags: string[];
           // null = pre-feature note (behaves as a plain Spark, never rewritten)
           kind: "spark" | "revisit" | null;
+          // AI-generated key points, shown by the dashboard's Revisit widget
+          // in place of a long note's full body. null = not generated (short
+          // note, generation failed, or created by a path that doesn't
+          // summarize) — the widget falls back to a truncated excerpt and
+          // never blocks on a live call. See lib/notes/revisit-summary.ts.
+          summary: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -186,6 +192,7 @@ export interface Database {
           content?: string;
           tags?: string[];
           kind?: "spark" | "revisit" | null;
+          summary?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -196,6 +203,7 @@ export interface Database {
           content?: string;
           tags?: string[];
           kind?: "spark" | "revisit" | null;
+          summary?: string | null;
           created_at?: string;
           updated_at?: string;
         };

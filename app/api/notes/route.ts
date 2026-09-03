@@ -2,11 +2,57 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { markdownExcerpt } from "@/lib/markdown";
+import { summarizeNoteContent } from "@/lib/ai/client";
+import { needsSummary } from "@/lib/notes/revisit-summary";
 import type { Database, Note } from "@/types/database";
 
 type NoteUpdate = Database["public"]["Tables"]["notes"]["Update"];
 
 type ApiResponse<T> = { data: T | null; error: string | null };
+
+/**
+ * The Revisit summary for a note about to be written, or null.
+ *
+ * SYNCHRONOUS AND INSIDE THE SAVE, on purpose. The dashboard's Revisit section
+ * is a Server Component: there is no client to kick a background job from and
+ * no second render to fill in later, so a summary that isn't written by the
+ * time the save returns would only appear on some later edit. Generating here
+ * means the row is correct the first time the dashboard reads it.
+ *
+ * NEVER FATAL. A Groq failure — the 8,000 TPM ceiling, a bad key, a
+ * decommissioned model — returns null and the note saves without a summary.
+ * The widget then renders a truncated excerpt (lib/notes/revisit-summary.ts),
+ * which is the whole reason that fallback exists. Losing a user's note text
+ * because a summarizer was rate-limited would be a far worse bug than the one
+ * this feature fixes.
+ *
+ * Returns `undefined` to mean "leave the stored value alone".
+ */
+async function summaryForSave({
+  kind,
+  title,
+  content,
+  regenerate,
+}: {
+  kind: "spark" | "revisit" | null;
+  title: string;
+  content: string;
+  /** False when nothing changed that could invalidate an existing summary. */
+  regenerate: boolean;
+}): Promise<string | null | undefined> {
+  if (!regenerate) return undefined;
+
+  // Short, or not a Revisit note: no summary is shown for it, so clear any
+  // stale one rather than leaving a summary of text that no longer exists.
+  if (kind !== "revisit" || !needsSummary(content)) return null;
+
+  try {
+    return await summarizeNoteContent(title, content);
+  } catch (err) {
+    console.error("[notes] summary generation failed; saving without one", err);
+    return null;
+  }
+}
 
 function json<T>(body: ApiResponse<T>, status = 200) {
   return NextResponse.json(body, { status });
@@ -72,6 +118,13 @@ export async function POST(request: Request) {
     return json({ data: null, error: "Title is required" }, 400);
   }
 
+  const summary = await summaryForSave({
+    kind,
+    title,
+    content,
+    regenerate: true,
+  });
+
   const { data, error } = await supabase
     .from("notes")
     .insert({
@@ -80,6 +133,7 @@ export async function POST(request: Request) {
       content,
       tags: parseTags(body.tags),
       kind,
+      summary: summary ?? null,
     })
     .select()
     .single();
@@ -128,6 +182,56 @@ export async function PATCH(request: Request) {
 
   if (Object.keys(updates).length === 0) {
     return json({ data: null, error: "No fields to update" }, 400);
+  }
+
+  /**
+   * Read the row before writing it, so the summary decision can be made
+   * against what the note will actually BE after this patch — not against the
+   * fragment of it this request happens to carry.
+   *
+   * A PATCH may send content without kind (an edit), kind without content (the
+   * Spark/Revisit switcher), or a title alone. Each of those changes the
+   * answer, and only the merged row knows it. RLS scopes the select to the
+   * caller, so a miss here is a genuine 404.
+   */
+  const { data: existing } = await supabase
+    .from("notes")
+    .select("kind, title, content, summary")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (existing) {
+    const nextKind = updates.kind ?? existing.kind;
+    const nextTitle = updates.title ?? existing.title;
+    const nextContent = updates.content ?? existing.content ?? "";
+    const contentChanged =
+      updates.content !== undefined && updates.content !== existing.content;
+
+    /**
+     * Regenerate when the text changed, when the note just became a Revisit,
+     * or when a note that should have a summary is missing one.
+     *
+     * That last clause is what makes this self-healing: a note whose earlier
+     * generation failed, or one written by a path that doesn't summarize (the
+     * YouTube job's finalize insert), picks one up on its next save instead of
+     * showing the excerpt fallback forever. It also keeps the common case
+     * free — re-saving an unchanged note that already has a summary fires no
+     * Groq call at all.
+     */
+    const regenerate =
+      contentChanged ||
+      (updates.kind !== undefined && updates.kind !== existing.kind) ||
+      (nextKind === "revisit" &&
+        needsSummary(nextContent) &&
+        !existing.summary);
+
+    const summary = await summaryForSave({
+      kind: nextKind,
+      title: nextTitle,
+      content: nextContent,
+      regenerate,
+    });
+    if (summary !== undefined) updates.summary = summary;
   }
 
   // Touch updated_at so the list re-sorts to the top after an edit.

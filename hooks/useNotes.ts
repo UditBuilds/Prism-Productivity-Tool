@@ -136,6 +136,10 @@ export function useCreateNote(meta?: MutationMeta) {
         content: input.content ?? "",
         tags: input.tags ?? [],
         kind: input.kind ?? null,
+        // Generated server-side during the save; the optimistic row can't know
+        // it. Null here means the row briefly shows the excerpt fallback, then
+        // the invalidation in onSettled replaces it with the real summary.
+        summary: null,
         created_at: now,
         updated_at: now,
       };
