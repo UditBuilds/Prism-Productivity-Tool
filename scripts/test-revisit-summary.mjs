@@ -239,6 +239,68 @@ async function main() {
   ok("non-bullet output is marked as truncated", flatClamped.endsWith("…"));
   ok("non-bullet clamp never cuts mid-word", !/w…$|wor…$/.test(flatClamped));
 
+  console.log("\nclamp edge cases — where the two rules conflict");
+  /**
+   * EDGE (a): ONE bullet, on its own, longer than the ceiling.
+   *
+   * The two-bullet floor and the 340 ceiling cannot both hold here. These
+   * assertions record which one currently wins — THE FLOOR — so that a future
+   * change to either rule fails loudly instead of silently altering it. This
+   * is documenting measured behaviour, not endorsing it: the output genuinely
+   * exceeds SUMMARY_MAX_CHARS.
+   */
+  const oneBig = "- " + "word ".repeat(80).trim(); // 401 chars, single line
+  ok("edge (a) fixture is one bullet over the ceiling",
+    oneBig.length > SUMMARY_MAX_CHARS && oneBig.split("\n").length === 1);
+
+  const aOut = clampSummary(oneBig);
+  eq("edge (a) returns the bullet byte-identical", aOut, oneBig);
+  eq("edge (a) stays one line", aOut.split("\n").length, 1);
+  ok("edge (a) THE FLOOR WINS: output exceeds the ceiling",
+    aOut.length > SUMMARY_MAX_CHARS);
+  ok("edge (a) still never cuts mid-word", /(^|\s)word$/.test(aOut));
+
+  // Two oversized bullets: both survive, for the same reason.
+  const twoBig = oneBig + "\n" + oneBig;
+  eq("edge (a) two oversized bullets are both kept", clampSummary(twoBig), twoBig);
+  // Three: the floor covers the first two only, so the third is dropped.
+  eq(
+    "edge (a) the floor covers exactly two — a third oversized bullet is dropped",
+    clampSummary([oneBig, oneBig, oneBig].join("\n")),
+    twoBig
+  );
+
+  /**
+   * EDGE (b): no bullets at all, AND the fallback itself is over the ceiling.
+   *
+   * The floor does not apply on this path, so the ceiling holds. Asserted
+   * structurally — the kept text must be a PREFIX of the input ending exactly
+   * at a word boundary — rather than by pattern-matching the tail, which is
+   * what the existing "never cuts mid-word" check does more loosely.
+   */
+  const flatBig = "alpha bravo charlie delta echo foxtrot golf hotel ".repeat(10).trim();
+  ok("edge (b) fixture is over the ceiling with no bullet line",
+    flatBig.length > SUMMARY_MAX_CHARS &&
+      !flatBig.split("\n").some((l) => /^\s*[-*]\s+\S/.test(l)));
+
+  const bOut = clampSummary(flatBig);
+  ok("edge (b) respects the ceiling (+1 for the ellipsis)",
+    bOut.length <= SUMMARY_MAX_CHARS + 1);
+  ok("edge (b) is marked as truncated", bOut.endsWith("…"));
+
+  const bBody = bOut.slice(0, -1);
+  ok("edge (b) kept text is a prefix of the input", flatBig.startsWith(bBody));
+  eq("edge (b) cut lands exactly on a space", flatBig[bBody.length], " ");
+  ok("edge (b) last kept token is a whole word",
+    flatBig.split(" ").includes(bBody.split(" ").pop()));
+
+  // Degenerate: no space exists to trim at. Cutting mid-word is unavoidable;
+  // the alternative is returning nothing. Locked in so it stays deliberate.
+  const noSpace = "x".repeat(400);
+  const cOut = clampSummary(noSpace);
+  ok("edge (b) no-boundary text is still bounded", cOut.length <= SUMMARY_MAX_CHARS + 1);
+  ok("edge (b) no-boundary text is still marked truncated", cOut.endsWith("…"));
+
   rmSync(out, { recursive: true, force: true });
   console.log("\n" + (checks - failures) + "/" + checks + " passed");
   if (failures) process.exit(1);

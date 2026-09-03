@@ -109,6 +109,21 @@ export function revisitPreview(
  * "never exceed 340" only moved the worst case from 503 to 475. LLMs do not
  * count characters reliably, so a length contract expressed only in a prompt
  * is a wish. This is the contract.
+ *
+ * WHY 340 AND NOT THE SPEC'S 300. 300 is the TARGET the prompt asks for; 340
+ * is the backstop that catches genuine overshoot without trimming summaries
+ * that landed essentially on target. Measured against the finished corpus of
+ * 13 real rows (236, 261, 269, 284, 289, 297, 298, 302, 304, 312, 313, 313,
+ * 338): a 340 ceiling fires on ZERO of them, a 300 ceiling would fire on SIX
+ * — dropping a bullet from summaries that missed the target by 2-13
+ * characters, which costs real content to buy nothing. It is also the same
+ * number the prompt states as its hard ceiling, so prompt and clamp agree on
+ * one figure rather than disagreeing on two.
+ *
+ * NOT derived from a measured row height. Nothing in this arc was rendered at
+ * 375x812 — the dashboard is behind a login the agent could not pass — so
+ * whether 340 is the right number FOR THE ROW is still unverified. It is
+ * chosen against the spec target and the observed distribution, nothing more.
  */
 export const SUMMARY_MAX_CHARS = 340;
 
@@ -122,10 +137,25 @@ export const SUMMARY_MAX_CHARS = 340;
  * of the model roughly in importance order, so the ones dropped are the ones
  * that matter least.
  *
- * At least two bullets always survive, even if that overshoots the ceiling —
- * a single bullet is a headline, not a summary, and the overshoot is bounded
- * by the model's own per-bullet length rather than being unbounded like the
- * raw note was.
+ * THE TWO-BULLET FLOOR BEATS THE 340 CEILING, and the output can therefore
+ * exceed SUMMARY_MAX_CHARS. This is the one place the two rules conflict, so
+ * it is stated rather than left to be discovered. Measured, not reasoned:
+ *
+ *   one 401-char bullet    -> 401 chars, returned byte-identical, 1 line
+ *   two 401-char bullets   -> 803 chars, both kept, 2 lines
+ *   three 401-char bullets -> 803 chars, first two kept, third dropped
+ *
+ * A single bullet is a headline, not a summary, so the floor is the rule that
+ * gives way last. The overshoot stays bounded by the model's own per-bullet
+ * length (the real corpus tops out at 338 for a WHOLE summary), which is
+ * nothing like the unbounded raw note this feature exists to cap. "Never cuts
+ * mid-word" holds in every one of those cases — the ceiling is what bends.
+ *
+ * The non-bullet fallback has no such floor and always lands within
+ * SUMMARY_MAX_CHARS + 1 (the ellipsis). Its one degenerate case is text with
+ * no space in the first 340 characters, where there is no word boundary to
+ * trim at and it cuts mid-word by necessity; no model output has ever looked
+ * like that, and the alternative would be returning nothing.
  */
 export function clampSummary(raw: string): string {
   const text = raw.trim();
