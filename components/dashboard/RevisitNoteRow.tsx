@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { renderMarkdown } from "@/lib/markdown";
-import { revisitPreview } from "@/lib/notes/revisit-summary";
+import {
+  revisitPreview,
+  summaryParagraph,
+} from "@/lib/notes/revisit-summary";
 import { useDeleteNote } from "@/hooks/useNotes";
 import type { Note } from "@/types/database";
 import { ROW_META } from "@/components/dashboard/DashboardRow";
@@ -82,13 +85,27 @@ import {
  * So the bound is on the CONTENT, decided by `revisitPreview`:
  *
  *   short note (<= 600 chars)  -> the raw markdown, exactly as before.
- *   long note with a summary   -> the cached AI key points, as markdown.
+ *   long note with a summary   -> the cached AI key points, as ONE PARAGRAPH.
  *   long note, summary null    -> a truncated plain-text excerpt.
  *
  * The third branch is a stopgap, never a live AI call: this is inside a
  * Server-Component section, and a dashboard that waits on Groq to paint is a
  * worse failure than a slightly blunt preview. Summaries are written on save
  * (app/api/notes/route.ts) and were backfilled once for the existing rows.
+ *
+ * THE SUMMARY BRANCH IS NOW PROSE, NOT A LIST. It rendered the stored markdown,
+ * which is a 2-4 item bullet list, under a "Key points" label — and with the
+ * section down to ONE note that list was the tallest object on the dashboard:
+ * every bullet wrapped to two or three lines and the list drew its own vertical
+ * rhythm on top. `summaryParagraph` flattens the same characters into one
+ * paragraph; nothing is regenerated and no model is called.
+ *
+ * THE OTHER TWO BRANCHES ARE UNTOUCHED. `fallback` was already a single clamped
+ * paragraph. `raw` still renders a short note's own markdown, because a note at
+ * or under 600 characters was never the height problem, and flattening a
+ * hand-written note would throw away formatting the user typed on purpose. On
+ * the live table that branch is unreachable anyway — the smallest Revisit note
+ * is 1,886 characters.
  */
 export function RevisitNoteRow({ note }: { note: Note }) {
   const router = useRouter();
@@ -122,19 +139,22 @@ export function RevisitNoteRow({ note }: { note: Note }) {
         {note.title}
       </p>
 
+      {/* ONE PARAGRAPH, AND NO "KEY POINTS" LABEL ABOVE IT.
+
+          The label named a list; with the bullets flattened into prose there is
+          no list for it to name, and it was a second line of chrome above a
+          four-line body. `summaryParagraph` does the flattening — see that
+          function for the punctuation rule, which is the only real decision in
+          it.
+
+          Plain text in a <p>, NOT renderMarkdown. The stored summary is a
+          bullet list, so rendering it as markdown is what produced the <ul>
+          this replaces; once flattened there is no markup left to render, and
+          a <p> is both the honest element and the one that can be clamped. */}
       {preview.mode === "summary" && (
-        <>
-          {/* Says the row is showing key points, not the note. Set in ROW_META
-              — the same 12px mono-caps rank as the Delete control below and as
-              AgendaTaskRow's state line, so it adds a label, not a new rank. */}
-          <p className={cn(ROW_META, "mt-2 text-muted-foreground/70")}>
-            Key points
-          </p>
-          <div
-            className="prose-preview mt-1 text-sm text-muted-foreground"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(preview.markdown) }}
-          />
-        </>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {summaryParagraph(preview.markdown)}
+        </p>
       )}
 
       {preview.mode === "raw" && (

@@ -76,6 +76,83 @@ export function revisitPreview(
 }
 
 /**
+ * The stored bullet summary, flattened into one flowing paragraph.
+ *
+ * WHY A PARAGRAPH AND NOT THE BULLETS. The dashboard shows ONE revisit note,
+ * and a 2-4 item bullet list is the tallest thing that fits in a row: each
+ * bullet wraps to two or three lines on a phone, and the list draws its own
+ * vertical rhythm, so a 300-character summary occupied more screen than the
+ * three sections above it combined. The same 300 characters set as prose is
+ * four or five lines.
+ *
+ * NO NEW MODEL CALL, HERE OR ANYWHERE. This is a pure string transform over
+ * `notes.summary`, which is already generated on save. Regenerating the corpus
+ * as prose would be a second summarization pass over 13 notes against an
+ * 8,000 TPM account, to say what the bullets already say.
+ *
+ * THE PUNCTUATION RULE IS THE ONLY REAL DECISION. The model does not terminate
+ * its bullets consistently — measured across the live corpus of 13 summaries,
+ * some end in a full stop and most end in nothing at all, because a bullet does
+ * not need one. Joined with a plain space those run together: "...not a forced
+ * daily exercise Desire + non-resistance...". Joined with an unconditional ". "
+ * the ones that DO terminate get a double stop. So a full stop is added only
+ * where the bullet does not already end in terminal punctuation.
+ *
+ * IT ALSO STRIPS MARKDOWN'S HARD LINE BREAK. Several live summaries end their
+ * bullets with two trailing spaces — that is a hard-break marker, invisible in
+ * a list and a stray double space in a paragraph. Every run of whitespace
+ * collapses to one space for the same reason.
+ *
+ * THE 340-CHARACTER CEILING NEEDS NO NEW CLAMP. Per bullet this removes 2
+ * characters (the "- " marker) and adds at most 1 (the full stop), and each
+ * newline becomes a single space, so the paragraph is never longer than the
+ * stored summary it came from. `clampSummary` remains the only place a length
+ * is enforced.
+ *
+ * Input that is not a bullet list at all — `clampSummary`'s non-bullet fallback
+ * produces exactly that — passes through as a single "bullet": whitespace
+ * collapsed, terminal punctuation left alone.
+ */
+export function summaryParagraph(markdown: string): string {
+  const lines = markdown
+    .split("\n")
+    .map((l) => l.replace(/^\s*[-*]\s+/, "").replace(/\s+/g, " ").trim())
+    .filter((l) => l !== "");
+
+  return lines
+    .map((l) => (/[.!?…:;]$/.test(l) ? l : `${l}.`))
+    .join(" ");
+}
+
+/**
+ * Which revisit note today is, given the IST day index and how many there are.
+ *
+ * ONE NOTE PER DAY, AND IT DOES NOT MOVE WHILE BEING READ. Not a carousel, not
+ * a timer, not "most recently updated" — a note re-read on the dashboard should
+ * still be there when the user looks back at it, and the whole point of a
+ * Revisit pile is that it comes round rather than that the newest one wins.
+ *
+ * `dayNumber` MUST be an IST day index (`istDayNumber` in lib/date.ts, which
+ * shifts by +05:30 before flooring). A UTC-derived day would roll the note over
+ * at 05:30 IST — the middle of the morning, mid-read — instead of at midnight.
+ *
+ * The double modulo is not superstition: `%` in JS keeps the sign of the
+ * dividend, so a negative index (a clock set before 1970, which is reachable by
+ * a wrong device clock) would return a negative and index out of the array.
+ *
+ * KNOWN AND ACCEPTED: adding or deleting a revisit note changes `count` and so
+ * reshuffles which note falls on which day. That is expected — the alternative
+ * is stateful per-note tracking to preserve a rotation nobody can observe.
+ */
+export function dailyRevisitIndex(
+  dayNumber: number,
+  count: number
+): number | null {
+  if (!Number.isFinite(count) || count <= 0) return null;
+  return ((Math.floor(dayNumber) % count) + count) % count;
+}
+
+/**
  * How much of a note is sent to the model, and in what shape.
  *
  * NOT a plain `content.slice(...)`, and the reason is the account's budget
