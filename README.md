@@ -14,6 +14,10 @@ Captured on a 375×812 mobile viewport at 2×, against a production build.
 | **Dashboard** — a capture field, four drift counters (overdue, review, trained, open), then the week's agenda, training and revisit notes as contained sections. | **Tasks** — status filter tabs above task rows carrying priority, status, and due date. |
 | <img src="docs/screenshots/workout-logging.png" alt="Workout logging" width="330"> | <img src="docs/screenshots/srs-review.png" alt="Flashcard review" width="330"> |
 | **Workout** — gym shorthand parsed into individual sets; identical consecutive sets collapse into one row with a set count. | **Review** — the answer side of a due card with the four SM-2 grades and the interval each one would schedule. |
+| <img src="docs/screenshots/notes.png" alt="Notes" width="330"> | <img src="docs/screenshots/calendar.png" alt="Calendar" width="330"> |
+| **Notes** — each card carries its kind (Spark or Revisit), a markdown excerpt and its tags, above full-text search. | **Calendar** — a bespoke IST-safe month grid; dots mark the days holding tasks or reminders, with the selected day expanded below. |
+| <img src="docs/screenshots/analytics.png" alt="Productivity analytics" width="330"> | <img src="docs/screenshots/ai-generation.png" alt="AI flashcard generation" width="330"> |
+| **Analytics** — this week measured against last, then focus minutes across the last 30 days and the split by category. | **AI generation** — flashcards drafted from a note, each one removable; nothing is written until the deck is confirmed. |
 
 ## What it does
 

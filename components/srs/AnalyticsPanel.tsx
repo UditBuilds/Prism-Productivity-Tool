@@ -140,7 +140,13 @@ function StatsContent({ streak }: { streak: number }) {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={data.dailyActivity}
-                margin={{ top: 4, right: 8, bottom: 0, left: -20 }}
+                // left MUST NOT go negative to reclaim gutter. Recharts lays the
+                // Y-axis band at [margin.left, margin.left + width]; the SVG
+                // viewBox starts at x=0, so a negative left paints tick labels
+                // outside it and the glyphs are clipped. At -20 with width 32
+                // the labels ended at x=4.7 and EVERY tick clipped — even a
+                // single-digit "0" lost 3.3px.
+                margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
               >
                 <defs>
                   <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
