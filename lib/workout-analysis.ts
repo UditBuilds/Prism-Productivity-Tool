@@ -400,6 +400,41 @@ export function formatCivilDate(date: string): string {
   return `${d} ${MONTHS[m - 1]}`;
 }
 
+/**
+ * Only the body parts with nothing logged in the window.
+ *
+ * The dashboard's Training panel used to render all seven groups. Everything
+ * trained recently is information the user already has — he was there — so the
+ * only cell carrying a decision is the one that says a group is owed work.
+ * Six of the seven cells were a receipt.
+ *
+ * A SELECTOR, NOT A NEW SHAPE. `analyseWorkoutSets` still seeds and returns
+ * every group, because the workout page ranks the full balance and the
+ * `share` figures are computed against all of them. This is the dashboard's
+ * view of that same data, kept here rather than inline in the component so it
+ * can be tested without a renderer.
+ *
+ * Returns them in the endpoint's own order, which for untrained groups is
+ * already the ranking this feature is named for (never-trained first, then
+ * library order) — there is nothing left to re-sort once the trained half is
+ * gone, which is exactly why the panel's trained-first re-ordering goes away
+ * with it.
+ *
+ * NOTE ON WHAT "UNTRAINED" CAN MEAN. A group lands here when no set in the
+ * window mapped to it, and mapping is an EXACT match on `exerciseKey` against
+ * the static library — so an exercise the library does not know is counted
+ * under `UNCLASSIFIED_BODY_PART` ("Other") rather than under the group it
+ * actually trains. On the live table that is currently why Shoulders and Core
+ * read as untrained: "Lateral Raise Drop Set" and "Crunch" are both unmapped.
+ * That is a mapping defect, tracked separately and deliberately not fixed
+ * here; this selector reports what the analysis says, faithfully.
+ */
+export function untrainedBodyParts(
+  bodyParts: ReadonlyArray<BodyPartLoad>
+): BodyPartLoad[] {
+  return bodyParts.filter((b) => b.daysSince === null);
+}
+
 /** "Today" / "Yesterday" / "11 days ago" — for a `daysSince` count. */
 export function formatDaysSince(days: number): string {
   if (days <= 0) return "Today";
