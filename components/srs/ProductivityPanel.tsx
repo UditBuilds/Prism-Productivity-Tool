@@ -219,7 +219,12 @@ export function ProductivityPanel() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={data.dailyFocus}
-                margin={{ top: 4, right: 8, bottom: 0, left: -16 }}
+                // left MUST NOT go negative to reclaim gutter. Recharts lays the
+                // Y-axis band at [margin.left, margin.left + width]; the SVG
+                // viewBox starts at x=0, so a negative left paints tick labels
+                // outside it and the glyphs are clipped. At -16 a 3-digit
+                // "120" started at x=-5.8 and rendered as "20".
+                margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
               >
                 <defs>
                   <linearGradient id="focusBarGradient" x1="0" y1="0" x2="0" y2="1">
