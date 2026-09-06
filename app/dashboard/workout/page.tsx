@@ -1,14 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dumbbell, Loader2, Plus } from "lucide-react";
 
 import { useLogWorkout } from "@/hooks/useWorkouts";
+import { istCivilToLocalDate, localCivilKey } from "@/lib/date";
+import {
+  clearWorkoutDraft,
+  readWorkoutDraft,
+  writeWorkoutDraft,
+  type WorkoutDraft,
+} from "@/lib/workout-draft";
 import {
   workoutPerformedAtIso,
   workoutToday,
   type StructuredSetInput,
 } from "@/lib/workouts";
+import { useUserId } from "@/components/providers/PersistBoundary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -19,7 +27,9 @@ import {
   WorkoutLogSheet,
 } from "@/components/workout/WorkoutLogSheet";
 import { RepeatSessionChips } from "@/components/workout/RepeatSessionChips";
+import { ResumeDraftPrompt } from "@/components/workout/ResumeDraftPrompt";
 import { WorkoutTodayPanel } from "@/components/workout/WorkoutTodayPanel";
+import { FinishWorkout } from "@/components/workout/FinishWorkout";
 import { WorkoutProgressPanel } from "@/components/workout/WorkoutProgressPanel";
 
 const PLACEHOLDER = "bench 3x5 @ 80kg, squat 100x5";
@@ -61,10 +71,11 @@ export default function WorkoutPage() {
    * the sheet — including an accidental backdrop tap — cannot discard eight
    * exercises of work. Only a successful save or an explicit Clear empties it.
    *
-   * It is page state, so navigating away still drops it. That is the same
-   * bargain the dashboard card made (its state died on navigation too), and the
-   * page makes it less likely to be hit rather than more: logging no longer
-   * competes with a screen the user is passing through.
+   * IT IS NO LONGER LOST ON NAVIGATION. It was page state, so leaving the page
+   * dropped it — the same bargain the dashboard card made. It is now mirrored
+   * to localStorage per user (lib/workout-draft.ts) and offered back through an
+   * explicit prompt, so a phone call, a locked screen or a stray back-swipe
+   * mid-session costs a tap rather than the session.
    */
   const [session, setSession] = useState<StructuredSetInput[]>([]);
   /**
@@ -85,6 +96,62 @@ export default function WorkoutPage() {
    * `resetKey`.
    */
   const [sheetResetKey, setSheetResetKey] = useState(0);
+
+  const userId = useUserId();
+  /**
+   * A stored draft the user has not yet answered on. While it is set, the
+   * mirror effect below does NOT write — otherwise the empty in-memory draft
+   * would overwrite the stored one before its owner ever saw the prompt.
+   */
+  const [pendingDraft, setPendingDraft] = useState<WorkoutDraft | null>(null);
+  /**
+   * The read has happened. Writing before it would clear a real stored draft
+   * with the empty state this page always starts in — the mirror effect must
+   * never run first.
+   */
+  const [draftChecked, setDraftChecked] = useState(false);
+
+  // Read once per account. In an effect, not a useState initialiser: this page
+  // is server-rendered, where localStorage does not exist, and reading during
+  // render would also make the first client render disagree with the server's.
+  useEffect(() => {
+    if (!userId) return;
+    const stored = readWorkoutDraft(userId);
+    if (stored) setPendingDraft(stored);
+    setDraftChecked(true);
+  }, [userId]);
+
+  // Mirror the live draft to storage. Cheap enough to run on every change
+  // (a session is tens of small objects) and debouncing would only widen the
+  // window in which a backgrounded tab loses the last set added.
+  useEffect(() => {
+    if (!userId || !draftChecked || pendingDraft) return;
+    if (session.length === 0) {
+      clearWorkoutDraft(userId);
+      return;
+    }
+    writeWorkoutDraft(userId, {
+      sets: session,
+      day: localCivilKey(sessionDate),
+    });
+  }, [userId, draftChecked, pendingDraft, session, sessionDate]);
+
+  function resumeDraft() {
+    if (!pendingDraft) return;
+    setSession(pendingDraft.sets);
+    // The draft's own day, not today: a session started last night is still
+    // last night's session, and re-dating it would file the sets on the wrong
+    // day. The picker inside the sheet can move it if that is wrong.
+    setSessionDate(istCivilToLocalDate(pendingDraft.day));
+    setSheetResetKey((n) => n + 1);
+    setPendingDraft(null);
+    setSheetOpen(true);
+  }
+
+  function discardDraft() {
+    if (userId) clearWorkoutDraft(userId);
+    setPendingDraft(null);
+  }
 
   /**
    * Load a past day's exercises into the draft and open the sheet on it.
@@ -135,6 +202,18 @@ export default function WorkoutPage() {
         subtitle="Log sets as you lift — offline is fine, it syncs later."
         icon={Dumbbell}
       />
+
+      {/* ABOVE the Log section, not inside it: it is a question about work
+          that already exists, and it has to be answered before the CTA below
+          it means anything. 32 to the section beneath (mb-8), the page's
+          between-sections step. */}
+      {pendingDraft && (
+        <ResumeDraftPrompt
+          draft={pendingDraft}
+          onResume={resumeDraft}
+          onDiscard={discardDraft}
+        />
+      )}
 
       {/* mt-0 overrides SectionPanel's between-sections 32: PageHeader already
           owns the space above the first section. */}
@@ -224,6 +303,11 @@ export default function WorkoutPage() {
           dashboard, kept deliberately. */}
       <SectionPanel title="Today">
         <WorkoutTodayPanel />
+        {/* Inside Today, below the sets, because it acts on exactly what that
+            section shows. It renders nothing until the day's first set has
+            created a session — there is no "start workout" button to pair it
+            with, by design. */}
+        <FinishWorkout />
       </SectionPanel>
 
       {/* The analysis layer, reading 180 days where the two sections above read

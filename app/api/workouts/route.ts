@@ -4,9 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { istDayContext } from "@/lib/date";
 import { MAX_RAW_INPUT_LENGTH, parseWorkoutInput } from "@/lib/ai/workout";
 import {
+  exerciseKey,
   formatStructuredRawInput,
   type StructuredSetInput,
 } from "@/lib/workouts";
+import {
+  linkCaptureToSession,
+  pruneEmptySessionContainers,
+} from "@/lib/workout-session-link";
 import {
   aiRateLimitHeaders,
   aiRateLimitMessage,
@@ -336,9 +341,36 @@ export async function POST(request: Request) {
           ];
   }
 
+  /**
+   * Attach this capture to its day's durable session BEFORE inserting, so the
+   * FK rides along on the same write. A follow-up UPDATE would be a second
+   * failure point on the one path that must not lose data.
+   *
+   * A NULL RESULT IS NOT AN ERROR. If the session tables can't be reached the
+   * sets are still inserted, unlinked — losing a logged set because its
+   * bookkeeping failed would be a far worse outcome than a row the backfill
+   * script can pick up later. This mirrors the free-text parse falling back to
+   * an unparsed row rather than rejecting the capture.
+   */
+  const link = await linkCaptureToSession(supabase, user.id, performedAt, rows);
+  if (!link) {
+    console.error("Workout session link failed; inserting sets unlinked", {
+      userId: user.id,
+      performedAt,
+    });
+  }
+
+  const linkedRows: WorkoutSetInsert[] = rows.map((row) => ({
+    ...row,
+    session_exercise_id:
+      link && row.exercise
+        ? (link.exerciseIds.get(exerciseKey(row.exercise)) ?? null)
+        : null,
+  }));
+
   const { data, error } = await supabase
     .from("workout_sets")
-    .insert(rows)
+    .insert(linkedRows)
     .select()
     .order("set_index", { ascending: true, nullsFirst: false });
 
@@ -415,6 +447,41 @@ export async function PATCH(request: Request) {
     return json({ data: null, error: "No fields to update" }, 400);
   }
 
+  /**
+   * A renamed exercise has to move to a different session_exercise, or the
+   * correction files it under the name it was corrected AWAY from. Read the
+   * row first: `performed_at` says which day's session to resolve against, and
+   * the old link is what may now be an empty container.
+   *
+   * Only a real change of identity counts. Fixing the casing of "bench press"
+   * resolves to the same exerciseKey, so nothing moves — which is the point of
+   * that key existing.
+   */
+  const { data: before } = await supabase
+    .from("workout_sets")
+    .select("performed_at, exercise, session_exercise_id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const renamed =
+    before !== null &&
+    "exercise" in updates &&
+    exerciseKeyOrNull(updates.exercise ?? null) !==
+      exerciseKeyOrNull(before.exercise);
+
+  if (renamed && before) {
+    const link = await linkCaptureToSession(
+      supabase,
+      user.id,
+      before.performed_at,
+      [{ exercise: updates.exercise ?? null }]
+    );
+    updates.session_exercise_id = updates.exercise
+      ? (link?.exerciseIds.get(exerciseKey(updates.exercise)) ?? null)
+      : null;
+  }
+
   // RLS already scopes this to the caller; the explicit user_id filter is
   // defence in depth on a table whose rows are otherwise addressable by id.
   const { data, error } = await supabase
@@ -426,7 +493,23 @@ export async function PATCH(request: Request) {
     .single();
 
   if (error) return json({ data: null, error: error.message }, 500);
+
+  // The row it left may now be empty. Best-effort and after the write, exactly
+  // as in DELETE — the correction has already landed.
+  if (renamed && before?.session_exercise_id) {
+    await pruneEmptySessionContainers(
+      supabase,
+      user.id,
+      before.session_exercise_id
+    );
+  }
+
   return json<WorkoutSet>({ data, error: null });
+}
+
+/** exerciseKey for a nullable name, so "no exercise" compares equal to itself. */
+function exerciseKeyOrNull(name: string | null): string | null {
+  return name === null ? null : exerciseKey(name);
 }
 
 // DELETE /api/workouts — remove ONE set row. Body: { id }
@@ -447,6 +530,15 @@ export async function DELETE(request: Request) {
   const id = typeof body.id === "string" ? body.id : null;
   if (!id) return json({ data: null, error: "Missing set id" }, 400);
 
+  // Read the link before the row is gone — afterwards there is nothing left to
+  // say which session_exercise this set was the last member of.
+  const { data: doomed } = await supabase
+    .from("workout_sets")
+    .select("session_exercise_id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("workout_sets")
     .delete()
@@ -454,5 +546,17 @@ export async function DELETE(request: Request) {
     .eq("user_id", user.id);
 
   if (error) return json({ data: null, error: error.message }, 500);
+
+  // Best-effort, and after the delete has already succeeded: an empty exercise
+  // or an empty day left in History is untidy, never a reason to tell the user
+  // their deletion failed.
+  if (doomed?.session_exercise_id) {
+    await pruneEmptySessionContainers(
+      supabase,
+      user.id,
+      doomed.session_exercise_id
+    );
+  }
+
   return json<{ id: string }>({ data: { id }, error: null });
 }

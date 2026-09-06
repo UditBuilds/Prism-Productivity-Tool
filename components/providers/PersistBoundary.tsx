@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { useRouter } from "next/navigation";
@@ -21,6 +21,26 @@ import { registerServerDataRefresh } from "@/lib/rsc-refresh";
  * empty anyway).
  */
 let cacheOwner: string | null = null;
+
+/**
+ * The signed-in user's id, for client components that need to SCOPE something
+ * to the account rather than merely display it.
+ *
+ * It lives here rather than in its own provider because this boundary already
+ * has exactly the right lifetime: it wraps the whole authenticated segment and
+ * is keyed by user.id, so the context cannot outlive or lag the account it
+ * describes. Anything reading it inherits the account-switch protection above
+ * for free.
+ *
+ * Null outside the dashboard segment, which is why useUserId() returns
+ * `string | null` rather than throwing — a shared component may render on both
+ * sides of the auth boundary.
+ */
+const UserIdContext = createContext<string | null>(null);
+
+export function useUserId(): string | null {
+  return useContext(UserIdContext);
+}
 
 /**
  * Mounts React Query persistence INSIDE the authenticated dashboard segment,
@@ -129,7 +149,7 @@ export function PersistBoundary({
         void queryClient.resumePausedMutations();
       }}
     >
-      {children}
+      <UserIdContext.Provider value={userId}>{children}</UserIdContext.Provider>
     </PersistQueryClientProvider>
   );
 }

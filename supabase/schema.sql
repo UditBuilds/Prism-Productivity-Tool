@@ -1012,3 +1012,192 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 
+
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Durable workout sessions, templates, and the link from workout_sets.
+--
+-- APPENDED BY HAND rather than interleaved into the sections above, for the
+-- same reason as the handle_new_user trigger near the top of this file: these
+-- objects were applied directly to the live database, and hand-threading them
+-- through the dump's table / constraint / index / policy / grant sections
+-- would be far easier to get subtly wrong than to read as one block. If this
+-- file is ever regenerated from a real `supabase db dump`, that dump WILL
+-- emit all of this in its proper places -- delete this appendix then.
+--
+-- Reproduced from the live schema on 2026-09-06, verified against
+-- pg_attribute / pg_constraint / pg_indexes / pg_policy.
+-- ─────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS "public"."workout_templates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "description" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "public"."template_exercises" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "template_id" "uuid" NOT NULL,
+    "display_name" "text" NOT NULL,
+    "exercise_key" "text",
+    "position" integer DEFAULT 0 NOT NULL
+);
+
+-- A template prescribes TARGETS per set, not a bare exercise list: the
+-- active-session UI needs something to show in a "Target" column, which a
+-- bare list cannot provide.
+CREATE TABLE IF NOT EXISTS "public"."template_sets" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "template_exercise_id" "uuid" NOT NULL,
+    "set_number" integer NOT NULL,
+    "target_reps" integer,
+    "target_weight_kg" numeric,
+    "target_note" "text"
+);
+
+-- performed_on is the IST CIVIL DAY, never a UTC date. Every writer derives it
+-- with istDateString(Date.parse(performed_at)) so a set logged at 01:00 IST
+-- lands on the right day.
+CREATE TABLE IF NOT EXISTS "public"."workout_sessions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "performed_on" "date" NOT NULL,
+    "status" "text" DEFAULT 'active'::"text" NOT NULL,
+    "template_id" "uuid",
+    "notes" "text",
+    "started_at" timestamp with time zone,
+    "ended_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "workout_sessions_status_check" CHECK (("status" = ANY (ARRAY['active'::"text", 'completed'::"text"])))
+);
+
+CREATE TABLE IF NOT EXISTS "public"."session_exercises" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "session_id" "uuid" NOT NULL,
+    "display_name" "text" NOT NULL,
+    "exercise_key" "text",
+    "position" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE "public"."workout_templates" OWNER TO "postgres";
+ALTER TABLE "public"."template_exercises" OWNER TO "postgres";
+ALTER TABLE "public"."template_sets" OWNER TO "postgres";
+ALTER TABLE "public"."workout_sessions" OWNER TO "postgres";
+ALTER TABLE "public"."session_exercises" OWNER TO "postgres";
+
+-- The link from a raw logged set to its place in a session.
+--
+-- ON DELETE SET NULL, deliberately: raw logged data outlives any UI-level
+-- reorganisation. Dropping a session_exercise must never destroy the sets
+-- underneath it, matching this project's policy on notes and flashcards.
+ALTER TABLE "public"."workout_sets"
+    ADD COLUMN IF NOT EXISTS "session_exercise_id" "uuid";
+
+ALTER TABLE ONLY "public"."workout_templates"
+    ADD CONSTRAINT "workout_templates_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."template_exercises"
+    ADD CONSTRAINT "template_exercises_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."template_sets"
+    ADD CONSTRAINT "template_sets_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."workout_sessions"
+    ADD CONSTRAINT "workout_sessions_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."session_exercises"
+    ADD CONSTRAINT "session_exercises_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."workout_templates"
+    ADD CONSTRAINT "workout_templates_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."template_exercises"
+    ADD CONSTRAINT "template_exercises_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."template_exercises"
+    ADD CONSTRAINT "template_exercises_template_id_fkey" FOREIGN KEY ("template_id") REFERENCES "public"."workout_templates"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."template_sets"
+    ADD CONSTRAINT "template_sets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."template_sets"
+    ADD CONSTRAINT "template_sets_template_exercise_id_fkey" FOREIGN KEY ("template_exercise_id") REFERENCES "public"."template_exercises"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."workout_sessions"
+    ADD CONSTRAINT "workout_sessions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."workout_sessions"
+    ADD CONSTRAINT "workout_sessions_template_id_fkey" FOREIGN KEY ("template_id") REFERENCES "public"."workout_templates"("id") ON DELETE SET NULL;
+ALTER TABLE ONLY "public"."session_exercises"
+    ADD CONSTRAINT "session_exercises_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."session_exercises"
+    ADD CONSTRAINT "session_exercises_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "public"."workout_sessions"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."workout_sets"
+    ADD CONSTRAINT "workout_sets_session_exercise_id_fkey" FOREIGN KEY ("session_exercise_id") REFERENCES "public"."session_exercises"("id") ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS "idx_template_exercises_template" ON "public"."template_exercises" USING "btree" ("template_id");
+CREATE INDEX IF NOT EXISTS "idx_template_sets_template_exercise" ON "public"."template_sets" USING "btree" ("template_exercise_id");
+CREATE INDEX IF NOT EXISTS "idx_workout_sessions_user_performed" ON "public"."workout_sessions" USING "btree" ("user_id", "performed_on" DESC);
+CREATE INDEX IF NOT EXISTS "idx_session_exercises_session" ON "public"."session_exercises" USING "btree" ("session_id");
+CREATE INDEX IF NOT EXISTS "idx_workout_sets_session_exercise" ON "public"."workout_sets" USING "btree" ("session_exercise_id");
+
+-- THE TWO UNIQUE INDEXES ARE LOAD-BEARING, not tidiness.
+--
+-- "One session per IST day" and "one row per exercise per session" are what
+-- POST /api/workouts relies on to resolve-or-create atomically (ON CONFLICT
+-- DO NOTHING, then select) instead of racing a select-then-insert.
+--
+-- The race is real, not theoretical: @tanstack/query-core's
+-- resumePausedMutations() replays queued mutations with Promise.all, and the
+-- workout log mutation declares no `scope`, so a gym session captured with no
+-- signal fires ALL of its captures concurrently the moment signal returns.
+-- Without these, that produces one workout_sessions row per capture.
+--
+-- The second index is exercised by data that already exists: Hacksquat on
+-- 2026-08-20 spans two captures, because sets get logged as they happen
+-- rather than one exercise at a time.
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_workout_sessions_user_day" ON "public"."workout_sessions" USING "btree" ("user_id", "performed_on");
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_session_exercises_session_key" ON "public"."session_exercises" USING "btree" ("session_id", "exercise_key");
+
+ALTER TABLE "public"."workout_templates" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."template_exercises" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."template_sets" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."workout_sessions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."session_exercises" ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "workout_templates_select_own" ON "public"."workout_templates" FOR SELECT USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "workout_templates_insert_own" ON "public"."workout_templates" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+CREATE POLICY "workout_templates_update_own" ON "public"."workout_templates" FOR UPDATE USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "workout_templates_delete_own" ON "public"."workout_templates" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+CREATE POLICY "template_exercises_select_own" ON "public"."template_exercises" FOR SELECT USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "template_exercises_insert_own" ON "public"."template_exercises" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+CREATE POLICY "template_exercises_update_own" ON "public"."template_exercises" FOR UPDATE USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "template_exercises_delete_own" ON "public"."template_exercises" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+CREATE POLICY "template_sets_select_own" ON "public"."template_sets" FOR SELECT USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "template_sets_insert_own" ON "public"."template_sets" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+CREATE POLICY "template_sets_update_own" ON "public"."template_sets" FOR UPDATE USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "template_sets_delete_own" ON "public"."template_sets" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+CREATE POLICY "workout_sessions_select_own" ON "public"."workout_sessions" FOR SELECT USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "workout_sessions_insert_own" ON "public"."workout_sessions" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+CREATE POLICY "workout_sessions_update_own" ON "public"."workout_sessions" FOR UPDATE USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "workout_sessions_delete_own" ON "public"."workout_sessions" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+CREATE POLICY "session_exercises_select_own" ON "public"."session_exercises" FOR SELECT USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "session_exercises_insert_own" ON "public"."session_exercises" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+CREATE POLICY "session_exercises_update_own" ON "public"."session_exercises" FOR UPDATE USING (("auth"."uid"() = "user_id"));
+CREATE POLICY "session_exercises_delete_own" ON "public"."session_exercises" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+GRANT ALL ON TABLE "public"."workout_templates" TO "anon";
+GRANT ALL ON TABLE "public"."workout_templates" TO "authenticated";
+GRANT ALL ON TABLE "public"."workout_templates" TO "service_role";
+GRANT ALL ON TABLE "public"."template_exercises" TO "anon";
+GRANT ALL ON TABLE "public"."template_exercises" TO "authenticated";
+GRANT ALL ON TABLE "public"."template_exercises" TO "service_role";
+GRANT ALL ON TABLE "public"."template_sets" TO "anon";
+GRANT ALL ON TABLE "public"."template_sets" TO "authenticated";
+GRANT ALL ON TABLE "public"."template_sets" TO "service_role";
+GRANT ALL ON TABLE "public"."workout_sessions" TO "anon";
+GRANT ALL ON TABLE "public"."workout_sessions" TO "authenticated";
+GRANT ALL ON TABLE "public"."workout_sessions" TO "service_role";
+GRANT ALL ON TABLE "public"."session_exercises" TO "anon";
+GRANT ALL ON TABLE "public"."session_exercises" TO "authenticated";
+GRANT ALL ON TABLE "public"."session_exercises" TO "service_role";
