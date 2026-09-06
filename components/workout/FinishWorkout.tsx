@@ -89,7 +89,12 @@ export function FinishWorkout() {
             {session.exercises.length > 0 && (
               // The names, not just the count — "3 exercises" is a number,
               // "Leg Press, Leg Curl, Hacksquat" is the session.
-              <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
+              //
+              // Two lines, not `truncate`. At 375px a single line cut a real
+              // four-exercise session to "Flat Bench Press, Pull Up, Cable …",
+              // hiding half of what it exists to name; two lines carry a
+              // normal session whole and still bound an unusually long one.
+              <p className="mt-2 line-clamp-2 font-mono text-xs text-muted-foreground">
                 {session.exercises.join(", ")}
               </p>
             )}
