@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
@@ -85,11 +85,23 @@ export function NoteModal({
   initialMode,
   open,
   onClose,
+  onRestoreDraft,
 }: {
   note: Note | null;
   initialMode: NoteMode;
   open: boolean;
   onClose: () => void;
+  /**
+   * Re-open on a NEW note whose save hard-failed, so the draft can be handed
+   * back. `open` is the page's state, so only the page can do this.
+   *
+   * This component does NOT unmount when the dialog closes (it is rendered
+   * unconditionally with an `open` prop, so only Radix's portal content goes),
+   * which is why the save can stay here and its `mutate` callbacks still fire.
+   * That is the one way this differs from PR #70's workout sheet, which really
+   * did unmount and so had to hand save-ownership to its page.
+   */
+  onRestoreDraft?: () => void;
 }) {
   const createNote = useCreateNote();
   const updateNote = useUpdateNote();
@@ -111,6 +123,23 @@ export function NoteModal({
     "idle" | "loading" | "success"
   >("idle");
   const [reformatError, setReformatError] = useState<string | null>(null);
+  /** Why the last save didn't land. Cleared by the next edit or save. */
+  const [saveError, setSaveError] = useState<string | null>(null);
+  /**
+   * A NEW note whose save reached a terminal error, held so re-opening hands
+   * it back instead of blanking.
+   *
+   * A REF, not state, and that is load-bearing: the hydrate effect below is
+   * what reads it, and a state value would have to join that effect's deps —
+   * so clearing it inside the effect would re-run the effect and blank the
+   * very fields it had just restored.
+   */
+  const failedDraftRef = useRef<{
+    title: string;
+    content: string;
+    tagsInput: string;
+    kind: CaptureKind;
+  } | null>(null);
   const qc = useQueryClient();
 
   // Hydrate whenever the modal opens. New notes can only be edited.
@@ -127,11 +156,22 @@ export function NoteModal({
     );
     setReformatState("idle");
     setReformatError(null);
+    setSaveError(null);
     setMode(note ? initialMode : "edit");
     if (note) {
       setTitle(note.title);
       setContent(note.content);
       setTagsInput(note.tags.join(", "));
+    } else if (failedDraftRef.current) {
+      // A new note whose save died. Consumed once — re-opening after this is
+      // an ordinary blank capture again.
+      const draft = failedDraftRef.current;
+      failedDraftRef.current = null;
+      setTitle(draft.title);
+      setContent(draft.content);
+      setTagsInput(draft.tagsInput);
+      setKind(draft.kind);
+      setSaveError("Couldn't save that — your note is back. Try again.");
     } else {
       setTitle("");
       setContent("");
@@ -142,9 +182,33 @@ export function NoteModal({
   const tags = useMemo(() => parseTagsInput(tagsInput), [tagsInput]);
   const html = useMemo(() => renderMarkdown(content), [content]);
 
+  /**
+   * A save that reached a terminal ERROR — the one outcome where the text
+   * exists nowhere.
+   *
+   * NOT onSettled, and not the pause path: a mutation queued offline is
+   * persisted to IndexedDB and replays, so handing the draft back there would
+   * write the note twice. An error is different — with a dead server and the
+   * browser still reporting `navigator.onLine === true`, query-core's retryer
+   * never pauses (it only does so when onlineManager says offline), exhausts
+   * retry:3 and rejects. Reproduced: a 2,751-char note came back
+   * `status:"error"` / `isPaused:false` / `failureCount:4`, the persisted
+   * snapshot held 0 mutations, the optimistic row was rolled back, and
+   * re-opening New Note gave a blank editor.
+   */
+  function keepFailedDraft(draftKind: CaptureKind) {
+    failedDraftRef.current = { title, content, tagsInput, kind: draftKind };
+    // Re-open only if nothing else has been opened meanwhile — stealing the
+    // dialog out from under a note the user is now reading would be worse than
+    // waiting. The ref survives either way, so the draft returns on the next
+    // New Note rather than being dropped.
+    onRestoreDraft?.();
+  }
+
   /** Persist; returns false (and flags the error) if validation fails. */
   function save(): boolean {
     const trimmed = title.trim();
+    setSaveError(null);
 
     // Existing notes keep the legacy edit flow: title required (except Sparks,
     // which may be untitled), kind untouched.
@@ -153,7 +217,20 @@ export function NoteModal({
         setTitleError(true);
         return false;
       }
-      updateNote.mutate({ id: note.id, title: trimmed, content, tags });
+      updateNote.mutate(
+        { id: note.id, title: trimmed, content, tags },
+        {
+          // An existing note stays OPEN on save (handleDone only flips to
+          // read), so the edits are still in local state — nothing has to be
+          // stashed. Going back to edit is what makes them reachable again,
+          // since read mode renders the same state but offers no way to
+          // re-submit it.
+          onError: () => {
+            setMode("edit");
+            setSaveError("Couldn't save that — your edits are still here.");
+          },
+        }
+      );
       return true;
     }
 
@@ -165,11 +242,14 @@ export function NoteModal({
         setEmptyError(true);
         return false;
       }
-      createCard.mutate({
-        front: trimmed || markdownExcerpt(content, 100),
-        back: content.trim(),
-        deck_name: "Recall",
-      });
+      createCard.mutate(
+        {
+          front: trimmed || markdownExcerpt(content, 100),
+          back: content.trim(),
+          deck_name: "Recall",
+        },
+        { onError: () => keepFailedDraft("recall") }
+      );
       return true;
     }
 
@@ -179,7 +259,10 @@ export function NoteModal({
       setEmptyError(true);
       return false;
     }
-    createNote.mutate({ title: trimmed, content, tags, kind });
+    createNote.mutate(
+      { title: trimmed, content, tags, kind },
+      { onError: () => keepFailedDraft(kind) }
+    );
     return true;
   }
 
@@ -425,6 +508,16 @@ export function NoteModal({
               }}
               className="space-y-4"
             >
+              {/* Why the editor is back (new note) or still open (existing
+                  one). It has to be stated: the mutation's own toast fires
+                  ~20-30s after the tap, well after it has timed out, and the
+                  optimistic row has vanished from the list by then. */}
+              {saveError && (
+                <p className="text-xs text-danger" role="alert">
+                  {saveError}
+                </p>
+              )}
+
               {!note && (
                 <div className="space-y-2">
                   <div
@@ -472,6 +565,7 @@ export function NoteModal({
                     setTitle(e.target.value);
                     if (titleError) setTitleError(false);
                     if (emptyError) setEmptyError(false);
+                    if (saveError) setSaveError(null);
                   }}
                   placeholder={note ? "Untitled note" : "Title (optional)"}
                   autoFocus
@@ -495,6 +589,7 @@ export function NoteModal({
                       onChange={(e) => {
                         setContent(e.target.value);
                         if (emptyError) setEmptyError(false);
+                        if (saveError) setSaveError(null);
                       }}
                       placeholder="Write in markdown… # headings, **bold**, - lists, `code`"
                       rows={12}
