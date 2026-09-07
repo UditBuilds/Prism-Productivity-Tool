@@ -201,32 +201,46 @@ BEGIN
   --
   -- `summary` is written explicitly on the Revisit notes. The app normally
   -- generates it with Groq on save, but the dashboard Revisit widget is a
-  -- Server Component that only READS the column. Seeding it keeps the widget
-  -- populated without making the nightly reset depend on an AI call that can
-  -- rate-limit - the account is on Groq's 8,000 TPM free tier, and a reset
-  -- that half-fails at 3am with nobody watching is the worst possible shape.
+  -- Server Component that only READS the column. Seeding it keeps the reset
+  -- from depending on an AI call that can rate-limit - the account is on
+  -- Groq's 8,000 TPM free tier, and a reset that half-fails at 3am with
+  -- nobody watching is the worst possible shape.
+  --
+  -- EVERY REVISIT `content` MUST EXCEED 600 CHARACTERS, or seeding `summary`
+  -- is pointless. lib/notes/revisit-summary.ts:23 sets
+  -- SUMMARY_THRESHOLD_CHARS = 600 and `needsSummary` compares with a strict
+  -- `>`; below that, `revisitPreview` returns mode "raw" and renders the
+  -- markdown itself, so the summary column is never read. The first version
+  -- of this seed wrote three notes of 345, 514 and 347 characters and the
+  -- summaries below sat unused - the widget showed a `##` heading and a wall
+  -- of prose where the shipped feature shows one tight paragraph, which on a
+  -- demo of an "AI-native" app is the wrong thing to hide.
+  --
+  -- scripts/test-demo-seed.mjs parses these literals and asserts the length,
+  -- so a future edit that trims a note back under the threshold fails there
+  -- rather than silently in the UI.
   -- --------------------------------------------------------------------
   INSERT INTO notes (id, user_id, title, content, tags, kind, summary, created_at, updated_at)
   VALUES
     ('22222222-0000-4000-8000-000000000001', demo_id,
      'Spaced repetition, in one paragraph',
-     E'## The idea\n\nReviewing something just before you would have forgotten it pushes it further into long-term memory. Review too early and the repetition is wasted; too late and you are relearning from scratch.\n\n## SM-2\n\nEvery card carries an ease factor and an interval. Rate a card well and the interval multiplies by the ease. Rate it badly and the interval collapses back to a day while the ease drops slightly.\n\n- Quality 0-5 drives both numbers\n- Ease never falls below 1.3\n- A lapse resets repetitions, not ease',
+     E'## The idea\n\nReviewing something just before you would have forgotten it pushes it further into long-term memory. Review too early and the repetition is wasted; too late and you are relearning from scratch.\n\n## SM-2\n\nEvery card carries an ease factor and an interval. Rate a card well and the interval multiplies by the ease. Rate it badly and the interval collapses back to a day while the ease drops slightly.\n\n- Quality 0-5 drives both numbers\n- Ease never falls below 1.3\n- A lapse resets repetitions, not ease\n\n## The first two intervals are fixed\n\nOne day, then six. Only from the third review does the ease factor start compounding, so a brand new card is scheduled identically whether you found it obvious or barely knew it. The algorithm has nothing to go on yet.\n\n## What a lapse actually costs\n\nAnything below "ok" sends the interval back to a single day and the repetition count to zero. The ease factor moves by a fraction of a point. That asymmetry is deliberate: one bad night should cost you the schedule, not the card.',
      ARRAY['learning','srs'], 'revisit',
-     E'- Spaced repetition schedules a review just before the point of forgetting: earlier wastes the rep, later means relearning from scratch.\n- SM-2 keeps an ease factor and an interval per card. Good ratings multiply the interval; poor ones collapse it to a day and shave the ease.\n- Ease is floored at 1.3, and a lapse resets the repetition count without wiping the ease.',
+     E'- Spaced repetition schedules a review just before the point of forgetting: earlier wastes the rep, later means relearning from scratch.\n- SM-2 fixes the first two intervals at one day and six, and only compounds by the ease factor from the third review onward.\n- A lapse drops the interval to a day and zeroes the repetition count, but moves the ease by a fraction — one bad night costs the schedule, not the card.',
      now() - interval '19 days', now() - interval '3 days'),
 
     ('22222222-0000-4000-8000-000000000002', demo_id,
      'Progressive overload without the spreadsheet',
-     E'## What actually matters\n\nThe top set is the signal. Everything before it is a ramp, and averaging the ramp back in only hides whether the hard set moved.\n\n## Practical rules\n\n- Add load only when the top set is clean\n- Two sessions at the same weight is information, not failure\n- A lighter week after a heavy block is planned, not a regression',
+     E'## What actually matters\n\nThe top set is the signal. Everything before it is a ramp, and averaging the ramp back in only hides whether the hard set moved.\n\n## Practical rules\n\n- Add load only when the top set is clean\n- Two sessions at the same weight is information, not failure\n- A lighter week after a heavy block is planned, not a regression\n\n## Why not volume\n\nVolume needs weight and reps on every set, and reps are the first thing that stops getting written down once the set is actually hard. Take the heaviest set instead and a ramp of 60 x 15, 80 x 6, 90 x 2 reduces to 90 — the openers discarded exactly as they should be, with nothing to configure.\n\n## Reading a drop\n\nA lighter session is information, not a fault. Deload, poor sleep, a different rep target, a machine someone else was using: the numbers cannot tell you which. Treat a drop as a question, and only call it a trend once it has happened twice.',
      ARRAY['training'], 'revisit',
-     E'- Judge progress on the top set alone: warmup sets are a ramp, and averaging them in hides whether the hard set actually moved.\n- Add load only once the top set is clean, and read two sessions at the same weight as information rather than failure.\n- A deliberately lighter week after a heavy block is planned recovery, not a regression.',
+     E'- Judge progress on the top set alone: warmup sets are a ramp, and averaging them in hides whether the hard set actually moved.\n- Volume needs reps on every set, which is the first thing to stop being logged, so the heaviest set is the sturdier metric.\n- A lighter session is a question — deload, sleep, rep target — not a verdict, and not a trend until it happens twice.',
      now() - interval '12 days', now() - interval '2 days'),
 
     ('22222222-0000-4000-8000-000000000003', demo_id,
      'Why offline-first is mostly about writes',
-     E'## Reads are the easy half\n\nA cache serves reads. The hard part is what happens to a write made with no connection: it has to survive a reload, replay in order, and never fire twice.\n\n## The trap\n\nCallbacks handed in at the call site do not survive serialisation. Anything that must happen after a queued write has to live inside the write itself.',
+     E'## Reads are the easy half\n\nA cache serves reads. The hard part is what happens to a write made with no connection: it has to survive a reload, replay in order, and never fire twice.\n\n## The trap\n\nCallbacks handed in at the call site do not survive serialisation. Only the queued write itself is stored, so anything that must happen afterwards has to live inside it rather than beside it.\n\n## Pausing is a three-way condition\n\nA write pauses instead of failing only when focus, connectivity and the queue all agree it should. Any one of them saying otherwise turns a pause into an error — which is why a backgrounded tab quietly holds work that the tab in front of you would have dropped.\n\n## Testing it honestly\n\nToggling an online flag proves nothing, because the first request is attempted regardless. The server has to genuinely stop answering, and the retry ladder has to be allowed to finish before the result means anything.',
      ARRAY['engineering','offline'], 'revisit',
-     E'- Offline reads are the easy half; a cache covers them. The real problem is a write made with no connection.\n- That write has to survive a page reload, replay in the right order, and never fire twice.\n- Per-call callbacks are not serialised, so anything that must follow a queued write belongs inside the write itself.',
+     E'- Offline reads are the easy half; a cache covers them. The real problem is a write made with no connection.\n- That write has to survive a page reload, replay in the right order, and never fire twice, and per-call callbacks are not serialised alongside it.\n- Whether a write pauses or errors depends on focus, connectivity and the queue together — any one of them flips the outcome.',
      now() - interval '6 days', now() - interval '1 days'),
 
     ('22222222-0000-4000-8000-000000000004', demo_id,

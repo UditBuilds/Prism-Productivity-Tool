@@ -65,13 +65,18 @@ function compile() {
     "lib/workouts.ts",
     "lib/exercise-library.ts",
     "lib/workout-analysis.ts",
+    "lib/markdown.ts",
+    "lib/notes/revisit-summary.ts",
   ];
   for (const rel of srcs) {
     const text = readFileSync(path.join(root, rel), "utf8")
       .replace(/["']@\/types\/database["']/g, '"./database.js"')
       .replace(/["']@\/lib\/date["']/g, '"./date.js"')
       .replace(/["']@\/lib\/workouts["']/g, '"./workouts.js"')
-      .replace(/["']@\/lib\/exercise-library["']/g, '"./exercise-library.js"');
+      .replace(/["']@\/lib\/exercise-library["']/g, '"./exercise-library.js"')
+      .replace(/["']@\/lib\/markdown["']/g, '"./markdown.js"');
+    // Flattened into one temp dir, so lib/notes/revisit-summary.ts lands as
+    // revisit-summary.ts beside markdown.ts — hence the rewrite above.
     writeFileSync(path.join(out, path.basename(rel)), text);
   }
   execFileSync(
@@ -94,7 +99,24 @@ function compile() {
   return Promise.all([
     import(pathToFileURL(path.join(out, "workout-analysis.js")).href),
     import(pathToFileURL(path.join(out, "exercise-library.js")).href),
+    import(pathToFileURL(path.join(out, "revisit-summary.js")).href),
   ]);
+}
+
+/**
+ * Decode one SQL string literal as Postgres would.
+ *
+ * The seed writes note bodies as E'…\n…' escape strings, so the SQL source is
+ * NOT the stored text: `\n` is two characters in the file and one in the
+ * column. Measuring the file would overstate every length by the newline
+ * count and quietly hide a note that is actually under the threshold.
+ */
+function decodeSqlEscapeString(literal) {
+  return literal
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\\\/g, "\\")
+    .replace(/''/g, "'");
 }
 
 // ---------------------------------------------------------------------------
@@ -178,8 +200,11 @@ const sets = seedRows.map((r, i) => ({
   session_exercise_id: null,
 }));
 
-const [{ analyseWorkoutSets }, { bodyPartForExercise, UNCLASSIFIED_BODY_PART }] =
-  await compile();
+const [
+  { analyseWorkoutSets },
+  { bodyPartForExercise, UNCLASSIFIED_BODY_PART },
+  { revisitPreview, summaryParagraph, SUMMARY_THRESHOLD_CHARS },
+] = await compile();
 
 const analysis = analyseWorkoutSets(sets, 180, today);
 
@@ -264,7 +289,76 @@ ok(
     .join(", ")
 );
 
+// ---------------------------------------------------------------------------
+// The Revisit notes must be long enough that the AI-summary path actually runs.
+//
+// This is a silent failure, not a loud one. Under the threshold the widget
+// still renders — it just renders the raw markdown and never reads `summary`,
+// so the seeded summaries become dead columns and the demo hides the one
+// feature the app is named for. The first version of this seed shipped three
+// notes of 345, 514 and 347 characters and looked fine.
+// ---------------------------------------------------------------------------
+const notesBlock = sql.slice(
+  sql.indexOf("INSERT INTO notes ("),
+  sql.indexOf("INSERT INTO reminders (")
+);
+
+/** title, E'content', ARRAY[...], 'revisit', E'summary' */
+const REVISIT =
+  /'([^']+)',\s*E'([^']*)',\s*ARRAY\[[^\]]*\],\s*'revisit',\s*E'([^']*)',/g;
+
+const revisitNotes = [...notesBlock.matchAll(REVISIT)].map((m) => ({
+  title: m[1],
+  content: decodeSqlEscapeString(m[2]),
+  summary: decodeSqlEscapeString(m[3]),
+}));
+
+console.log(
+  `\nrevisit notes — threshold is ${SUMMARY_THRESHOLD_CHARS} (strict >), from lib/notes/revisit-summary.ts`
+);
+eq("three revisit notes parsed from the seed", revisitNotes.length, 3);
+
+for (const note of revisitNotes) {
+  const len = note.content.length;
+  ok(
+    `"${note.title}" content is ${len} chars — over ${SUMMARY_THRESHOLD_CHARS}`,
+    len > SUMMARY_THRESHOLD_CHARS,
+    `needs > ${SUMMARY_THRESHOLD_CHARS}, has ${len}`
+  );
+  ok(
+    `"${note.title}" clears it with margin, not by a hair`,
+    len >= SUMMARY_THRESHOLD_CHARS + 100,
+    `only ${len - SUMMARY_THRESHOLD_CHARS} over the threshold`
+  );
+  // The decisive one: the real render decision, not a length proxy.
+  const preview = revisitPreview(note.content, note.summary);
+  ok(
+    `"${note.title}" renders mode "summary", not raw markdown`,
+    preview.mode === "summary",
+    `revisitPreview returned mode "${preview.mode}"`
+  );
+  ok(
+    `"${note.title}" summary survives flattening to one paragraph`,
+    preview.mode === "summary" &&
+      summaryParagraph(preview.markdown).length > 80 &&
+      !summaryParagraph(preview.markdown).includes("\n"),
+    preview.mode === "summary"
+      ? JSON.stringify(summaryParagraph(preview.markdown).slice(0, 80))
+      : "(not in summary mode)"
+  );
+}
+
 console.log("\n--- what a visitor would see ---");
+for (const note of revisitNotes) {
+  const preview = revisitPreview(note.content, note.summary);
+  console.log(
+    `  ${note.content.length} chars -> ${preview.mode}  ${note.title}`
+  );
+  if (preview.mode === "summary") {
+    console.log(`    "${summaryParagraph(preview.markdown)}"`);
+  }
+}
+
 console.log(
   `  ${analysis.totalSets} sets, ${analysis.sessionDays} session days, ` +
     `${analysis.firstSessionDate} → ${analysis.lastSessionDate}`
