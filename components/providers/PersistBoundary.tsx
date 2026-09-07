@@ -103,16 +103,44 @@ export function PersistBoundary({
   // also calls resumePausedMutations — ours fires independently.  Whichever
   // runs first drains the paused queue; the second finds zero paused
   // mutations and is a no-op.  Both subscribers are cleaned up on unmount.
+  //
+  // THE REFRESH IS GATED ON A SUCCEEDED WRITE, NOT ON THE ONLINE SIGNAL.
+  // "The interface came back" and "the origin can answer" are different
+  // facts, and only the second one makes router.refresh() safe. Refreshing on
+  // the first destroyed the app outright: Next's fetchServerResponse catches a
+  // failed RSC fetch and returns the URL as a *string*, the refresh reducer
+  // reads that as an external URL, and app-router assigns window.location —
+  // a hard navigation onto the browser's native error page, taking the React
+  // tree, the in-memory cache and any open sheet with it. Reproduced against a
+  // genuinely dead server: online → 15.5s → chrome-error://chromewebdata.
+  //
+  // The awaited resume cannot be the evidence. query-core resumes with
+  // `mutation.continue().catch(noop)` (mutationCache.js), so the promise
+  // settles identically whether the server replied or refused the connection.
+  // A mutation that reached "success" is the proof instead — it means the
+  // origin answered a moment ago, which is the same standing every other
+  // router.refresh() in this app already has (they all follow a completed
+  // write). It is the right trigger on meaning too, not just on safety: if
+  // nothing succeeded, no server-rendered data changed, so there is nothing
+  // to re-fetch. A failed replay is already rolled back and toasted by its own
+  // hook — see lib/rsc-refresh.ts for the same rule at the MutationCache.
+  //
+  // Deliberately NOT a health-check preflight: an extra GET on every reconnect
+  // still races (it can pass microseconds before the server dies) and would
+  // only narrow a window this closes by construction.
   useEffect(() => {
     const unsub = onlineManager.subscribe(async (online) => {
       if (!online) return;
-      const hasPaused =
-        queryClient
-          .getMutationCache()
-          .getAll()
-          .filter((m) => m.state.isPaused).length > 0;
+      // Hold the Mutation objects, not a count: query-core reassigns
+      // `state` on the same instance, so these read fresh after the await
+      // and tell us what actually happened to each one.
+      const resumed = queryClient
+        .getMutationCache()
+        .getAll()
+        .filter((m) => m.state.isPaused);
+      if (resumed.length === 0) return;
       await queryClient.resumePausedMutations();
-      if (hasPaused) {
+      if (resumed.some((m) => m.state.status === "success")) {
         router.refresh();
       }
     });
