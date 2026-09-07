@@ -99,6 +99,39 @@ To add a user, temporarily enable signups in Supabase, have them sign up
 disable signups again. Each user's data is fully private — every table has
 RLS keyed on `user_id`.
 
+## 5a. The public demo account
+
+Signups being closed leaves no way for a recruiter or hiring manager to try
+the app, so the login page carries a **Try the demo** button. It calls the same
+`supabase.auth.signInWithPassword` the normal form does, with the credentials
+in `lib/demo.ts` — nothing is minted server-side.
+
+The account is writable on purpose (a task app nobody can touch proves
+nothing), so it is wiped and re-seeded nightly by a database function:
+
+1. Run **`supabase/demo-seed.sql`** in the Supabase SQL Editor. It creates
+   `public.reset_demo_account()` and registers the `prism-demo-reset` cron job.
+2. Verify with the queries at the bottom of that file, **one at a time** — the
+   SQL Editor only shows the last statement's result.
+
+Two things about this job differ from the reminder/recurring jobs above and
+are deliberate:
+
+- **It runs SQL directly, not `net.http_post`.** It mirrors `prism-log-prune`,
+  the existing in-database job. Reseeding needs no application code, and a
+  direct call reports its true outcome in `cron.job_run_details` instead of
+  the "queued" that `net.http_post` reports regardless of what the endpoint
+  did.
+- **The schedule is `30 21 * * *`, which is 03:00 IST.** pg_cron evaluates
+  schedules in the database timezone and this database is UTC. `0 3 * * *`
+  would fire at 08:30 IST.
+
+Everything the function touches is filtered on the demo UUID alone, and it
+aborts with an exception if that UUID stops resolving to `demo@prismapp.dev`.
+
+Known and accepted: someone using the demo when the reset fires loses their
+in-flight changes and sees the fresh seed on next load.
+
 ## Troubleshooting
 
 - **Auth redirect loops / "redirect not allowed":** revisit step 3 — the Vercel
