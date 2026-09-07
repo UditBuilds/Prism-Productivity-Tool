@@ -4,6 +4,8 @@ AI-native personal productivity and spaced-repetition learning — capture
 your work, study with flashcards, and let an LLM turn your notes, PDFs, and
 YouTube videos into review-ready cards.
 
+**Try it live:** https://prism-productivity-tool.vercel.app/ — click Try the demo on the login page, no signup needed.
+
 ## Screenshots
 
 Captured on a 375×812 mobile viewport at 2×, against a production build.
