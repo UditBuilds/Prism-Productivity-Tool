@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/demo";
 import { AuthCard, AuthHeader } from "@/components/auth/AuthCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,27 +18,51 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  /**
+   * The one place either button reaches Supabase.
+   *
+   * Try Demo is deliberately NOT a separate auth path — same client, same
+   * signInWithPassword call, same redirect. Nothing is minted server-side and
+   * no token is forged; the demo just arrives with its credentials already
+   * filled in.
+   */
+  async function signIn(withEmail: string, withPassword: string) {
+    const supabase = createClient();
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: withEmail,
+      password: withPassword,
+    });
+
+    if (signInError) {
+      setError(signInError.message);
+      return false;
+    }
+
+    router.push("/dashboard");
+    router.refresh();
+    return true;
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (signInError) {
-      setError(signInError.message);
-      setLoading(false);
-      return;
-    }
-
-    router.push("/dashboard");
-    router.refresh();
+    // Left spinning on success: the redirect is what ends this state, so
+    // clearing it early just flashes an enabled button over a leaving page.
+    if (!(await signIn(email, password))) setLoading(false);
   }
+
+  async function handleDemo() {
+    setError(null);
+    setDemoLoading(true);
+
+    if (!(await signIn(DEMO_EMAIL, DEMO_PASSWORD))) setDemoLoading(false);
+  }
+
+  const busy = loading || demoLoading;
 
   return (
     <AuthCard shake={!!error}>
@@ -80,7 +105,7 @@ export default function LoginPage() {
 
         <Button
           type="submit"
-          disabled={loading}
+          disabled={busy}
           className="w-full rounded-lg"
         >
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -96,6 +121,35 @@ export default function LoginPage() {
           </Link>
         </p>
       </form>
+
+      {/* Signups are closed, so this is the only door for anyone without an
+          invite. It sits outside the <form> on purpose — inside, a click would
+          submit the empty email/password fields before it ever ran. */}
+      <div className="mt-6">
+        <div className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+            or
+          </span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleDemo}
+          disabled={busy}
+          className="mt-4 w-full rounded-lg"
+        >
+          {demoLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Try the demo
+        </Button>
+
+        <p className="mt-2 text-center text-xs text-muted-foreground">
+          A sample account with data already in it. Explore freely — it resets
+          every night.
+        </p>
+      </div>
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}
