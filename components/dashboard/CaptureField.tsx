@@ -119,6 +119,14 @@ export function CaptureField() {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
   const [confirmed, setConfirmed] = useState<CaptureDestination | null>(null);
+  /**
+   * A capture that reached a terminal ERROR. Null on every other outcome.
+   *
+   * It has no timer, unlike `confirmed`: a confirmation is ephemeral because
+   * the thing it reports is finished, and a failure is still true until the
+   * user does something about it. It clears on the next keystroke or submit.
+   */
+  const [failure, setFailure] = useState<string | null>(null);
   /** WHEN a /w capture happened. Today unless the picker says otherwise. */
   const [date, setDate] = useState<Date>(workoutToday);
   // Controlled, so one tap picks a day AND gets the calendar off a row whose
@@ -155,15 +163,65 @@ export function CaptureField() {
     timerRef.current = setTimeout(() => setConfirmed(null), CONFIRM_MS);
   }
 
+  /**
+   * A HARD FAILURE MUST NOT EAT THE CAPTURE.
+   *
+   * Clearing the field on submit is right for the two outcomes that keep the
+   * text: a success has stored it, and an offline PAUSE has queued it to
+   * IndexedDB — putting it back there would double-log it on replay. That is
+   * why this is `onError` only and never `onSettled`.
+   *
+   * An error is the third outcome and the only one where the text exists
+   * nowhere. It is what a genuinely dead server produces while the browser
+   * still believes it is online: `canContinue()` in query-core's retryer only
+   * pauses when `onlineManager.isOnline()` is false, so retry:3 is exhausted
+   * and the mutation ERRORS instead. Reproduced by stopping the dev server —
+   * five captures, all `status:"error"` / `isPaused:false` / `failureCount:4`,
+   * and the persisted snapshot held `mutations: []`. The same run with only
+   * onlineManager flipped paused, persisted and replayed cleanly.
+   *
+   * Unlike PR #70's workout sheet this component never unmounts on submit, so
+   * the handler can live at the call site — `mutate`'s callbacks need the
+   * observer to still have listeners, and this one keeps them. It is still
+   * lost if the user NAVIGATES AWAY inside the ~18s retry window; that
+   * residual is the same one the workout page carries.
+   *
+   * The DOM input is the source of truth for "did anything get typed since",
+   * not `value`: it is controlled, so the two agree, and reading it avoids a
+   * stale closure without an impure ref write during render.
+   */
+  function restoreCapture(text: string, restoreDate: Date | null) {
+    const stillEmpty = (inputRef.current?.value ?? "") === "";
+    if (stillEmpty) {
+      setValue(text);
+      // The /w date rides back with its text, or the retry would silently file
+      // the sets on today instead of the day they were logged for.
+      if (restoreDate) setDate(restoreDate);
+    }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setConfirmed(null);
+    // Never claim a restore that did not happen. Typing during the retry
+    // window keeps what the user typed — the same guard PR #70 uses — and the
+    // capture is genuinely gone in that case, so the message must not say
+    // otherwise.
+    setFailure(stillEmpty ? "Not saved — restored" : "Not saved");
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const route = routeCapture(value);
     if (!route) return;
 
     hapticTap();
+    // What was typed, kept so a hard failure can hand it back. The RAW value,
+    // not route.body: the user gets back exactly what they typed, prefix and
+    // all, so re-submitting is one keystroke rather than a re-type.
+    const submitted = value;
+    const submittedDate = date;
     // Clear first: the field must feel instant, and every destination mutation
     // is optimistic, so the row is already in the cache by the time this runs.
     setValue("");
+    setFailure(null);
     confirm(route.destination);
 
     switch (route.destination) {
@@ -171,17 +229,23 @@ export function CaptureField() {
         // Spark: the body IS the note. The API accepts an empty title for
         // capture kinds and leaves Spark untitled rather than deriving one,
         // which would just duplicate the body on the card.
-        createNote.mutate({ title: "", content: route.body, kind: "spark" });
+        createNote.mutate(
+          { title: "", content: route.body, kind: "spark" },
+          { onError: () => restoreCapture(submitted, null) }
+        );
         break;
       case "workouts":
         // Raw text, parsed server-side inside POST. One request = one offline
         // queue entry, and the parse happens on replay — `performed_at` rides
         // in the same variables, so a backdated set queued in a basement
         // replays with the day it was logged for.
-        logWorkout.mutate({
-          raw_input: route.body,
-          performed_at: workoutPerformedAtIso(date),
-        });
+        logWorkout.mutate(
+          {
+            raw_input: route.body,
+            performed_at: workoutPerformedAtIso(date),
+          },
+          { onError: () => restoreCapture(submitted, submittedDate) }
+        );
         // RESET, unlike the workout page's free-text field. That one is a
         // screen you navigate to with its date visible beside it; this bar is
         // always present and one line, so a date persisting invisibly behind
@@ -205,9 +269,15 @@ export function CaptureField() {
         // went to the model — while a false positive costs one cheap call and
         // comes back as the single task it always was.
         if (looksLikeMultipleTasks(route.body)) {
-          splitTasks.mutate({ text: route.body });
+          splitTasks.mutate(
+            { text: route.body },
+            { onError: () => restoreCapture(submitted, null) }
+          );
         } else {
-          createTask.mutate({ title: route.body });
+          createTask.mutate(
+            { title: route.body },
+            { onError: () => restoreCapture(submitted, null) }
+          );
         }
         break;
     }
@@ -249,7 +319,12 @@ export function CaptureField() {
         id="capture"
         ref={inputRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          // Editing IS the response to a failure, so the notice goes as soon
+          // as the user acts on it.
+          if (failure) setFailure(null);
+        }}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         // The ONLY place the syntax is ever stated, and only while focused.
@@ -263,7 +338,16 @@ export function CaptureField() {
           under it. Both strings are short ("→ notes", "Added to workouts") and
           the input is min-w-0 flex-1, so it gives up width smoothly instead of
           the row growing a second line. */}
-      {confirmed ? (
+      {/* Failure OUTRANKS both. Restoring the text makes `pending` truthy
+          again, so without this the row would go straight back to a neutral
+          "→ tasks" hint and the only trace of the failure would be a toast
+          that has already timed out. role="alert", not "status": this one
+          reports that something the user was told had happened did not. */}
+      {failure ? (
+        <span className="shrink-0 font-mono text-xs text-danger" role="alert">
+          {failure}
+        </span>
+      ) : confirmed ? (
         <span
           className="shrink-0 font-mono text-xs text-success"
           role="status"

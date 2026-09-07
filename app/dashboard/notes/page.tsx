@@ -244,6 +244,13 @@ function NotesPageInner() {
         initialMode={viewer?.mode ?? "read"}
         open={viewer !== null}
         onClose={() => setViewer(null)}
+        // A new note whose save hard-failed comes back as a draft. The updater
+        // form is the point: if the user has opened something else during the
+        // ~20-30s the retries take, that wins and the draft waits for the next
+        // New Note rather than yanking the dialog away from them.
+        onRestoreDraft={() =>
+          setViewer((current) => current ?? { note: null, mode: "edit" })
+        }
       />
       <GenerateCardsModal
         noteId={generateCardNoteId ?? ""}
