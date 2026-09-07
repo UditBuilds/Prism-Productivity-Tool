@@ -150,6 +150,41 @@ export function istCivilDateToNoonIso(dateStr: string): string | null {
   return back.toISOString();
 }
 
+/**
+ * The half-open instant range an IST civil day covers: [00:00 IST, 00:00 IST
+ * next day). Both ends are ISO strings, ready for a `.gte()` / `.lt()` pair.
+ *
+ * This is the day-bounds counterpart to istDayContext(), which only knows
+ * about today. A server route holding a stored `performed_on` needs the same
+ * arithmetic for an arbitrary day, and doing it inline invites the civil-field
+ * Date math this codebase keeps banning — on a UTC box that shifts a day back.
+ *
+ * Instant arithmetic off an IST midnight, exactly like istDayContext: IST is a
+ * fixed +05:30 with no DST, so adding 24h cannot land on the wrong boundary.
+ * Returns null for anything that isn't a real calendar date, for the same
+ * reason istCivilDateToNoonIso does — Date.UTC silently rolls 2026-02-30 over.
+ */
+export function istCivilDayRange(
+  dateStr: string
+): { start: string; end: string } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const [y, m, d] = dateStr.split("-").map((n) => Number.parseInt(n, 10));
+  const utcMidnight = Date.UTC(y, m - 1, d, 0, 0, 0);
+  const back = new Date(utcMidnight);
+  if (
+    back.getUTCFullYear() !== y ||
+    back.getUTCMonth() !== m - 1 ||
+    back.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  const start = utcMidnight - IST_OFFSET_MS;
+  return {
+    start: new Date(start).toISOString(),
+    end: new Date(start + 86_400_000).toISOString(),
+  };
+}
+
 /** Inverse of istCivilToLocalDate: the local civil day as "YYYY-MM-DD". */
 export function localCivilKey(d: Date): string {
   const y = d.getFullYear();

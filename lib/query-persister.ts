@@ -25,6 +25,11 @@ function idbKeyForUser(userId: string): string {
  * "workouts" is persisted because the gym is this app's worst-connectivity
  * place: without it, reloading offline would show an empty card and invite
  * the user to log the same sets twice.
+ *
+ * "workout-sessions" rides along for the same reason and is nearly free — one
+ * row per training DAY, so six months of real training is single digits. It is
+ * what tells a reloaded page there is a session in progress to finish; without
+ * it, an offline reload mid-workout would offer to start the day over.
  */
 export const PERSISTED_QUERY_KEYS: ReadonlySet<string> = new Set([
   "tasks",
@@ -33,6 +38,7 @@ export const PERSISTED_QUERY_KEYS: ReadonlySet<string> = new Set([
   "srs-cards",
   "focus-categories",
   "workouts",
+  "workout-sessions",
 ]);
 
 /**

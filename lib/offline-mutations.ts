@@ -35,6 +35,7 @@ import {
   logWorkoutMutationOptions,
   updateWorkoutSetMutationOptions,
 } from "@/hooks/useWorkouts";
+import { updateWorkoutSessionMutationOptions } from "@/hooks/useWorkoutSessions";
 
 /**
  * Mutations paused while offline are persisted to IndexedDB alongside the
@@ -94,6 +95,11 @@ const RESUMABLE_MUTATION_KEYS: ReadonlyArray<MutationKey> = [
   logWorkoutMutationOptions.mutationKey,
   updateWorkoutSetMutationOptions.mutationKey,
   deleteWorkoutSetMutationOptions.mutationKey,
+  // Finishing a workout is the last thing that happens in the gym, i.e. the
+  // most likely single action in this app to be taken with no signal at all.
+  // Unregistered it would be dropped on reload, leaving a session that reads
+  // as still in progress the next morning.
+  updateWorkoutSessionMutationOptions.mutationKey,
 ];
 
 const RESUMABLE_KEY_HASHES: ReadonlySet<string> = new Set(
@@ -485,6 +491,24 @@ export function registerResumableMutations(qc: QueryClient): void {
       );
       toast.error("Couldn't sync a set you deleted while offline", {
         id: replayToastId("workout", "delete"),
+      });
+    },
+  });
+  // Session bookkeeping, not a set — so it invalidates ["workout-sessions"]
+  // (via invalidateDerivedCaches) but has no reason to refetch ["workouts"].
+  qc.setMutationDefaults(updateWorkoutSessionMutationOptions.mutationKey, {
+    mutationFn: updateWorkoutSessionMutationOptions.mutationFn,
+    onSettled: () => {
+      invalidateDerivedCaches(qc, "workout");
+    },
+    onError: (err, variables) => {
+      console.error(
+        "[offline-replay] workout session update failed",
+        { variables },
+        err
+      );
+      toast.error("Couldn't sync a workout you finished while offline", {
+        id: replayToastId("workout", "session"),
       });
     },
   });

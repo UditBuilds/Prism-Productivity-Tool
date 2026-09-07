@@ -20,6 +20,16 @@ export type YoutubeNoteJobStatus =
   | "completed"
   | "failed";
 
+/**
+ * Mirrors workout_sessions_status_check in the database.
+ *
+ * There is deliberately no "abandoned" state. A session nobody finished stays
+ * `active` forever and History shows it as such: the app cannot know whether a
+ * day was abandoned or simply never closed, and nothing downstream depends on
+ * the distinction (analysis reads workout_sets, not sessions).
+ */
+export type WorkoutSessionStatus = "active" | "completed";
+
 export interface Database {
   public: {
     Tables: {
@@ -481,6 +491,15 @@ export interface Database {
           reps: number | null;
           set_index: number | null;
           created_at: string;
+          // Where this set sits inside its day's session. Nullable for two
+          // distinct reasons: rows written before durable sessions existed
+          // (until the backfill runs), and rows whose parse found no exercise
+          // name — those belong to the day but name no exercise, so there is
+          // no session_exercise for them to point at.
+          //
+          // The FK is ON DELETE SET NULL: reorganising a session must never
+          // destroy the sets under it.
+          session_exercise_id: string | null;
         };
         Insert: {
           id?: string;
@@ -493,6 +512,7 @@ export interface Database {
           reps?: number | null;
           set_index?: number | null;
           created_at?: string;
+          session_exercise_id?: string | null;
         };
         Update: {
           id?: string;
@@ -505,6 +525,171 @@ export interface Database {
           reps?: number | null;
           set_index?: number | null;
           created_at?: string;
+          session_exercise_id?: string | null;
+        };
+        Relationships: [];
+      };
+      // One row per training DAY, not per capture. A day's sets arrive in as
+      // many captures as the user felt like making (the real table has a
+      // 3-capture day and an 8-capture day, because sets get logged as they
+      // happen) — the session is what those captures add up to.
+      //
+      // `performed_on` is the IST CIVIL day, and a UNIQUE index on
+      // (user_id, performed_on) is what lets POST /api/workouts resolve-or-
+      // create it atomically instead of racing a select-then-insert.
+      workout_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          /** IST civil day, "YYYY-MM-DD". */
+          performed_on: string;
+          status: WorkoutSessionStatus;
+          template_id: string | null;
+          notes: string | null;
+          started_at: string | null;
+          ended_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          performed_on: string;
+          status?: WorkoutSessionStatus;
+          template_id?: string | null;
+          notes?: string | null;
+          started_at?: string | null;
+          ended_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          performed_on?: string;
+          status?: WorkoutSessionStatus;
+          template_id?: string | null;
+          notes?: string | null;
+          started_at?: string | null;
+          ended_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // One row per exercise within a session. `exercise_key` is
+      // exerciseKey(display_name) — the same case- and whitespace-insensitive
+      // identity groupSetsByExercise uses — and carries a UNIQUE index with
+      // session_id, so an exercise returned to later in the day folds into the
+      // row it already has rather than opening a second one.
+      session_exercises: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string;
+          display_name: string;
+          exercise_key: string | null;
+          position: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id: string;
+          display_name: string;
+          exercise_key?: string | null;
+          position?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          session_id?: string;
+          display_name?: string;
+          exercise_key?: string | null;
+          position?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      workout_templates: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          description: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          description?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          description?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      template_exercises: {
+        Row: {
+          id: string;
+          user_id: string;
+          template_id: string;
+          display_name: string;
+          exercise_key: string | null;
+          position: number;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          template_id: string;
+          display_name: string;
+          exercise_key?: string | null;
+          position?: number;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          template_id?: string;
+          display_name?: string;
+          exercise_key?: string | null;
+          position?: number;
+        };
+        Relationships: [];
+      };
+      // A template prescribes TARGETS per set rather than listing exercises: a
+      // bare list gives the logging UI nothing to show as a target, and barely
+      // improves on the repeat-session chips that already exist.
+      template_sets: {
+        Row: {
+          id: string;
+          user_id: string;
+          template_exercise_id: string;
+          set_number: number;
+          target_reps: number | null;
+          target_weight_kg: number | null;
+          target_note: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          template_exercise_id: string;
+          set_number: number;
+          target_reps?: number | null;
+          target_weight_kg?: number | null;
+          target_note?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          template_exercise_id?: string;
+          set_number?: number;
+          target_reps?: number | null;
+          target_weight_kg?: number | null;
+          target_note?: string | null;
         };
         Relationships: [];
       };
@@ -620,5 +805,15 @@ export type FocusCategory =
 export type Countdown = Database["public"]["Tables"]["countdowns"]["Row"];
 export type MoodLog = Database["public"]["Tables"]["mood_logs"]["Row"];
 export type WorkoutSet = Database["public"]["Tables"]["workout_sets"]["Row"];
+export type WorkoutSession =
+  Database["public"]["Tables"]["workout_sessions"]["Row"];
+export type SessionExercise =
+  Database["public"]["Tables"]["session_exercises"]["Row"];
+export type WorkoutTemplate =
+  Database["public"]["Tables"]["workout_templates"]["Row"];
+export type TemplateExercise =
+  Database["public"]["Tables"]["template_exercises"]["Row"];
+export type TemplateSet =
+  Database["public"]["Tables"]["template_sets"]["Row"];
 export type YoutubeNoteJob =
   Database["public"]["Tables"]["youtube_note_jobs"]["Row"];

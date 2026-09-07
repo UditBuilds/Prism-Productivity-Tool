@@ -13,11 +13,9 @@ import {
   formatSetLine,
   groupStructuredSets,
   lastSetForExercise,
-  workoutPerformedAtIso,
-  workoutToday,
   type StructuredSetInput,
 } from "@/lib/workouts";
-import { useLogWorkout, useWorkoutsQuery } from "@/hooks/useWorkouts";
+import { useWorkoutsQuery } from "@/hooks/useWorkouts";
 import {
   Dialog,
   DialogContent,
@@ -80,6 +78,8 @@ export function WorkoutLogSheet({
   date,
   setDate,
   resetKey = 0,
+  onSave,
+  saving,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -111,6 +111,23 @@ export function WorkoutLogSheet({
    * the two apart, so this is a signal rather than another derivation.
    */
   resetKey?: number;
+  /**
+   * Submit the draft. OWNED BY THE PAGE, not by this sheet, and that is load
+   * bearing rather than tidy.
+   *
+   * Saving closes the sheet, which unmounts this component — and
+   * `mutate(vars, callbacks)` only fires its callbacks while the observer
+   * still has listeners (mutationObserver.js: `this.#mutateOptions &&
+   * this.hasListeners()`). A save owned here therefore had NO way to react to
+   * its own failure: the draft was cleared optimistically and, when the
+   * request hard-failed, the sets existed nowhere. The page stays mounted
+   * across a sheet close, so it is the only place that can put them back.
+   *
+   * It is also simply where the draft already lives.
+   */
+  onSave: () => void;
+  /** The page's mutation state, for the Save button. */
+  saving: boolean;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,7 +138,8 @@ export function WorkoutLogSheet({
           setSession={setSession}
           date={date}
           setDate={setDate}
-          onClose={() => onOpenChange(false)}
+          onSave={onSave}
+          saving={saving}
         />
       </DialogContent>
     </Dialog>
@@ -135,15 +153,16 @@ function SheetBody({
   setSession,
   date,
   setDate,
-  onClose,
+  onSave,
+  saving,
 }: {
   session: StructuredSetInput[];
   setSession: Dispatch<SetStateAction<StructuredSetInput[]>>;
   date: Date;
   setDate: Dispatch<SetStateAction<Date>>;
-  onClose: () => void;
+  onSave: () => void;
+  saving: boolean;
 }) {
-  const logWorkout = useLogWorkout();
   // Opening onto a session in progress shows it; opening fresh skips straight
   // to picking, so the empty case costs no extra tap.
   const [view, setView] = useState<View>(session.length ? "session" : "picker");
@@ -172,19 +191,8 @@ function SheetBody({
   }
 
   function save() {
-    if (logWorkout.isPending || session.length === 0) return;
-    logWorkout.mutate({
-      sets: session,
-      // Stamped here so a session queued offline keeps the day it was logged
-      // FOR, not the time it eventually synced. For today that is still the
-      // live instant, byte-identical to before backdating existed.
-      performed_at: workoutPerformedAtIso(date),
-    });
-    setSession([]);
-    // The draft is gone, so its date goes with it — a date left behind a
-    // closed sheet would silently backdate the next session.
-    setDate(workoutToday());
-    onClose();
+    if (saving || session.length === 0) return;
+    onSave();
   }
 
   if (effectiveView === "builder" && exercise !== null) {
@@ -236,7 +244,7 @@ function SheetBody({
         date={date}
         setDate={setDate}
         remaining={remaining}
-        saving={logWorkout.isPending}
+        saving={saving}
         onAddExercise={() => setView("picker")}
         onSave={save}
       />

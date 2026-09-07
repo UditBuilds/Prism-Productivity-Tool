@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { createClient } from "@/lib/supabase/client";
 import { clearPersistedCaches } from "@/lib/query-persister";
+import { clearAllWorkoutDrafts } from "@/lib/workout-draft";
 import { resetUIStore } from "@/store/ui.store";
 import { resetFocusStore } from "@/store/focus.store";
 
@@ -17,6 +18,8 @@ import { resetFocusStore } from "@/store/focus.store";
  *    ticking otherwise)
  *  - the in-memory React Query cache (queries AND queued mutations)
  *  - every persisted IndexedDB snapshot
+ *  - every unsaved workout draft in localStorage (never sent to the server, so
+ *    nothing else in this list would reach it)
  * router.refresh() then purges Next's client router cache of this account's
  * server-rendered pages.
  */
@@ -30,6 +33,7 @@ export function useLogout() {
     resetUIStore();
     resetFocusStore();
     qc.clear();
+    clearAllWorkoutDrafts();
     await clearPersistedCaches();
     router.push("/login");
     router.refresh();

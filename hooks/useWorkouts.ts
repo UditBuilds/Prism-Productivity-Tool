@@ -170,6 +170,12 @@ export function useLogWorkout(meta?: MutationMeta) {
         capture_id: captureId,
         performed_at: performedAt,
         created_at: now,
+        // The server resolves the day's session and assigns this; the client
+        // cannot know it yet, and guessing an id would be a guess about which
+        // session_exercise a name resolves to. Null until the refetch, which
+        // costs nothing visually — no surface reads this column to render a
+        // set.
+        session_exercise_id: null,
       };
 
       let optimistic: WorkoutSet[];

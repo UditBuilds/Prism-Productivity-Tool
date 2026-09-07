@@ -37,12 +37,18 @@ const DERIVED_KEYS: Record<ActivitySource, string[][]> = {
   mood: [["weekly-review"]],
   /**
    * ["workout-analysis"] is a 180-day read model with a 5-minute staleTime,
-   * while ["workouts"] (the logging cache) holds 21 days and is invalidated by
+   * while ["workouts"] (the logging cache) holds 60 days and is invalidated by
    * the mutations directly. Without this, a set logged today would not move the
    * progression or body-part views for up to five minutes — and logging a set
    * is precisely when the user might look.
+   *
+   * ["workout-sessions"] joins it for a sharper reason than staleness: logging
+   * a set can CREATE a session, or add an exercise to one, entirely
+   * server-side. The client that fired the mutation has no way to know that
+   * happened, so without this invalidation the very first set of a day leaves
+   * the page still believing there is no session to finish.
    */
-  workout: [["workout-analysis"]],
+  workout: [["workout-analysis"], ["workout-sessions"]],
 };
 
 export function invalidateDerivedCaches(
