@@ -3,6 +3,8 @@ import {
   BODY_PARTS,
   UNCLASSIFIED_BODY_PART,
   bodyPartForExercise,
+  collectUnmappedExercises,
+  type UnmappedExercise,
 } from "@/lib/exercise-library";
 import { exerciseKey } from "@/lib/workouts";
 import type { WorkoutSet } from "@/types/database";
@@ -108,6 +110,18 @@ export interface WorkoutAnalysis {
   comparableExercises: number;
   progressions: ExerciseProgression[];
   bodyParts: BodyPartLoad[];
+  /**
+   * Logged names the library and the alias map both fail to place, most sets
+   * first. These are precisely the sets counted under `UNCLASSIFIED_BODY_PART`.
+   *
+   * REPORTED RATHER THAN INFERRED FROM `bodyParts`. An "Other" row states a
+   * number; this states which names produced it, which is the difference
+   * between a miss someone can act on and a miss that hides inside a total.
+   * The four names that made this feature necessary — "Crunch", "Hacksquat",
+   * "Hyper Extension", "Lateral Raise Drop Set" — sat inside such a total for
+   * as long as this field did not exist. Empty on a fully-mapped corpus.
+   */
+  unmappedExercises: UnmappedExercise[];
 }
 
 const DAY_MS = 86_400_000;
@@ -355,6 +369,7 @@ export function analyseWorkoutSets(
       .length,
     progressions,
     bodyParts,
+    unmappedExercises: collectUnmappedExercises(parsed),
   };
 }
 
@@ -421,13 +436,19 @@ export function formatCivilDate(date: string): string {
  * with it.
  *
  * NOTE ON WHAT "UNTRAINED" CAN MEAN. A group lands here when no set in the
- * window mapped to it, and mapping is an EXACT match on `exerciseKey` against
- * the static library — so an exercise the library does not know is counted
- * under `UNCLASSIFIED_BODY_PART` ("Other") rather than under the group it
- * actually trains. On the live table that is currently why Shoulders and Core
- * read as untrained: "Lateral Raise Drop Set" and "Crunch" are both unmapped.
- * That is a mapping defect, tracked separately and deliberately not fixed
- * here; this selector reports what the analysis says, faithfully.
+ * window mapped to it. Mapping used to be an EXACT `exerciseKey` match against
+ * the static library, which is why the live table once read Shoulders and Core
+ * as untrained while "Lateral Raise Drop Set" and "Crunch" sat in "Other" —
+ * both of them real work, and both of them the user's ONLY work for that
+ * group. That defect is FIXED: `bodyPartForExercise` now consults an alias map
+ * and strips known qualifier suffixes, and the same real corpus now reads
+ * Shoulders and Core as trained on 2026-08-30.
+ *
+ * A name nothing recognises still lands in `UNCLASSIFIED_BODY_PART`, because
+ * inventing a group for it would be worse. What changed is that it no longer
+ * does so silently — `unmappedExercises` names every such row, so the next
+ * miss is visible instead of hiding inside an "Other" total. This selector
+ * still reports what the analysis says, faithfully.
  */
 export function untrainedBodyParts(
   bodyParts: ReadonlyArray<BodyPartLoad>

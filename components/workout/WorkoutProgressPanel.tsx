@@ -18,6 +18,7 @@ import {
   formatSessionTopSet,
   type BodyPartLoad,
   type ExerciseProgression,
+  type WorkoutAnalysis,
 } from "@/lib/workout-analysis";
 import { UNCLASSIFIED_BODY_PART } from "@/lib/exercise-library";
 import { useWorkoutAnalysis } from "@/hooks/useWorkoutAnalysis";
@@ -144,7 +145,42 @@ export function WorkoutProgressPanel() {
           />
         ))}
       </ul>
+
+      <UnmappedExerciseNote unmapped={data?.unmappedExercises ?? []} />
     </>
+  );
+}
+
+/**
+ * Names the library could not place, said out loud under the list.
+ *
+ * WHY IT IS RENDERED AT ALL. "Other" states a set count and nothing else, so a
+ * mapping miss and a deliberate catch-all look identical in it. That is how
+ * four real names — "Crunch", "Hacksquat", "Hyper Extension", "Lateral Raise
+ * Drop Set" — stayed unmapped long enough for the dashboard to tell their
+ * owner to train Core and Shoulders in a week he had trained both. The alias
+ * map fixes those four; this line is what makes the FIFTH one visible.
+ *
+ * Deliberately quiet — one muted line, no icon, no colour, and absent entirely
+ * when everything maps. It is a diagnostic for the person who can act on it,
+ * not a warning about anything being broken: the sets themselves are logged,
+ * counted and shown, they are just not attributed to a body part.
+ */
+function UnmappedExerciseNote({
+  unmapped,
+}: {
+  unmapped: WorkoutAnalysis["unmappedExercises"];
+}) {
+  if (unmapped.length === 0) return null;
+
+  return (
+    <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+      {`Not matched to a body part, so counted under ${UNCLASSIFIED_BODY_PART}: `}
+      <span className="text-foreground">
+        {unmapped.map((u) => u.name).join(", ")}
+      </span>
+      {". Rename one to a library exercise and it joins the right group."}
+    </p>
   );
 }
 
