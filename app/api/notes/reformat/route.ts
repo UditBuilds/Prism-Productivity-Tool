@@ -25,8 +25,35 @@ const MODEL = "openai/gpt-oss-120b";
  * REJECTED, never truncated. The system prompt's contract is "preserve every
  * single word" and the result is written back over the note, so trimming the
  * input would delete the tail of the user's note under the guise of
- * formatting it. Sized from the live database — the largest note is 18,656
- * characters — so no existing note is turned away.
+ * formatting it.
+ *
+ * WHY 24,000 SURVIVES, now measured against the budget rather than the corpus.
+ * The original note here said this was sized so that "no existing note is
+ * turned away" because "the largest note is 18,656 characters". That is no
+ * longer true of the corpus — as of 2026-09-10 the live table holds a 37,772
+ * and a 114,787-character note, so two real notes ARE turned away, by design;
+ * neither is reformattable at any cap this account can afford.
+ *
+ * What justifies the number now is the token arithmetic, measured 2026-09-10
+ * against REAL note text from the live table:
+ *
+ *   fixed overhead (SYSTEM_PROMPT + chat scaffolding) = 211 tokens
+ *   real note prose = 4.43 chars/token (consistent at 14,000 and 24,000 chars)
+ *
+ * AT THE CAP, MEASURED DIRECTLY: 24,000 chars of real note prose is
+ * prompt_tokens = 5,633 and returns 200 — 2,367 tokens (~30%) clear of the
+ * 8,000 TPM ceiling. The `chars / 4` estimator used by capacityFailure() puts
+ * it at 6,211, still inside the limit, so the estimate errs high and stays
+ * safe.
+ *
+ * So a max-size note is admissible whenever the minute's budget is not already
+ * spent — which is exactly the property capacityFailure() below reports on.
+ *
+ * If you re-measure this, do it on a RESTED budget. A bucket in debt refuses
+ * an in-cap note with a size-shaped 413 (see capacityFailure), which reads as
+ * "the cap is too high" when it is nothing of the sort. Repeated-sentence
+ * filler is fine for tokenisation (~4.5 chars/token, close to real prose) but
+ * tells you nothing about admission, which is what actually varies.
  */
 const MAX_CONTENT_CHARS = 24000;
 
@@ -34,48 +61,113 @@ const MAX_CONTENT_CHARS = 24000;
  * Output ceiling. Reformatting returns the input plus markdown syntax, so the
  * completion tracks the input's size: 24,000 chars in is roughly 6,000 tokens,
  * and 8,000 leaves room for the added headers, bullets and blank lines.
+ *
+ * IT DOES NOT COST BUDGET UP FRONT — do not "tune this down to buy headroom".
+ * Groq admits a request on `used + prompt_tokens <= limit`; max_tokens is not
+ * reserved. Measured 2026-09-10 against this account: 166 chars @ max_tokens
+ * 8000 returned 200 and was charged 545 total, and 200 chars @ max_tokens
+ * 30000 — nearly 4x the entire 8,000 TPM limit — also returned 200, charged
+ * 332. A depleted-budget refusal reports `Requested 4877` for a ~4,540-token
+ * prompt, i.e. the prompt alone.
+ *
+ * This REPLACES the older `prompt_tokens + max_tokens` reservation model still
+ * described in CLAUDE.md's Groq section; that model was real when it was
+ * recorded (the 2026-08-26 refusal quoted `Requested 12820`, exactly
+ * prompt+8000) and Groq has since changed it. Lowering this number therefore
+ * buys no capacity at all — it only risks the finish_reason "length" bail-out
+ * below on a long note. Actual completions are nowhere near the cap: 554
+ * tokens for a 20,000-char note, 201 for a small one.
  */
 const MAX_TOKENS = 8000;
 
 /**
- * Groq refuses an over-budget request in TWO different ways, and they need
- * DIFFERENT advice — which is the whole point of this block. Both shapes below
- * were observed from real calls on 2026-08-26, not inferred from the docs.
+ * The account's per-minute token ceiling, and a prompt-size estimate to compare
+ * against it. Both exist so capacityFailure() can tell "this can never fit"
+ * apart from "the minute is spent" WITHOUT trying to reverse-engineer Groq's
+ * arithmetic — see there for why that matters.
  *
- * 1. HTTP 413, plain `APIError` — "Request too large … TPM: Limit 8000,
- *    Requested 12820, please reduce your message size". One request whose
- *    prompt + max_tokens exceeds the account's ENTIRE per-minute budget.
- *    DETERMINISTIC: the same note fails every time, so "Try again" is a lie.
- *    The only fix available to the user is a shorter note.
+ * TPM_LIMIT mirrors `x-ratelimit-limit-tokens`, confirmed 8000 on this account
+ * (free tier, account-wide, same for every model). The estimator is measured,
+ * not assumed: 211 tokens of fixed overhead (SYSTEM_PROMPT + chat scaffolding)
+ * plus real note prose at 4.3-4.9 chars/token, rounded DOWN to 4 so the
+ * estimate errs high and this stays conservative.
+ */
+const TPM_LIMIT = 8000;
+const PROMPT_OVERHEAD_TOKENS = 211;
+const estimatePromptTokens = (chars: number) =>
+  PROMPT_OVERHEAD_TOKENS + Math.ceil(chars / 4);
+
+/** Groq often states the wait in the body even when the header omits it. */
+function retrySecondsFrom(err: APIError): string | undefined {
+  const header = err.headers?.get("retry-after") ?? undefined;
+  if (header && Number.isFinite(Number(header)) && Number(header) > 0) {
+    return header;
+  }
+  const inBody = String(err.message ?? "").match(/try again in ([\d.]+)s/i);
+  if (!inBody) return undefined;
+  const rounded = Math.ceil(Number(inBody[1]));
+  return Number.isFinite(rounded) && rounded > 0 ? String(rounded) : undefined;
+}
+
+/**
+ * Turn a Groq capacity refusal into advice the user can act on.
  *
- * 2. HTTP 429, `RateLimitError` — "Rate limit reached … Used 7402, Requested
- *    1069. Please try again in 3.5s". The budget was spent by RECENT calls.
- *    TRANSIENT: waiting genuinely fixes it.
+ * THE STATUS CODE DOES NOT TELL YOU THE CAUSE. This is the trap that produced
+ * the bug this function exists to fix, and it is worth stating precisely
+ * because the obvious reading of Groq's own wording is wrong.
  *
- * Two traps worth knowing before touching this:
+ * Two capacity shapes are confirmed live against this account:
  *
- * - `instanceof RateLimitError` is FALSE for case 1. The oversized-request
- *   error arrives as a bare `APIError` with status 413 even though its JSON
- *   body says `"code":"rate_limit_exceeded"`. Matching only on RateLimitError
- *   — the obvious implementation — silently misses the case this route is
- *   most exposed to.
- * - The SDK does NOT lift the body's `code`/`type` onto the error object:
- *   `err.code` and `err.type` are both `undefined` in each case. Only
- *   `err.status` is reliable, so that is what we branch on.
+ *   429 "Rate limit reached … Limit 8000, Used 6166, Requested 4877"
+ *   413 "Request too large … Limit 8000, Requested 9471"   (no `Used`)
  *
- * Why this route and not the other five: reformat pairs a 24,000-char input
- * allowance with `max_tokens: 8000`, and Groq reserves prompt + max_tokens up
- * front, so a large note can exceed the 8,000 TPM budget in a SINGLE call. The
- * other five either chunk before generating or carry far smaller per-call
- * ceilings — see the PR for the per-route arithmetic.
+ * The 413 reads as a verdict on the request's size, and the previous version of
+ * this function believed it — returning "This note is too large". **That is
+ * false.** Measured 2026-09-10: a 24,000-character note returned 200 twice on a
+ * full budget and then 413 on a spent one, within the same few minutes. Same
+ * note, same max_tokens, opposite answers. So the 413 is contention-dependent,
+ * and "split it into smaller notes" is unactionable advice for a note that
+ * demonstrably reformats fine a minute later.
+ *
+ * Nor can the numbers be reasoned about. The 429 reports `Requested` as the
+ * prompt alone (5,634 measured for a 24,000-char prompt whose prompt_tokens
+ * was 5,633), but a 413 for that same content reported `Requested 9471` —
+ * reconcilable with neither the prompt nor prompt+max_tokens. Whatever Groq
+ * folds into that figure, it is not something this route should branch on.
+ *
+ * SO THE NUMBERS FROM GROQ ARE NOT USED AT ALL. The one figure that IS reliable
+ * is the one we already hold: `content.length`, bounded by MAX_CONTENT_CHARS at
+ * the door above. The question becomes "could this content have fit an EMPTY
+ * budget?", answered locally:
+ *
+ *   - Yes → transient. Recent calls spent the minute; waiting genuinely works.
+ *           This is the ONLY case reachable at the current 24,000-char cap
+ *           (~6,200 estimated prompt tokens vs. an 8,000 ceiling), and it is
+ *           precisely the "budget contention across concurrent requests"
+ *           condition — expected behaviour on a shared cap, not a bug here.
+ *   - No  → deterministic. Nothing but a shorter note can help.
+ *
+ * That branch is unreachable today BY CONSTRUCTION, and deliberately kept: it
+ * is what kicks in if MAX_CONTENT_CHARS is ever raised past what the tier can
+ * admit (roughly 31,000 chars at 8,000 TPM), so raising the cap degrades into
+ * honest advice instead of silently lying in the other direction.
+ *
+ * One SDK trap survives from the original note: `instanceof RateLimitError` is
+ * FALSE for the 413 even though its body says `"code":"rate_limit_exceeded"`,
+ * and the SDK lifts neither `code` nor `type` onto the error object. Match on
+ * `status`, and treat both statuses as the same family.
  */
 function capacityFailure(
-  err: unknown
+  err: unknown,
+  contentChars: number
 ): { message: string; status: number; retryAfter?: string } | null {
   if (!(err instanceof APIError)) return null;
 
-  // Case 1 — one request bigger than the whole per-minute budget.
-  if (err.status === 413) {
+  const isCapacity =
+    err instanceof RateLimitError || err.status === 429 || err.status === 413;
+  if (!isCapacity) return null;
+
+  if (estimatePromptTokens(contentChars) > TPM_LIMIT) {
     return {
       message:
         "This note is too large for the AI's current capacity, so nothing was saved. Split it into smaller notes and reformat them separately.",
@@ -83,25 +175,19 @@ function capacityFailure(
     };
   }
 
-  // Case 2 — budget spent by recent activity; retrying later works.
-  if (err instanceof RateLimitError || err.status === 429) {
-    // Groq's retry-after is usually a small number of seconds (1 and 4 both
-    // observed), so the singular case is common enough to be worth getting
-    // right rather than shipping "in about 1 seconds".
-    const retryAfter = err.headers?.get("retry-after") ?? undefined;
-    const seconds = Number(retryAfter);
-    const wait =
-      retryAfter && Number.isFinite(seconds) && seconds > 0
-        ? ` Try again in about ${retryAfter} second${seconds === 1 ? "" : "s"}.`
-        : " Try again shortly.";
-    return {
-      message: `The AI is at capacity right now, so nothing was saved.${wait}`,
-      status: 429,
-      retryAfter,
-    };
-  }
-
-  return null;
+  const retryAfter = retrySecondsFrom(err);
+  const seconds = Number(retryAfter);
+  // Groq's waits run from under a second to about a minute, so get the
+  // singular right rather than shipping "in about 1 seconds".
+  const wait =
+    retryAfter && Number.isFinite(seconds) && seconds > 0
+      ? ` Try again in about ${retryAfter} second${seconds === 1 ? "" : "s"}.`
+      : " Try again shortly.";
+  return {
+    message: `The AI is busy right now, so nothing was saved.${wait}`,
+    status: 429,
+    retryAfter,
+  };
 }
 
 export const runtime = "nodejs";
@@ -209,7 +295,7 @@ export async function POST(request: Request) {
     console.error("Note reformat (Groq) failed:", err);
     // Capacity refusals get their own wording; everything else keeps the
     // generic 502 below, unchanged.
-    const capacity = capacityFailure(err);
+    const capacity = capacityFailure(err, content.length);
     if (capacity) {
       return json(
         { data: null, error: capacity.message },
