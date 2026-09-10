@@ -113,9 +113,17 @@ export function ReminderCard({ reminder }: { reminder: Reminder }) {
     ? notes?.find((n) => n.id === reminder.note_id)
     : undefined;
 
+  // Came due with no registered device. Terminal: the cron has stopped
+  // retrying, so nothing further will happen to this row on its own.
+  const skippedNoDevice = reminder.delivery_status === "skipped_no_device";
+
   // Time-based coloring: overdue pending = red pulse, due soon = accent glow,
   // far future / sent = calm default.
-  const pending = !reminder.is_sent;
+  //
+  // A skipped reminder is not pending. Leaving it pending kept the overdue red
+  // pulse running forever on a row the user cannot action — the same permanent
+  // nag the health banner and the nav badge had.
+  const pending = !reminder.is_sent && !skippedNoDevice;
   const urgent = pending && when.tone === "danger";
   const soon = pending && when.tone === "warning";
 
@@ -214,15 +222,27 @@ export function ReminderCard({ reminder }: { reminder: Reminder }) {
             {when.label}
           </span>
 
+          {/*
+            Three outcomes, not two. "No device" is the honest label for a
+            reminder that came due while nothing was registered to receive it:
+            it is neither Sent (nothing was delivered) nor Pending (nothing is
+            still being attempted). Warning tone rather than success, so the
+            card never claims a delivery that did not happen.
+          */}
           <span
+            title={
+              skippedNoDevice
+                ? "Came due with no registered device, so no notification was sent. Register a device in Settings to receive future reminders."
+                : undefined
+            }
             className={cn(
               "rounded-full px-2 py-0.5 text-xs font-medium",
-              reminder.is_sent
-                ? "bg-success/15 text-success"
-                : "bg-muted text-muted-foreground"
+              reminder.is_sent && "bg-success/15 text-success",
+              skippedNoDevice && "bg-warning/15 text-warning",
+              !reminder.is_sent && !skippedNoDevice && "bg-muted text-muted-foreground"
             )}
           >
-            {reminder.is_sent ? "Sent" : "Pending"}
+            {reminder.is_sent ? "Sent" : skippedNoDevice ? "No device" : "Pending"}
           </span>
 
           {linkedTask && (

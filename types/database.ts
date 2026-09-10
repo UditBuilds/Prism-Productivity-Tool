@@ -30,6 +30,25 @@ export type YoutubeNoteJobStatus =
  */
 export type WorkoutSessionStatus = "active" | "completed";
 
+/**
+ * Mirrors reminders_delivery_status_check in the database.
+ *
+ * The boolean `is_sent` answers "was this delivered". It cannot answer "was
+ * this ever going to be", which is why a third state exists: a reminder that
+ * comes due while the user has no rows in push_subscriptions has nothing to be
+ * delivered to. `skipped_no_device` is that outcome, and it is TERMINAL for the
+ * cron — /api/push/due stops re-matching the row.
+ *
+ * It is deliberately not `is_sent = true`. Nothing was sent. The Reminders
+ * list, the card badge and the calendar feed all read `is_sent` as "delivered",
+ * so flipping it to close the retry loop would make three surfaces lie about
+ * what happened.
+ */
+export type ReminderDeliveryStatus =
+  | "pending"
+  | "delivered"
+  | "skipped_no_device";
+
 export interface Database {
   public: {
     Tables: {
@@ -262,6 +281,7 @@ export interface Database {
           body: string | null;
           remind_at: string;
           is_sent: boolean;
+          delivery_status: ReminderDeliveryStatus;
           task_id: string | null;
           note_id: string | null;
           created_at: string;
@@ -273,6 +293,7 @@ export interface Database {
           body?: string | null;
           remind_at: string;
           is_sent?: boolean;
+          delivery_status?: ReminderDeliveryStatus;
           task_id?: string | null;
           note_id?: string | null;
           created_at?: string;
@@ -284,6 +305,7 @@ export interface Database {
           body?: string | null;
           remind_at?: string;
           is_sent?: boolean;
+          delivery_status?: ReminderDeliveryStatus;
           task_id?: string | null;
           note_id?: string | null;
           created_at?: string;

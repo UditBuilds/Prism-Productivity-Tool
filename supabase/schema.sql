@@ -244,7 +244,7 @@ CREATE TABLE IF NOT EXISTS "public"."push_delivery_log" (
     "status_code" integer,
     "ok" boolean,
     "error_text" "text",
-    CONSTRAINT "push_delivery_log_event_check" CHECK (("event" = ANY (ARRAY['auth_fail'::"text", 'invocation'::"text", 'attempt'::"text", 'prune'::"text", 'mark_sent'::"text"])))
+    CONSTRAINT "push_delivery_log_event_check" CHECK (("event" = ANY (ARRAY['auth_fail'::"text", 'invocation'::"text", 'attempt'::"text", 'prune'::"text", 'mark_sent'::"text", 'skip_no_device'::"text"])))
 );
 
 
@@ -297,6 +297,7 @@ CREATE TABLE IF NOT EXISTS "public"."reminders" (
     "body" "text",
     "remind_at" timestamp with time zone NOT NULL,
     "is_sent" boolean DEFAULT false,
+    "delivery_status" "text" DEFAULT 'pending'::"text" NOT NULL,
     "task_id" "uuid",
     "note_id" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"()
@@ -304,6 +305,20 @@ CREATE TABLE IF NOT EXISTS "public"."reminders" (
 
 
 ALTER TABLE "public"."reminders" OWNER TO "postgres";
+
+
+-- Delivery outcome of a reminder. 'skipped_no_device' is the terminal state for
+-- a reminder that came due while the user had no rows in push_subscriptions:
+-- nothing was delivered, so is_sent stays false, but the cron must not keep
+-- retrying it forever. See supabase/migrations/2026-09-10-reminder-delivery-status.sql.
+ALTER TABLE ONLY "public"."reminders"
+    ADD CONSTRAINT "reminders_delivery_status_check"
+    CHECK ("delivery_status" IN ('pending', 'delivered', 'skipped_no_device'));
+
+
+CREATE INDEX IF NOT EXISTS "reminders_pending_delivery_idx"
+    ON "public"."reminders" USING "btree" ("remind_at")
+    WHERE (("is_sent" = false) AND ("delivery_status" = 'pending'::"text"));
 
 
 CREATE TABLE IF NOT EXISTS "public"."srs_cards" (
