@@ -129,6 +129,29 @@ CREATE TABLE IF NOT EXISTS "public"."focus_sessions" (
 ALTER TABLE "public"."focus_sessions" OWNER TO "postgres";
 
 
+-- Single-use invite codes redeemed by POST /api/signup.
+--
+-- RLS is ON with NO policies, deliberately: `anon` and `authenticated` can
+-- reach nothing here, so the only thing that can read or redeem a code is the
+-- service-role client in that route. Do NOT add a policy to make this readable
+-- from the client -- being unreadable is the point.
+--
+-- Mint a code (upper-case is enforced by invite_codes_code_upper):
+--   insert into public.invite_codes (code) values ('PRISM-AB12CD34');
+CREATE TABLE IF NOT EXISTS "public"."invite_codes" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "code" "text" NOT NULL,
+    "used" boolean DEFAULT false NOT NULL,
+    "used_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "used_at" timestamp with time zone,
+    CONSTRAINT "invite_codes_code_upper" CHECK (("code" = "upper"("code")))
+);
+
+
+ALTER TABLE "public"."invite_codes" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."job_listings" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "title" "text" NOT NULL,
@@ -410,6 +433,18 @@ ALTER TABLE ONLY "public"."focus_categories"
 ALTER TABLE ONLY "public"."focus_sessions"
     ADD CONSTRAINT "focus_sessions_pkey" PRIMARY KEY ("id");
 
+
+
+ALTER TABLE ONLY "public"."invite_codes"
+    ADD CONSTRAINT "invite_codes_pkey" PRIMARY KEY ("id");
+
+
+ALTER TABLE ONLY "public"."invite_codes"
+    ADD CONSTRAINT "invite_codes_code_key" UNIQUE ("code");
+
+
+ALTER TABLE ONLY "public"."invite_codes"
+    ADD CONSTRAINT "invite_codes_used_by_fkey" FOREIGN KEY ("used_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 ALTER TABLE ONLY "public"."job_listings"
@@ -729,6 +764,9 @@ ALTER TABLE "public"."focus_categories" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."focus_sessions" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."invite_codes" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."job_listings" ENABLE ROW LEVEL SECURITY;
 
 
@@ -882,6 +920,12 @@ GRANT ALL ON TABLE "public"."focus_categories" TO "service_role";
 GRANT ALL ON TABLE "public"."focus_sessions" TO "anon";
 GRANT ALL ON TABLE "public"."focus_sessions" TO "authenticated";
 GRANT ALL ON TABLE "public"."focus_sessions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."invite_codes" TO "anon";
+GRANT ALL ON TABLE "public"."invite_codes" TO "authenticated";
+GRANT ALL ON TABLE "public"."invite_codes" TO "service_role";
 
 
 
