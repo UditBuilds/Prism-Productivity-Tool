@@ -81,6 +81,18 @@ function compile() {
 }
 
 const { analyseWorkoutSets, untrainedBodyParts } = await compile();
+// The mapping itself is asserted directly too, not only through the analysis:
+// a body-part miss is a property of these functions, and a check that has to
+// build a whole analysis to see one reports the failure a step away from it.
+const {
+  EXERCISE_ALIASES,
+  EXERCISE_LIBRARY,
+  bodyPartForExercise,
+  unknownAliasKeys,
+} = await import(pathToFileURL(path.join(out, "exercise-library.js")).href);
+const { exerciseKey } = await import(
+  pathToFileURL(path.join(out, "workouts.js")).href
+);
 
 /** A BodyPartLoad, only the fields the selector reads. */
 const part = (bodyPart, daysSince) => ({
@@ -93,6 +105,19 @@ const part = (bodyPart, daysSince) => ({
 });
 
 const names = (list) => list.map((b) => b.bodyPart);
+
+/** A WorkoutSet row, shaped like the live table. */
+const set = (exercise, performed_at, weight_kg, reps, set_index) => ({
+  id: `${exercise}-${set_index}`,
+  user_id: "u",
+  exercise,
+  weight_kg,
+  reps,
+  set_index,
+  performed_at,
+  raw_input: null,
+  created_at: performed_at,
+});
 
 console.log("\nuntrainedBodyParts — mixed input returns only untrained groups");
 {
@@ -156,21 +181,10 @@ console.log("\nuntrainedBodyParts — boundary cases");
 console.log("\nend-to-end through analyseWorkoutSets");
 {
   // Rows shaped like the live table: a picker capture (Legs), a Groq-parsed
-  // free-text capture (Back), and one name the library does not know — which
-  // must land in "Other" rather than in the group it actually trains. That
-  // last row is the shape of the live mapping defect: a real shoulder set
-  // logged as "Lateral Raise Drop Set" leaves Shoulders reading untrained.
-  const set = (exercise, performed_at, weight_kg, reps, set_index) => ({
-    id: `${exercise}-${set_index}`,
-    user_id: "u",
-    exercise,
-    weight_kg,
-    reps,
-    set_index,
-    performed_at,
-    raw_input: null,
-    created_at: performed_at,
-  });
+  // free-text capture (Back), and the four names the library did not know.
+  // Those four are the real defect this suite was extended for — before the
+  // alias map they all fell to "Other", and the last two were their user's
+  // ONLY shoulder and core work, so the dashboard told him to train both.
   const sets = [
     set("Leg Press", "2026-08-30T12:00:00.000Z", 100, 15, 1),
     set("Lat Pulldown", "2026-08-30T12:00:00.000Z", 70, null, 2),
@@ -178,6 +192,9 @@ console.log("\nend-to-end through analyseWorkoutSets");
     set("Flat Bench Press", "2026-09-01T12:00:00.000Z", 70, 8, 4),
     set("Dumbbell Curl", "2026-08-30T12:00:00.000Z", 15, 16, 5),
     set("Lateral Raise Drop Set", "2026-08-30T12:00:00.000Z", 10, 14, 6),
+    set("Crunch", "2026-08-30T12:00:00.000Z", null, 20, 7),
+    set("Hacksquat", "2026-08-30T12:00:00.000Z", 80, 10, 8),
+    set("Hyper Extension", "2026-08-30T12:00:00.000Z", null, 12, 9),
   ];
   const analysis = analyseWorkoutSets(sets, 180, "2026-09-03");
 
@@ -186,21 +203,194 @@ console.log("\nend-to-end through analyseWorkoutSets");
     analysis.bodyParts.filter((b) => b.bodyPart !== "Other").length,
     6
   );
+  // WAS "unmapped name is counted under Other, not dropped", asserting 1 set
+  // there. All four of those names map now, so an "Other" row would mean the
+  // alias map had stopped working — its ABSENCE is the assertion.
   eq(
-    "unmapped name is counted under Other, not dropped",
-    analysis.bodyParts.find((b) => b.bodyPart === "Other")?.sets,
+    "no Other row: every name in the fixture now maps",
+    analysis.bodyParts.find((b) => b.bodyPart === "Other"),
+    undefined
+  );
+  eq(
+    "nothing is reported unmapped",
+    analysis.unmappedExercises,
+    []
+  );
+  // WAS "Shoulders reads untrained despite a real lateral raise (mapping
+  // defect)", asserting daysSince === null. That check encoded the bug; it is
+  // inverted here rather than deleted so the regression it guards stays named.
+  eq(
+    "Shoulders reads TRAINED from the drop set (defect fixed)",
+    analysis.bodyParts.find((b) => b.bodyPart === "Shoulders")?.daysSince,
+    4
+  );
+  eq(
+    "Core reads TRAINED from the crunch (defect fixed)",
+    analysis.bodyParts.find((b) => b.bodyPart === "Core")?.daysSince,
+    4
+  );
+  eq(
+    "selector now finds no untrained group",
+    names(untrainedBodyParts(analysis.bodyParts)),
+    []
+  );
+  // The whole point of the fix, stated as set counts rather than dates.
+  eq(
+    "Hacksquat's sets land in Legs beside Leg Press",
+    analysis.bodyParts.find((b) => b.bodyPart === "Legs")?.sets,
+    2
+  );
+  eq(
+    "Hyper Extension's sets land in Back beside Lat Pulldown",
+    analysis.bodyParts.find((b) => b.bodyPart === "Back")?.sets,
+    2
+  );
+  // Aliasing must not merge two exercises into one progression row — that
+  // would compare weights across different lifts. Crunch stays its own row.
+  eq(
+    "aliasing does not merge progressions",
+    analysis.progressions.filter((p) => p.exercise === "Crunch").length,
     1
   );
   eq(
-    "selector picks the untrained groups out of that",
-    names(untrainedBodyParts(analysis.bodyParts)),
-    ["Shoulders", "Core"]
+    "an aliased progression still carries its resolved body part",
+    analysis.progressions.find((p) => p.exercise === "Crunch")?.bodyPart,
+    "Core"
+  );
+}
+
+console.log("\nunmapped names are reported, not hidden");
+{
+  const sets = [
+    set("Leg Press", "2026-08-30T12:00:00.000Z", 100, 15, 1),
+    set("Sled Push", "2026-08-30T12:00:00.000Z", 40, 20, 2),
+    set("Sled Push", "2026-09-01T12:00:00.000Z", 45, 20, 3),
+    set("Zercher Carry", "2026-08-30T12:00:00.000Z", 60, null, 4),
+  ];
+  const analysis = analyseWorkoutSets(sets, 180, "2026-09-03");
+
+  eq(
+    "both unknown names are named, most sets first",
+    analysis.unmappedExercises.map((u) => u.name),
+    ["Sled Push", "Zercher Carry"]
   );
   eq(
-    "Shoulders reads untrained despite a real lateral raise (mapping defect)",
-    analysis.bodyParts.find((b) => b.bodyPart === "Shoulders")?.daysSince,
-    null
+    "with their set counts",
+    analysis.unmappedExercises.map((u) => u.sets),
+    [2, 1]
   );
+  eq(
+    "and the same normalised key everything else groups on",
+    analysis.unmappedExercises.map((u) => u.key),
+    ["sled push", "zercher carry"]
+  );
+  // The report must agree with the "Other" row it explains, or the panel
+  // would print names whose sets were counted somewhere else.
+  eq(
+    "report total equals the Other row's set count",
+    analysis.unmappedExercises.reduce((n, u) => n + u.sets, 0),
+    analysis.bodyParts.find((b) => b.bodyPart === "Other")?.sets
+  );
+  eq(
+    "distinct-name count equals the Other row's exercise count",
+    analysis.unmappedExercises.length,
+    analysis.bodyParts.find((b) => b.bodyPart === "Other")?.exercises
+  );
+  // A null-exercise row never parsed; it is already counted as unparsedSets
+  // and has no name to report.
+  const withNull = analyseWorkoutSets(
+    sets.concat([set(null, "2026-09-01T12:00:00.000Z", null, null, null)]),
+    180,
+    "2026-09-03"
+  );
+  eq("unparsed rows are not reported as unmapped names",
+    withNull.unmappedExercises.length, 2);
+  eq("unparsed rows are still counted", withNull.unparsedSets, 1);
+}
+
+console.log("\nbodyPartForExercise — the four confirmed real-table misses");
+{
+  const cases = [
+    // [logged name, expected group, why it used to miss]
+    ["Crunch", "Core", "missing base exercise"],
+    ["Hacksquat", "Legs", "spacing variant"],
+    ["Hyper Extension", "Back", "synonym"],
+    ["Lateral Raise Drop Set", "Shoulders", "qualified variant"],
+  ];
+  for (const [name, expected, why] of cases) {
+    eq(`${name} -> ${expected} (${why})`, bodyPartForExercise(name), expected);
+  }
+  // The behaviour the brief names: same bucket as the library entry it
+  // borrows from, verified by asking the library entry directly.
+  eq(
+    "Crunch shares Cable Crunch's bucket",
+    bodyPartForExercise("Crunch"),
+    bodyPartForExercise("Cable Crunch")
+  );
+  eq(
+    "Hacksquat shares Hack Squat's bucket",
+    bodyPartForExercise("Hacksquat"),
+    bodyPartForExercise("Hack Squat")
+  );
+  eq(
+    "Hyper Extension shares Back Extension's bucket",
+    bodyPartForExercise("Hyper Extension"),
+    bodyPartForExercise("Back Extension")
+  );
+  eq(
+    "Lateral Raise Drop Set shares Lateral Raise's bucket",
+    bodyPartForExercise("Lateral Raise Drop Set"),
+    bodyPartForExercise("Lateral Raise")
+  );
+}
+
+console.log("\nbodyPartForExercise — normalisation and qualifier stripping");
+{
+  eq("case and spacing still collapse", bodyPartForExercise("  cRuNcH  "), "Core");
+  eq("alias through a qualifier", bodyPartForExercise("Crunch Drop Set"), "Core");
+  eq("dropset, one word", bodyPartForExercise("Lateral Raise Dropset"), "Shoulders");
+  eq("superset", bodyPartForExercise("Leg Press Superset"), "Legs");
+  eq("warm up", bodyPartForExercise("Squat Warm Up"), "Legs");
+  eq("to failure", bodyPartForExercise("Bench Press To Failure"), "Chest");
+  // A qualifier alone is not an exercise; stripping it would leave nothing.
+  eq("a bare qualifier maps to nothing", bodyPartForExercise("Drop Set"), null);
+  eq("empty string", bodyPartForExercise(""), null);
+  eq("whitespace only", bodyPartForExercise("   "), null);
+  eq("null name", bodyPartForExercise(null), null);
+  eq("a genuinely unknown name still returns null",
+    bodyPartForExercise("Sled Push"), null);
+  // Only ONE qualifier is stripped, deliberately — a loop could chew a real
+  // name down to nothing.
+  eq("two qualifiers are not both stripped",
+    bodyPartForExercise("Squat Warm Up Drop Set"), null);
+}
+
+console.log("\nthe alias map cannot quietly break the library");
+{
+  eq("no alias points at a name the library lacks", unknownAliasKeys(), []);
+  // Aliases must never re-home a real exercise: a library name always wins.
+  let clashes = [];
+  for (const alias of Object.keys(EXERCISE_ALIASES)) {
+    for (const entry of EXERCISE_LIBRARY) {
+      for (const libName of entry.exercises) {
+        if (exerciseKey(libName) === alias) clashes.push(libName);
+      }
+    }
+  }
+  eq("no alias key shadows a library name", clashes, []);
+  // Every distinct exercise in the library maps to its own group, unchanged.
+  let wrong = [];
+  for (const entry of EXERCISE_LIBRARY) {
+    for (const libName of entry.exercises) {
+      if (bodyPartForExercise(libName) !== entry.group) wrong.push(libName);
+    }
+  }
+  eq("all 66 library names still map to their own group", wrong, []);
+  // A qualifier suffix must never be a substring rule that eats a real name.
+  eq("Incline Bench Press is NOT counted as Bench Press's group by accident",
+    bodyPartForExercise("Incline Bench Press"), "Chest");
+  eq("Close Grip Bench Press keeps its own group",
+    bodyPartForExercise("Close Grip Bench Press"), "Arms");
 }
 
 console.log(
