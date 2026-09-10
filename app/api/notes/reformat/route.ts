@@ -35,9 +35,7 @@ const MODEL = "openai/gpt-oss-120b";
  * neither is reformattable at any cap this account can afford.
  *
  * What justifies the number now is the token arithmetic, measured 2026-09-10
- * against REAL note text from the live table (synthetic filler is useless
- * here — one repeated sentence tokenises far more efficiently than prose and
- * makes the cap look roomier than it is):
+ * against REAL note text from the live table:
  *
  *   fixed overhead (SYSTEM_PROMPT + chat scaffolding) = 211 tokens
  *   real note prose = 4.43 chars/token (consistent at 14,000 and 24,000 chars)
@@ -50,6 +48,12 @@ const MODEL = "openai/gpt-oss-120b";
  *
  * So a max-size note is admissible whenever the minute's budget is not already
  * spent — which is exactly the property capacityFailure() below reports on.
+ *
+ * If you re-measure this, do it on a RESTED budget. A bucket in debt refuses
+ * an in-cap note with a size-shaped 413 (see capacityFailure), which reads as
+ * "the cap is too high" when it is nothing of the sort. Repeated-sentence
+ * filler is fine for tokenisation (~4.5 chars/token, close to real prose) but
+ * tells you nothing about admission, which is what actually varies.
  */
 const MAX_CONTENT_CHARS = 24000;
 
