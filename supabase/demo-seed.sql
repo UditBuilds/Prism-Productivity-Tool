@@ -269,16 +269,21 @@ BEGIN
   -- already represents them - linking these would make them invisible there,
   -- which is the opposite of what a demo wants.
   -- --------------------------------------------------------------------
-  INSERT INTO reminders (user_id, title, body, remind_at, is_sent, created_at)
+  -- delivery_status is written explicitly rather than left to its 'pending'
+  -- default: the one is_sent = true row below is history, and a demo reset that
+  -- left it 'pending' would seed a row whose two columns contradict each other.
+  -- The unsent rows are all future-dated, so 'pending' is literally true of
+  -- them and the cron has nothing to skip.
+  INSERT INTO reminders (user_id, title, body, remind_at, is_sent, delivery_status, created_at)
   VALUES
     (demo_id, 'Stand-up call', 'Daily, 15 minutes.',
-     ((d0 + 1) + time '09:45') AT TIME ZONE 'Asia/Kolkata', false, now() - interval '3 days'),
+     ((d0 + 1) + time '09:45') AT TIME ZONE 'Asia/Kolkata', false, 'pending', now() - interval '3 days'),
     (demo_id, 'Pick up the parcel', 'Locker closes at 8pm.',
-     ((d0 + 2) + time '18:00') AT TIME ZONE 'Asia/Kolkata', false, now() - interval '1 days'),
+     ((d0 + 2) + time '18:00') AT TIME ZONE 'Asia/Kolkata', false, 'pending', now() - interval '1 days'),
     (demo_id, 'Physio appointment', NULL,
-     ((d0 + 5) + time '11:30') AT TIME ZONE 'Asia/Kolkata', false, now() - interval '6 days'),
+     ((d0 + 5) + time '11:30') AT TIME ZONE 'Asia/Kolkata', false, 'pending', now() - interval '6 days'),
     (demo_id, 'Weekly review', 'Half an hour, Sunday evening.',
-     ((d0 - 2) + time '20:00') AT TIME ZONE 'Asia/Kolkata', true, now() - interval '9 days');
+     ((d0 - 2) + time '20:00') AT TIME ZONE 'Asia/Kolkata', true, 'delivered', now() - interval '9 days');
 
   -- --------------------------------------------------------------------
   -- SEED: countdowns

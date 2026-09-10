@@ -10,7 +10,17 @@ export interface PushHealthData {
   lastDeliveryAt: string | null;
   /** This user's registered push devices. */
   subscriptionCount: number;
-  /** This user's reminders past due and still undelivered (is_sent = false). */
+  /**
+   * This user's reminders that are past due and still owed a delivery
+   * (is_sent = false AND delivery_status = 'pending').
+   *
+   * Reminders that resolved to 'skipped_no_device' are excluded: they came due
+   * with no registered device, the cron has stopped retrying them, and there is
+   * no longer an action the user can take. Counting them made this warning
+   * permanent and unclearable — the reason the banner was wrong for seven weeks
+   * on an account with zero subscriptions. That account still sees the separate
+   * "No devices registered for reminders" line, which is the actionable half.
+   */
   overdueUndeliveredCount: number;
   /**
    * Server clock at response time. The banner derives "hasn't run in Xm" from
@@ -66,6 +76,7 @@ export async function GET() {
       .from("reminders")
       .select("id", { count: "exact", head: true })
       .eq("is_sent", false)
+      .eq("delivery_status", "pending")
       .lt("remind_at", overdueBefore),
   ]);
 

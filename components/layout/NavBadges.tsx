@@ -16,9 +16,16 @@ export function useNavBadgeCounts() {
 
   const learn = due?.length ?? 0;
 
+  // 'skipped_no_device' reminders are excluded. They came due with no device
+  // to notify, the cron has stopped retrying them, and nothing the user does in
+  // the app clears them — so counting them pinned a badge on the nav for as
+  // long as the row existed. Everything still owed a delivery keeps its badge.
   const soon = Date.now() + DAY_MS;
   const remindersCount = (reminders ?? []).filter(
-    (r) => !r.is_sent && new Date(r.remind_at).getTime() <= soon
+    (r) =>
+      !r.is_sent &&
+      r.delivery_status !== "skipped_no_device" &&
+      new Date(r.remind_at).getTime() <= soon
   ).length;
 
   return { learn, reminders: remindersCount };

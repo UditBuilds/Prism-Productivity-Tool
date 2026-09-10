@@ -189,12 +189,24 @@ export async function PATCH(request: Request) {
       return json({ data: null, error: "A valid remind time is required" }, 400);
     }
     updates.remind_at = remindAt;
+    // Rescheduling revives the row. Without this, a reminder that resolved to
+    // 'skipped_no_device' would keep that terminal status after being moved to
+    // a future time, and /api/push/due — which matches on
+    // delivery_status = 'pending' — would never look at it again. The user
+    // would have set a reminder that silently cannot fire.
+    if (Date.parse(remindAt) > Date.now()) {
+      updates.delivery_status = "pending";
+    }
   }
   if (body.is_sent !== undefined) {
     if (typeof body.is_sent !== "boolean") {
       return json({ data: null, error: "is_sent must be a boolean" }, 400);
     }
     updates.is_sent = body.is_sent;
+    // Keep the two columns telling the same story. This path is how the in-app
+    // NotificationChecker records a delivery it made itself, so `true` here is
+    // a real delivery, not a workaround for an undeliverable row.
+    updates.delivery_status = body.is_sent ? "delivered" : "pending";
   }
   // Same ownership rule as POST — the Reminders page relinks through here, so
   // fixing only the create path would leave the identical hole one verb away.

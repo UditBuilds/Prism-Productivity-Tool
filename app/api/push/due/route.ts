@@ -111,11 +111,20 @@ export async function POST(request: Request) {
   const invocationId = crypto.randomUUID();
 
   const nowIso = new Date().toISOString();
+  // Two gates, not one. `is_sent = false` excludes anything already delivered
+  // (including by the in-app NotificationChecker, which flips the boolean
+  // directly). `delivery_status = 'pending'` excludes reminders that reached a
+  // terminal outcome without a delivery — today that is only
+  // 'skipped_no_device', below. Dropping either gate reopens a retry loop:
+  // without the first, a client-delivered reminder is pushed a second time;
+  // without the second, a reminder with nothing to deliver to is re-matched on
+  // every tick, forever.
   const { data: dueReminders, error: remindersError } = await supabase
     .from("reminders")
     .select("id, user_id, title, body")
     .lte("remind_at", nowIso)
-    .eq("is_sent", false);
+    .eq("is_sent", false)
+    .eq("delivery_status", "pending");
 
   if (remindersError) {
     return json({ data: null, error: remindersError.message }, 500);
@@ -133,12 +142,42 @@ export async function POST(request: Request) {
   await upsertHealth(supabase, { last_invocation_at: new Date().toISOString() });
 
   let sent = 0;
+  let skipped = 0;
 
   for (const reminder of dueReminders ?? []) {
     const { data: subs } = await supabase
       .from("push_subscriptions")
       .select("endpoint, p256dh, auth")
       .eq("user_id", reminder.user_id);
+
+    // No registered device: the per-subscription loop below would not run a
+    // single iteration, so nothing succeeds, nothing fails, and `delivered`
+    // stays false — which used to leave the row exactly as it was found and
+    // hand it straight back to the next tick. Measured before this branch
+    // existed: one reminder re-matched every minute for seven weeks with zero
+    // rows in push_delivery_log.
+    //
+    // Resolve it to a terminal status instead. `is_sent` stays false because
+    // nothing was sent; only the retry stops. The reminder is not lost — it
+    // still lists and still fires in-app if the user opens Prism, and
+    // registering a device does not resurrect a delivery that is already
+    // weeks stale.
+    if ((subs ?? []).length === 0) {
+      await supabase
+        .from("reminders")
+        .update({ delivery_status: "skipped_no_device" })
+        .eq("id", reminder.id);
+
+      await logRow(supabase, {
+        invocation_id: invocationId,
+        event: "skip_no_device",
+        reminder_id: reminder.id,
+        ok: true,
+      });
+
+      skipped += 1;
+      continue;
+    }
 
     const payload = JSON.stringify({
       title: reminder.title,
@@ -210,7 +249,7 @@ export async function POST(request: Request) {
     if (delivered) {
       await supabase
         .from("reminders")
-        .update({ is_sent: true })
+        .update({ is_sent: true, delivery_status: "delivered" })
         .eq("id", reminder.id);
 
       // Log mark_sent + update heartbeat.
@@ -226,7 +265,10 @@ export async function POST(request: Request) {
     }
   }
 
-  return json<{ sent: number }>({ data: { sent }, error: null });
+  return json<{ sent: number; skipped: number }>({
+    data: { sent, skipped },
+    error: null,
+  });
 }
 
 /**

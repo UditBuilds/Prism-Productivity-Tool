@@ -136,9 +136,19 @@ async function applyReminderIntent(
 
   const existingId = await findLinkedReminderId(supabase, task.id);
   if (existingId) {
+    // delivery_status resets with the time. findLinkedReminderId matches on
+    // is_sent = false, which includes a reminder that resolved to
+    // 'skipped_no_device'; reusing that row without clearing the status would
+    // move it to a future time that /api/push/due no longer scans for. The new
+    // time is already validated as future by parseReminderField, so 'pending'
+    // is unconditionally right here.
     const { error } = await supabase
       .from("reminders")
-      .update({ title: task.title, remind_at: intent.remindAt })
+      .update({
+        title: task.title,
+        remind_at: intent.remindAt,
+        delivery_status: "pending",
+      })
       .eq("id", existingId);
     return error ? error.message : null;
   }

@@ -129,6 +129,10 @@ export function useCreateReminder() {
         body: input.body ?? null,
         remind_at: input.remind_at,
         is_sent: false,
+        // A brand-new reminder is always owed a delivery; the server's column
+        // default agrees, so the optimistic row matches what the refetch brings
+        // back and the card badge does not flicker through a wrong state.
+        delivery_status: "pending",
         task_id: input.task_id ?? null,
         note_id: input.note_id ?? null,
         created_at: new Date().toISOString(),
