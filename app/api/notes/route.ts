@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { markdownExcerpt } from "@/lib/markdown";
 import { summarizeNoteContent } from "@/lib/ai/client";
+import { checkAiRateLimit } from "@/lib/ai/rateLimit";
 import { needsSummary } from "@/lib/notes/revisit-summary";
 import type { Database, Note } from "@/types/database";
 
@@ -26,14 +27,40 @@ type ApiResponse<T> = { data: T | null; error: string | null };
  * because a summarizer was rate-limited would be a far worse bug than the one
  * this feature fixes.
  *
+ * RATE-LIMITED, BUT NEVER BY REJECTING THE SAVE. This was the one Groq-reaching
+ * route with no frequency cap, so a runaway client loop could drive unbounded
+ * Groq calls through it. It now shares the same 20/60s per-user budget as the
+ * other AI routes — but it CANNOT answer 429 the way notes/reformat does.
+ *
+ * A 429 here would destroy the user's note, and the failure is already fully
+ * diagnosed in MAX_WORKOUT_REQUESTS_PER_WINDOW (lib/ai/rateLimit.ts): both
+ * createNote and updateNote are offline-resumable (lib/offline-mutations.ts),
+ * `request()` in hooks/useNotes.ts throws on ANY non-OK response, so a 429 is
+ * indistinguishable from a network failure to the retryer, and mutations
+ * retry 3x with ~1s/2s/4s backoff (app/providers.tsx) — all four attempts land
+ * inside the SAME 60s window and all fail. useCreateNote's onError then rolls
+ * the optimistic row back. Four rejections, note gone.
+ *
+ * So the cap degrades instead: past the ceiling the summary is skipped and the
+ * note saves without one. That is the pattern /api/tasks/split already uses
+ * for the same shared limiter (its `fallback = "rate_limited"` branch) — bound
+ * the Groq spend, keep the user's input.
+ *
+ * The slot is consumed ONLY on the path that actually calls Groq. A burst of
+ * Spark notes returns above the check and spends nothing, so it cannot starve
+ * the reformat and flashcard routes that share the budget.
+ *
  * Returns `undefined` to mean "leave the stored value alone".
  */
 async function summaryForSave({
+  userId,
   kind,
   title,
   content,
   regenerate,
 }: {
+  /** Whose shared AI budget this summary is charged against. */
+  userId: string;
   kind: "spark" | "revisit" | null;
   title: string;
   content: string;
@@ -45,6 +72,20 @@ async function summaryForSave({
   // Short, or not a Revisit note: no summary is shown for it, so clear any
   // stale one rather than leaving a summary of text that no longer exists.
   if (kind !== "revisit" || !needsSummary(content)) return null;
+
+  // Everything below this line reaches Groq, so this is where a slot is spent.
+  const rateLimit = checkAiRateLimit(userId);
+  if (!rateLimit.allowed) {
+    console.warn(
+      `[notes] AI budget exhausted; saving without a summary (retry in ${rateLimit.retryAfterSeconds}s)`
+    );
+    // null, NOT undefined, on purpose — the same choice the catch below makes.
+    // Leaving the old value would pin a summary of text that no longer exists,
+    // and the self-healing clause in PATCH only regenerates when the stored
+    // summary is empty, so a stale one would never be replaced. Null shows the
+    // excerpt fallback now and picks up a real summary on the next save.
+    return null;
+  }
 
   try {
     return await summarizeNoteContent(title, content);
@@ -119,6 +160,7 @@ export async function POST(request: Request) {
   }
 
   const summary = await summaryForSave({
+    userId: user.id,
     kind,
     title,
     content,
@@ -226,6 +268,7 @@ export async function PATCH(request: Request) {
         !existing.summary);
 
     const summary = await summaryForSave({
+      userId: user.id,
       kind: nextKind,
       title: nextTitle,
       content: nextContent,
