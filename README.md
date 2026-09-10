@@ -194,10 +194,13 @@ supabase/schema.sql  Full schema (tables, RLS, triggers)
 
 ## Status
 
-This is a **single-user private beta**. Signups are closed — `/signup`
-renders an invite-only notice behind a `SIGNUPS_OPEN` flag, and new signups
-are disabled in the Supabase dashboard. There is no user-limit enforced in
-code.
+This is an **invite-only private beta**. `/signup` asks for an invite code
+alongside email and password, and submits to `POST /api/signup` — a
+server-side route holding the service-role key, which redeems the code with a
+single atomic update-if-unused and then creates the account through the
+Supabase Admin API. Codes live in `invite_codes`, are single-use, and the
+table has RLS on with no policies, so nothing client-side can read or spend
+one. There is no user-limit enforced in code.
 
 TypeScript strict mode is on, with three documented `as any` escapes (each
 with an eslint-disable comment) for tables intentionally absent from

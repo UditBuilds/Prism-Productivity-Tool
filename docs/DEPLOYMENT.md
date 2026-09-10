@@ -90,14 +90,38 @@ first. Verify the job with `select * from cron.job;` and inspect runs via
 
 ## 5. Adding another user
 
-PRISM is a single-user private beta. Signups are closed — `/signup` renders
-an invite-only notice behind a `SIGNUPS_OPEN` flag, and new signups are
-disabled in the Supabase dashboard. There is no user-limit enforced in code.
+PRISM is an invite-only private beta. `/signup` takes an invite code and
+posts to `POST /api/signup`, which redeems it with the service-role key and
+creates the account via the Supabase Admin API. There is no user-limit
+enforced in code.
 
-To add a user, temporarily enable signups in Supabase, have them sign up
-(email confirmation is off, so they land on the dashboard immediately), then
-disable signups again. Each user's data is fully private — every table has
-RLS keyed on `user_id`.
+To add a user, mint a code and send it to them:
+
+```sql
+insert into public.invite_codes (code) values ('PRISM-AB12CD34')
+returning code;
+```
+
+Codes must be UPPER-CASE — the `invite_codes_code_upper` CHECK rejects
+anything else, because the route upper-cases what the user types before
+matching. Each code is single-use: redeeming it sets `used`, `used_by` and
+`used_at`. Email confirmation is off, so the new user lands on the dashboard
+immediately. Each user's data is fully private — every table has RLS keyed on
+`user_id`.
+
+⚠️ **The invite gate only holds if self-serve signup is OFF in Supabase.**
+Authentication → Sign In / Providers → "Allow new users to sign up" must be
+disabled. While it is on, anyone can create an account by POSTing to
+`/auth/v1/signup` with the anon key out of the browser bundle, and the invite
+code is not consulted at all. Re-check it with:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}
+' -X POST "$URL/auth/v1/signup"   -H "apikey: $ANON_KEY" -H "Content-Type: application/json"   -d '{"email":"probe@example.com","password":"ProbePassword123!"}'
+```
+
+`422` is the setting working. `200` means it is still open — and that a real
+account was just created, so delete it.
 
 ## 5a. The public demo account
 

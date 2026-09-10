@@ -1,10 +1,9 @@
 /**
  * The public demo account.
  *
- * Prism's signups are closed (see SIGNUPS_OPEN in app/(auth)/signup/page.tsx,
- * plus the matching Supabase dashboard setting) and stay closed. This account
- * is the way in for anyone outside the invite list — a recruiter opening the
- * portfolio link, mostly.
+ * Prism's signups are invite-only: /signup requires a code, redeemed
+ * server-side by POST /api/signup. This account is the way in for anyone
+ * WITHOUT a code — a recruiter opening the portfolio link, mostly.
  *
  * THE PASSWORD BEING IN CLIENT CODE IS THE DESIGN, NOT AN OVERSIGHT. The
  * button below signs in with `supabase.auth.signInWithPassword` exactly as the

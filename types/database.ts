@@ -33,6 +33,41 @@ export type WorkoutSessionStatus = "active" | "completed";
 export interface Database {
   public: {
     Tables: {
+      /**
+       * Invite codes redeemed by POST /api/signup. RLS is ON with NO policies,
+       * so neither `anon` nor `authenticated` can read or write a row — the
+       * service-role client in that route is the only thing that touches this
+       * table. It is typed here (rather than reached through an `as any`
+       * escape hatch like push_health) because the redemption is an
+       * update-if-unused whose filters are worth type-checking.
+       */
+      invite_codes: {
+        Row: {
+          id: string;
+          code: string;
+          used: boolean;
+          used_by: string | null;
+          created_at: string;
+          used_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          code: string;
+          used?: boolean;
+          used_by?: string | null;
+          created_at?: string;
+          used_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          code?: string;
+          used?: boolean;
+          used_by?: string | null;
+          created_at?: string;
+          used_at?: string | null;
+        };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;
