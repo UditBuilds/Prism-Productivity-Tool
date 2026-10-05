@@ -3,6 +3,7 @@ import { Bell, AlertCircle } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import {
+  DAY_MS,
   istDayContext,
   istDateString,
   istDayNumber,
@@ -29,8 +30,6 @@ import { StatCard } from "@/components/shared/StatCard";
 import { EmptyState } from "@/components/shared/EmptyState";
 
 export const metadata = { title: "Dashboard | Prism" };
-
-const DAY_MS = 86_400_000;
 
 /** Rows rendered in the agenda before it links out. */
 const AGENDA_LIMIT = 4;

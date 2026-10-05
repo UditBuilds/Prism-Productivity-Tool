@@ -1,19 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
 import type { CalendarMonthData } from "@/app/api/calendar/route";
+import { apiFetch } from "@/lib/api/client";
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function fetchCalendarMonth(month: string): Promise<CalendarMonthData> {
-  const res = await fetch(`/api/calendar?month=${month}`);
-  const json = (await res.json()) as ApiResponse<CalendarMonthData>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function fetchCalendarMonth(month: string): Promise<CalendarMonthData> {
+  return apiFetch<CalendarMonthData>(`/api/calendar?month=${month}`);
 }
 
 /** Tasks + reminders grouped by IST date for one "YYYY-MM" month. */

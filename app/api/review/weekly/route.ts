@@ -1,11 +1,9 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
-import { istDayContext, istDayNumber, istDateString } from "@/lib/date";
+import { DAY_MS, istDayContext, istDayNumber, istDateString } from "@/lib/date";
+import { creditedMinutes } from "@/lib/focus-time";
 import type { MoodValue } from "@/types/database";
-
-const DAY_MS = 86_400_000;
 
 export interface ReviewDay {
   date: string; // YYYY-MM-DD (IST civil date)
@@ -42,27 +40,6 @@ export interface WeeklyReviewData {
   worstDay: ReviewDayHighlight | null;
   categoryBreakdown: { category: string; minutes: number; percentage: number }[];
   insights: string[];
-}
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
-
-/**
- * Minutes to credit toward "time spent" stats: real elapsed time when tracked,
- * else the target for naturally-completed sessions, else 0 (untracked AND never
- * completed — unrecoverable, not a regression).
- */
-function creditedMinutes(s: {
-  elapsed_seconds: number | null;
-  completed: boolean;
-  duration_minutes: number;
-}): number {
-  if (s.elapsed_seconds !== null) return s.elapsed_seconds / 60;
-  if (s.completed) return s.duration_minutes;
-  return 0;
 }
 
 const WEEKDAYS = [

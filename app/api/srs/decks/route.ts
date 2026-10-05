@@ -1,12 +1,5 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 // DELETE /api/srs/decks?deckName=Name — remove every card in one deck.
 // (RLS guarantees ownership; the explicit user_id filter is belt-and-braces.)

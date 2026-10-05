@@ -3,8 +3,7 @@
 import { useDueCards } from "@/hooks/useSRS";
 import { useRemindersQuery } from "@/hooks/useReminders";
 import { cn } from "@/lib/utils";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { DAY_MS } from "@/lib/date";
 
 /**
  * Live counts that drive the sidebar/mobile-nav badges. Reuses the shared

@@ -1,13 +1,6 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import type { RecurringTask } from "@/types/database";
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 // GET /api/tasks/recurring — the authed user's ACTIVE recurring templates.
 // This is the persistent "your task repeats, even if nothing spawned today"

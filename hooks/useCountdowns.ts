@@ -6,25 +6,12 @@ import {
 import toast from "react-hot-toast";
 
 import type { Countdown } from "@/types/database";
+import { apiFetch } from "@/lib/api/client";
 
 const COUNTDOWNS_KEY = ["countdowns"] as const;
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function request<T>(method: string, body?: unknown): Promise<T> {
-  const res = await fetch("/api/countdowns", {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function request<T>(method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>("/api/countdowns", method, body);
 }
 
 export function useCountdownsQuery() {

@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { validatePushEndpoint } from "@/lib/push/endpoint";
 import type { PushSubscriptionRow } from "@/types/database";
@@ -7,12 +6,6 @@ import type { PushSubscriptionRow } from "@/types/database";
 // validatePushEndpoint resolves DNS via node:dns. Declared explicitly so the
 // route can never be moved onto the edge runtime, where that import fails.
 export const runtime = "nodejs";
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 // POST /api/push/subscribe — upsert this device's push subscription
 export async function POST(request: Request) {

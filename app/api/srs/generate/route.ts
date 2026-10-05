@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { generateFlashcardsFromNote, MAX_SOURCE_CHARS } from "@/lib/ai/client";
 import {
@@ -9,16 +8,6 @@ import {
 } from "@/lib/ai/rateLimit";
 
 type GeneratedCard = { front: string; back: string };
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(
-  body: ApiResponse<T>,
-  status = 200,
-  headers?: Record<string, string>
-) {
-  return NextResponse.json(body, { status, headers });
-}
-
 // POST /api/srs/generate — read a note via the AI provider, return drafts (no save)
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -70,8 +59,9 @@ export async function POST(request: Request) {
     // have no length limit on write, so this is the bound on what reaches the
     // model. Truncated rather than rejected: the note is already saved and the
     // user can't shorten it from this screen, and cards from the first
-    // MAX_SOURCE_CHARS are more useful than an error. At 32,000 chars nothing
-    // in the current database is affected (largest note: 18,656).
+    // MAX_SOURCE_CHARS are more useful than an error. NOTE: real notes now
+    // exceed 32,000 chars (YouTube imports), so for those this slice DOES
+    // bite, silently — see MAX_SOURCE_CHARS in lib/ai/client.ts.
     const cards = await generateFlashcardsFromNote(
       note.title,
       note.content.slice(0, MAX_SOURCE_CHARS),

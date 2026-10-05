@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { istCivilDateToNoonIso, istDateString } from "@/lib/date";
 import { EmptyGenerationError, splitCaptureIntoTasks } from "@/lib/ai/client";
@@ -13,12 +12,6 @@ import {
 import type { Database, Task } from "@/types/database";
 
 type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
-
 /** The Groq round-trip runs inside POST, so give it room past the 10s default. */
 export const maxDuration = 30;
 

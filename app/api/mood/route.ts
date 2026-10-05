@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { istDateString } from "@/lib/date";
 import type { MoodLog, MoodValue } from "@/types/database";
@@ -11,12 +10,6 @@ const MOOD_VALUES: MoodValue[] = [
   "tired",
   "stressed",
 ];
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 function isMood(v: unknown): v is MoodValue {
   return typeof v === "string" && MOOD_VALUES.includes(v as MoodValue);

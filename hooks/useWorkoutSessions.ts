@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 
 import { istDateString } from "@/lib/date";
 import { invalidateDerivedCaches } from "@/lib/derived-caches";
+import { apiFetch } from "@/lib/api/client";
 import type { WorkoutSessionSummary } from "@/app/api/workouts/sessions/route";
 import type { WorkoutSessionStatus } from "@/types/database";
 
@@ -16,22 +17,8 @@ export interface UpdateSessionInput {
   notes?: string | null;
 }
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function request<T>(method: string, body?: unknown): Promise<T> {
-  const res = await fetch("/api/workouts/sessions", {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function request<T>(method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>("/api/workouts/sessions", method, body);
 }
 
 /**

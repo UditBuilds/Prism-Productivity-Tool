@@ -1,15 +1,15 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
 import {
+  DAY_MS,
   istDayContext,
   istDayNumber,
   istDateString,
   istHour,
 } from "@/lib/date";
+import { creditedMinutes } from "@/lib/focus-time";
 
-const DAY_MS = 86_400_000;
 const WINDOW_DAYS = 30;
 /** Minimum completed sessions before "peak hour / best day" insights are real. */
 const MIN_SESSIONS_FOR_INSIGHTS = 3;
@@ -40,27 +40,6 @@ export interface ProductivityData {
   totalSessions: number;
   mostProductiveHour: number | null;
   mostProductiveDay: string | null;
-}
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
-
-/**
- * Minutes to credit toward "time spent" stats: real elapsed time when tracked,
- * else the target for naturally-completed sessions, else 0 (untracked AND never
- * completed — unrecoverable, not a regression).
- */
-function creditedMinutes(s: {
-  elapsed_seconds: number | null;
-  completed: boolean;
-  duration_minutes: number;
-}): number {
-  if (s.elapsed_seconds !== null) return s.elapsed_seconds / 60;
-  if (s.completed) return s.duration_minutes;
-  return 0;
 }
 
 const weekdayName = new Intl.DateTimeFormat("en-US", {

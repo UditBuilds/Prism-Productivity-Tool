@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -28,12 +27,6 @@ export interface PushHealthData {
    * device clock drift into a false alarm.
    */
   now: string;
-}
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
 }
 
 /** How far back a reminder must be to count as "overdue and undelivered". */

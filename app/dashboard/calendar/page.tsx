@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { istDateString, istDayNumber } from "@/lib/date";
+import { DAY_MS, istDateString, istDayNumber } from "@/lib/date";
 import { useCalendarMonth } from "@/hooks/useCalendar";
 import type { CalendarDayItems } from "@/app/api/calendar/route";
 import { priorityStyles } from "@/components/tasks/task-styles";
@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 
-const DAY_MS = 86_400_000;
 const WEEKDAY_HEADERS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const WEEKDAYS_FULL = [
   "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",

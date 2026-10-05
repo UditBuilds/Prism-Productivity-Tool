@@ -156,9 +156,11 @@ export function dailyRevisitIndex(
  * How much of a note is sent to the model, and in what shape.
  *
  * NOT a plain `content.slice(...)`, and the reason is the account's budget
- * rather than taste. Groq reserves `prompt_tokens + max_tokens` up front on an
- * 8,000 TPM account, so lib/ai/client.ts's general MAX_SOURCE_CHARS of 32,000
- * (~8k tokens) would be REFUSED before the model ran. Summarization therefore
+ * rather than taste. Groq admits a call only if its prompt fits in what the
+ * 8,000 TPM minute has left (it no longer reserves max_tokens too — see
+ * app/api/notes/reformat/route.ts), so lib/ai/client.ts's general
+ * MAX_SOURCE_CHARS of 32,000 (~8k tokens) would need an EMPTY minute just to
+ * be admitted, inside a note save. Summarization therefore
  * gets its own much smaller budget — and inside that budget, a leading slice
  * of a 114,787-character note would show the model the first 4% of it and
  * nothing else, producing a summary of the introduction rather than of the

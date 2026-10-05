@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   BAD_INVITE_MESSAGE,
@@ -11,12 +10,6 @@ import {
 export interface SignupData {
   /** The new user's id. Returned for logging/debugging, not used by the form. */
   userId: string;
-}
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
 }
 
 /** Longest invite code we will even look up. Real codes are ~20 chars. */

@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
 import Groq, { APIError, RateLimitError } from "groq-sdk";
 
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import {
   aiRateLimitHeaders,
@@ -192,16 +192,6 @@ function capacityFailure(
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(
-  body: ApiResponse<T>,
-  status = 200,
-  headers?: Record<string, string>
-) {
-  return NextResponse.json(body, { status, headers });
-}
 
 const SYSTEM_PROMPT = `You are a markdown formatter. Add proper markdown structure to raw unformatted text.
 

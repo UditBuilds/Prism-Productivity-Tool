@@ -1,16 +1,9 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
 import type { Database, Reminder } from "@/types/database";
 
 type ReminderUpdate = Database["public"]["Tables"]["reminders"]["Update"];
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 /** Validate an ISO timestamp string; returns the ISO if valid, else null. */
 function parseIsoTimestamp(v: unknown): string | null {

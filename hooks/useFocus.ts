@@ -6,26 +6,13 @@ import {
 import toast from "react-hot-toast";
 
 import { invalidateDerivedCaches } from "@/lib/derived-caches";
+import { apiFetch } from "@/lib/api/client";
 import type { FocusSession } from "@/types/database";
 
 const FOCUS_KEY = ["focus-sessions"] as const;
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function request<T>(method: string, body?: unknown): Promise<T> {
-  const res = await fetch("/api/focus", {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function request<T>(method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>("/api/focus", method, body);
 }
 
 // Exported so DataPrefetcher can warm this cache with the exact same queryFn.

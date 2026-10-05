@@ -1,33 +1,13 @@
-import { NextResponse } from "next/server";
 import webpush, { type WebPushError } from "web-push";
 
+import { json } from "@/lib/api/response";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { istDayContext } from "@/lib/date";
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
+import { creditedMinutes } from "@/lib/focus-time";
 
 function isExpiredError(err: unknown): boolean {
   const status = (err as WebPushError)?.statusCode;
   return status === 404 || status === 410;
-}
-
-/**
- * Minutes to credit toward "time spent" stats: real elapsed time when tracked,
- * else the target for naturally-completed sessions, else 0 (untracked AND never
- * completed — unrecoverable, not a regression).
- */
-function creditedMinutes(s: {
-  elapsed_seconds: number | null;
-  completed: boolean;
-  duration_minutes: number;
-}): number {
-  if (s.elapsed_seconds !== null) return s.elapsed_seconds / 60;
-  if (s.completed) return s.duration_minutes;
-  return 0;
 }
 
 interface TinyWinsStats {

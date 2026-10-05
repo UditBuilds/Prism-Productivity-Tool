@@ -1,14 +1,9 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
-import { istDayContext, istDateString } from "@/lib/date";
+import { DAY_MS, istDayContext, istDateString } from "@/lib/date";
 import { analyseWorkoutSets, type WorkoutAnalysis } from "@/lib/workout-analysis";
 import type { WorkoutSet } from "@/types/database";
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-const DAY_MS = 86_400_000;
 
 /**
  * Analysis reads far further back than logging does.
@@ -29,10 +24,6 @@ const WINDOW_DAYS = 180;
 const MAX_ROWS = 5000;
 
 export type { WorkoutAnalysis };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 /**
  * Progressive overload + body-part balance over the last 180 IST days.

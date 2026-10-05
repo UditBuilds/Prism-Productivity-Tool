@@ -1,17 +1,10 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import type { Database, Plan, PlanStatus } from "@/types/database";
 
 type PlanUpdate = Database["public"]["Tables"]["plans"]["Update"];
 
 const STATUSES: PlanStatus[] = ["active", "completed", "archived"];
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 function isStatus(v: unknown): v is PlanStatus {
   return typeof v === "string" && STATUSES.includes(v as PlanStatus);

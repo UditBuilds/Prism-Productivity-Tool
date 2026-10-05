@@ -1,56 +1,6 @@
-import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
-
+import { json } from "@/lib/api/response";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { istDateString, istWeekday } from "@/lib/date";
-import type { Database, TaskPriority } from "@/types/database";
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
-
-// `recurring_tasks` and `tasks.recurring_task_id` already exist in the database
-// (the SQL has been run) but are not yet part of the shared `Database` type in
-// types/database.ts. Describe the slice this route needs locally so the
-// service-role client stays fully typed — no `any`.
-type RecurringTaskRow = {
-  id: string;
-  user_id: string;
-  title: string;
-  // recurring_tasks.priority is TEXT; it mirrors tasks.priority's allowed values.
-  priority: TaskPriority;
-  is_active: boolean;
-  created_at: string;
-  // IST weekday numbers (0=Sun … 6=Sat) this template spawns on.
-  days_of_week: number[];
-};
-
-type TasksTable = Database["public"]["Tables"]["tasks"];
-
-type RecurringSchema = {
-  public: {
-    Tables: Omit<Database["public"]["Tables"], "tasks"> & {
-      tasks: {
-        Row: TasksTable["Row"] & { recurring_task_id: string | null };
-        Insert: TasksTable["Insert"] & { recurring_task_id?: string | null };
-        Update: TasksTable["Update"] & { recurring_task_id?: string | null };
-        Relationships: [];
-      };
-      recurring_tasks: {
-        Row: RecurringTaskRow;
-        Insert: RecurringTaskRow;
-        Update: Partial<RecurringTaskRow>;
-        Relationships: [];
-      };
-    };
-    Views: Database["public"]["Views"];
-    Functions: Database["public"]["Functions"];
-    Enums: Database["public"]["Enums"];
-    CompositeTypes: Database["public"]["CompositeTypes"];
-  };
-};
 
 // POST /api/cron/recurring-tasks — cron-triggered: for each active recurring
 // template, spawn today's task if it doesn't already exist. Idempotent: one
@@ -65,9 +15,8 @@ export async function POST(request: Request) {
     return json({ data: null, error: "Unauthorized" }, 401);
   }
 
-  // Service-role client (bypasses RLS — must read every user's templates),
-  // recast to the schema that includes the recurring-task tables.
-  const supabase = createAdminClient() as unknown as SupabaseClient<RecurringSchema>;
+  // Service-role client (bypasses RLS — must read every user's templates).
+  const supabase = createAdminClient();
 
   const today = istDateString(); // IST civil date "YYYY-MM-DD"
   // IST weekday number (0=Sun … 6=Sat) via the shared lib/date helper.

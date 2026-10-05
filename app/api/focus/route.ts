@@ -1,15 +1,8 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import type { Database, FocusSession } from "@/types/database";
 
 type FocusUpdate = Database["public"]["Tables"]["focus_sessions"]["Update"];
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 // GET /api/focus — recent sessions (last 5)
 export async function GET() {
