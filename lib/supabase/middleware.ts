@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { safeNextPath } from "@/lib/auth/safe-next";
 import type { Database } from "@/types/database";
 
 /**
@@ -47,8 +48,20 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Already authenticated and sent to /login with a destination (a page that
+  // needed a session, e.g. /oauth/consent) → go there instead of /dashboard.
+  // safeNextPath is the one judge of `next`; anything off-site, or no `next`
+  // at all, comes back as /dashboard — today's behaviour.
+  if (user && pathname === "/login") {
+    const destination = safeNextPath(
+      request.nextUrl.searchParams.get("next"),
+      request.nextUrl.origin
+    );
+    return NextResponse.redirect(new URL(destination, request.nextUrl.origin));
+  }
+
   // Already authenticated → keep auth pages out of reach
-  if (user && (pathname === "/login" || pathname === "/signup")) {
+  if (user && pathname === "/signup") {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
