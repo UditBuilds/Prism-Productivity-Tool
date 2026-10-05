@@ -1,10 +1,8 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
-import { istDayContext, istDayNumber, istDateString } from "@/lib/date";
+import { DAY_MS, istDayContext, istDayNumber, istDateString } from "@/lib/date";
 
-const DAY_MS = 86_400_000;
 const WINDOW_DAYS = 30;
 
 export interface DailyActivity {
@@ -33,12 +31,6 @@ export interface AnalyticsData {
   freeze_applied: boolean;
   /** The IST date (YYYY-MM-DD) a freeze covered this call, or null. */
   frozen_date: string | null;
-}
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
 }
 
 const isMastered = (easeFactor: number, repetitions: number): boolean =>

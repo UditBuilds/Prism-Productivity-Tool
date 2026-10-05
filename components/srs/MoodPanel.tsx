@@ -4,13 +4,11 @@ import { useMemo } from "react";
 import { SmilePlus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { istDateString } from "@/lib/date";
+import { DAY_MS, istDateString } from "@/lib/date";
 import { useMoodHistory } from "@/hooks/useMood";
 import { MOODS, moodOption } from "@/components/dashboard/moods";
 import type { MoodValue } from "@/types/database";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const DAY_MS = 86_400_000;
 
 /** Last-30-days mood dots + frequency breakdown (Analytics → Mood tab). */
 export function MoodPanel() {

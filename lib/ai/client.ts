@@ -32,12 +32,15 @@ const MAX_TOKENS_NOTES = 2000;
  * tokens. The budget is dominated by reasoning tokens, which
  * `openai/gpt-oss-120b` bills against this same cap.
  *
- * It also has to stay SMALL for a reason the other caps don't share. Groq
- * reserves `prompt_tokens + max_tokens` up front against an 8,000 TPM
- * account-wide ceiling, and this call runs INSIDE a user's note save — if the
- * reservation were large, saving a long note could be refused outright. With
- * a ~5,000-char digest (~1,300 tokens) plus 800 the whole reservation lands
- * near 2,200, leaving most of the minute's budget for everything else.
+ * This paragraph used to say the cap must also stay SMALL because Groq
+ * reserved `prompt_tokens + max_tokens` up front against the 8,000 TPM
+ * account-wide ceiling. Re-measured 2026-09-10, that is no longer how Groq
+ * admits a request: it checks the PROMPT against what the minute has left,
+ * and max_tokens is not reserved (measurements in
+ * app/api/notes/reformat/route.ts). So this cap no longer affects whether a
+ * note save's summary call is admitted — the ~5,000-char digest
+ * (lib/notes/revisit-summary.ts) is what keeps that call small. Lowering the
+ * cap buys no capacity; it only risks a "length" truncation.
  *
  * It fails SAFE: a truncated completion is rejected by wasTruncated below, the
  * route catches it, and the note saves with summary null — which the widget
@@ -60,9 +63,10 @@ const MAX_TOKENS_SUMMARY = 1500;
  * hundred visible tokens at the very top end. The budget is dominated by
  * reasoning tokens, which `openai/gpt-oss-120b` bills against this same cap
  * (one measured reformat spent 1,133 reasoning tokens to emit 154 visible
- * ones). 1,500 leaves room for that on a ten-item list while keeping
- * prompt + max_tokens far under the account's 8,000 TPM ceiling, so a capture
- * cannot be the call that trips the shared budget.
+ * ones). 1,500 leaves room for that on a ten-item list. (An earlier version of
+ * this note also counted the cap against the 8,000 TPM ceiling; Groq stopped
+ * reserving max_tokens at admission — see app/api/notes/reformat/route.ts —
+ * so only the capture's prompt counts there now.)
  *
  * It fails SAFE if ever hit: a truncated JSON array does not parse, which
  * throws, which the route degrades into the single literal task.
@@ -72,12 +76,17 @@ const MAX_TOKENS_TASK_SPLIT = 1500;
 /**
  * Backstop on what any single call may send to the model.
  *
- * Deliberately sized so it truncates NOTHING that exists today — a backstop
- * that silently trims real content is a behaviour change wearing a security
- * fix's clothes. Measured against the live database: the largest note is
- * 18,656 characters, and PDF (9,000, lib/pdf/chunk.ts) and transcript (4,000,
- * lib/youtube/extract.ts) chunks are already far smaller. 32,000 clears the
- * real maximum by ~1.7x while still bounding the prompt at roughly 8k tokens.
+ * Sized so that, WHEN WRITTEN, it truncated nothing — a backstop that silently
+ * trims real content is a behaviour change wearing a security fix's clothes.
+ * The largest note was then 18,656 characters; PDF (9,000, lib/pdf/chunk.ts)
+ * and transcript (4,000, lib/youtube/extract.ts) chunks are far smaller.
+ *
+ * THAT PREMISE NO LONGER HOLDS FOR NOTES. YouTube imports produce notes far
+ * longer than 32,000 characters (app/api/notes/reformat/route.ts records the
+ * live sizes), and /api/srs/generate slices them to this length — so cards
+ * for such a note come from its opening only, and nothing tells the user.
+ * Chunked generation or an explicit "first part only" notice is a product
+ * call; until one is made, the slice stands as documented here.
  *
  * It exists so a future caller cannot reintroduce an unbounded prompt by
  * forgetting its own cap — which is exactly how this class of bug arrived the

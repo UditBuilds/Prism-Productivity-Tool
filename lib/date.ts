@@ -4,6 +4,9 @@
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
+/** One civil day in ms. IST has no DST, so every IST day is exactly this long. */
+export const DAY_MS = 86_400_000;
+
 export interface IstDayContext {
   /** Current hour (0–23) in IST — for the time-aware greeting. */
   hour: number;
@@ -49,7 +52,7 @@ export function nextIstMatchingDayName(
   fromMs: number = Date.now()
 ): string {
   for (let offset = 1; offset <= 7; offset++) {
-    const ms = fromMs + offset * 86_400_000;
+    const ms = fromMs + offset * DAY_MS;
     if (days.includes(istWeekday(ms))) {
       return new Intl.DateTimeFormat("en-US", {
         timeZone: "Asia/Kolkata",
@@ -76,7 +79,7 @@ export interface DueDateDisplay {
 
 /** IST calendar-day index for an instant (days since Unix epoch in IST). */
 function istDayIndex(ms: number): number {
-  return Math.floor((ms + IST_OFFSET_MS) / 86_400_000);
+  return Math.floor((ms + IST_OFFSET_MS) / DAY_MS);
 }
 
 /** Public IST day index — used by the SRS streak calc (consecutive review days). */
@@ -181,7 +184,7 @@ export function istCivilDayRange(
   const start = utcMidnight - IST_OFFSET_MS;
   return {
     start: new Date(start).toISOString(),
-    end: new Date(start + 86_400_000).toISOString(),
+    end: new Date(start + DAY_MS).toISOString(),
   };
 }
 

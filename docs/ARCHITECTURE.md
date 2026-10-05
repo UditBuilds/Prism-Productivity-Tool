@@ -133,9 +133,13 @@ inserted-row check) and surfaces the protection in the UI.
 
 ## Conventions
 
-- **`{ data, error }`** response envelope everywhere; hooks throw on `error`.
+- **`{ data, error }`** response envelope everywhere, defined once in
+  `lib/api/envelope.ts`: routes send it with `json()` (`lib/api/response.ts`),
+  hooks unwrap it with `apiFetch()` (`lib/api/client.ts`), which throws on any
+  non-OK status, a non-null `error`, or a null `data`.
 - **TypeScript strict mode** with three documented `as any` escapes (each with
-  an eslint-disable comment) for tables intentionally absent from
+  an eslint-disable comment) for the service-role-only tables
+  `push_delivery_log` and `push_health`, which are intentionally absent from
   `types/database.ts`. ES5-safe iteration (`Array.from()` over iterators).
 - **Dark mode only**; the accent color is themeable via CSS variables.
 - New features follow the existing shape: a route under `app/api/<x>/`, a typed

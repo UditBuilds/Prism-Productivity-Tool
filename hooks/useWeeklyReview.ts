@@ -1,21 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 
 import type { WeeklyReviewData } from "@/app/api/review/weekly/route";
+import { apiFetch } from "@/lib/api/client";
 
 export type ReviewWeek = "current" | "previous";
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function fetchWeeklyReview(week: ReviewWeek): Promise<WeeklyReviewData> {
-  const res = await fetch(`/api/review/weekly?week=${week}`);
-  const json = (await res.json()) as ApiResponse<WeeklyReviewData>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function fetchWeeklyReview(week: ReviewWeek): Promise<WeeklyReviewData> {
+  return apiFetch<WeeklyReviewData>(`/api/review/weekly?week=${week}`);
 }
 
 /** Weekly review payload for the selected IST Mon–Sun week (5-min stale). */

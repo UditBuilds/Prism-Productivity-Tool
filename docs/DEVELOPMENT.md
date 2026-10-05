@@ -80,6 +80,7 @@ npm run build        # next build
 | `lib/ai`, `lib/pdf`, `lib/youtube` | The three AI ingestion pipelines |
 | `lib/srs` | SM-2 algorithm |
 | `lib/supabase` | Browser / server / admin clients; `select-all.ts` pages reads past PostgREST's 1,000-row cap |
+| `lib/api` | The `{ data, error }` envelope: `response.ts` (routes), `client.ts` (hooks) |
 | `lib/date.ts` | IST time helpers (single source of truth) |
 | `store/` | Zustand UI stores |
 | `types/database.ts` | Hand-authored Supabase types (kept in sync with the schema) |

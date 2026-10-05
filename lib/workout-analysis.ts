@@ -1,4 +1,4 @@
-import { istDateString } from "@/lib/date";
+import { DAY_MS, istDateString } from "@/lib/date";
 import {
   BODY_PARTS,
   UNCLASSIFIED_BODY_PART,
@@ -123,8 +123,6 @@ export interface WorkoutAnalysis {
    */
   unmappedExercises: UnmappedExercise[];
 }
-
-const DAY_MS = 86_400_000;
 
 /**
  * Whole days between two IST civil dates.

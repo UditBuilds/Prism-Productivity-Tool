@@ -7,6 +7,7 @@ import {
 import toast from "react-hot-toast";
 
 import { invalidateDerivedCaches } from "@/lib/derived-caches";
+import { apiFetch } from "@/lib/api/client";
 import type { SrsCard } from "@/types/database";
 import type { AnalyticsData } from "@/app/api/srs/analytics/route";
 
@@ -36,26 +37,8 @@ export interface DeckStat {
   noteId: string | null;
 }
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function request<T>(
-  url: string,
-  method: string,
-  body?: unknown
-): Promise<T> {
-  const res = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function request<T>(url: string, method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>(url, method, body);
 }
 
 const fetchAllCards = () => request<SrsCard[]>("/api/srs/cards", "GET");

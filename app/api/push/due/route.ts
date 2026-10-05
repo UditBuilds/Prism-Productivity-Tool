@@ -1,13 +1,7 @@
-import { NextResponse } from "next/server";
 import webpush, { type WebPushError } from "web-push";
 
+import { json } from "@/lib/api/response";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 function isExpiredError(err: unknown): boolean {
   const status = (err as WebPushError)?.statusCode;
@@ -198,7 +192,9 @@ export async function POST(request: Request) {
         );
         delivered = true;
 
-        // Log successful attempt — fire-and-forget, don't serialise the loop.
+        // Log successful attempt. AWAITED on purpose (despite the cost to the
+        // loop): an un-awaited insert can be dropped when the serverless
+        // instance freezes after the response is sent.
         await logRow(supabase, {
           invocation_id: invocationId,
           event: "attempt",

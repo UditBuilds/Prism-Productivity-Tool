@@ -1,19 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
 import type { PushHealthData } from "@/app/api/push/health/route";
+import { apiFetch } from "@/lib/api/client";
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function fetchPushHealth(): Promise<PushHealthData> {
-  const res = await fetch("/api/push/health");
-  const json = (await res.json()) as ApiResponse<PushHealthData>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function fetchPushHealth(): Promise<PushHealthData> {
+  return apiFetch<PushHealthData>("/api/push/health");
 }
 
 /**

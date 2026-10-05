@@ -1,13 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { apiFetch } from "@/lib/api/client";
 import type { WorkoutAnalysis } from "@/lib/workout-analysis";
 
 export const WORKOUT_ANALYSIS_KEY = ["workout-analysis"] as const;
-
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
 
 /**
  * Progressive overload + body-part balance over 180 IST days.
@@ -20,14 +16,7 @@ interface ApiResponse<T> {
 export function useWorkoutAnalysis() {
   return useQuery<WorkoutAnalysis, Error>({
     queryKey: WORKOUT_ANALYSIS_KEY,
-    queryFn: async () => {
-      const res = await fetch("/api/workouts/analysis");
-      const json = (await res.json()) as ApiResponse<WorkoutAnalysis>;
-      if (!res.ok || json.error || json.data === null) {
-        throw new Error(json.error ?? `Request failed (${res.status})`);
-      }
-      return json.data;
-    },
+    queryFn: () => apiFetch<WorkoutAnalysis>("/api/workouts/analysis"),
     // Matches the other analytics read models (productivity, weekly review).
     staleTime: 5 * 60 * 1000,
   });

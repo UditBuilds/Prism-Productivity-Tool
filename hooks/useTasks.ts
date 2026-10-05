@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import { invalidateDerivedCaches } from "@/lib/derived-caches";
 import { istWeekday, nextIstMatchingDayName } from "@/lib/date";
 import { MAX_SPLIT_TASKS, type SplitTasksResult } from "@/lib/task-split";
+import { apiFetch } from "@/lib/api/client";
 import type {
   RecurringTask,
   Task,
@@ -67,25 +68,8 @@ export interface UpdateTaskInput {
   reminder?: TaskReminderInput;
 }
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function request<T>(
-  method: string,
-  body?: unknown
-): Promise<T> {
-  const res = await fetch("/api/tasks", {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function request<T>(method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>("/api/tasks", method, body);
 }
 
 // Exported so DataPrefetcher can warm this cache with the exact same queryFn.
@@ -201,17 +185,10 @@ export interface SplitTasksInput {
   text: string;
 }
 
-async function requestSplit(input: SplitTasksInput): Promise<SplitTasksResult<Task>> {
-  const res = await fetch("/api/tasks/split", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const json = (await res.json()) as ApiResponse<SplitTasksResult<Task>>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+// `input` is always an object, so apiFetch always sends the JSON header and
+// body here — exactly what the hand-written POST did.
+function requestSplit(input: SplitTasksInput): Promise<SplitTasksResult<Task>> {
+  return apiFetch<SplitTasksResult<Task>>("/api/tasks/split", "POST", input);
 }
 
 /**
@@ -368,17 +345,8 @@ export function useDeleteTask() {
 // ---------------------------------------------------------------------------
 // Recurring templates (GET/PATCH /api/tasks/recurring)
 
-async function requestRecurring<T>(method: string, body?: unknown): Promise<T> {
-  const res = await fetch("/api/tasks/recurring", {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function requestRecurring<T>(method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>("/api/tasks/recurring", method, body);
 }
 
 /** The user's ACTIVE recurring templates — drives the tasks-page strip. */

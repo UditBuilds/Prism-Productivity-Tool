@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 
 import { istDateString, istDayContext } from "@/lib/date";
 import { invalidateDerivedCaches } from "@/lib/derived-caches";
+import { apiFetch } from "@/lib/api/client";
 import {
   countSessionDays,
   formatStructuredRawInput,
@@ -52,22 +53,8 @@ export interface UpdateWorkoutSetInput {
   reps?: number | null;
 }
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function request<T>(method: string, body?: unknown): Promise<T> {
-  const res = await fetch("/api/workouts", {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function request<T>(method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>("/api/workouts", method, body);
 }
 
 /**

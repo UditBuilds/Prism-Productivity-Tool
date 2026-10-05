@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
 import { markdownExcerpt } from "@/lib/markdown";
@@ -9,8 +8,6 @@ import { needsSummary } from "@/lib/notes/revisit-summary";
 import type { Database, Note } from "@/types/database";
 
 type NoteUpdate = Database["public"]["Tables"]["notes"]["Update"];
-
-type ApiResponse<T> = { data: T | null; error: string | null };
 
 /**
  * The Revisit summary for a note about to be written, or null.
@@ -94,10 +91,6 @@ async function summaryForSave({
     console.error("[notes] summary generation failed; saving without one", err);
     return null;
   }
-}
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
 }
 
 /** Normalize an incoming tags value into a clean, de-duped string array. */

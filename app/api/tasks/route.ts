@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
 import { istDateString, istWeekday } from "@/lib/date";
@@ -14,12 +13,6 @@ type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
 const PRIORITIES: TaskPriority[] = ["low", "medium", "high"];
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 function isStatus(v: unknown): v is TaskStatus {
   return typeof v === "string" && STATUSES.includes(v as TaskStatus);

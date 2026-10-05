@@ -6,6 +6,7 @@ import {
 import toast from "react-hot-toast";
 
 import { invalidateDerivedCaches } from "@/lib/derived-caches";
+import { apiFetch } from "@/lib/api/client";
 import type { Plan, PlanStatus } from "@/types/database";
 
 const PLANS_KEY = ["plans"] as const;
@@ -25,22 +26,8 @@ export interface UpdatePlanInput {
   target_date?: string | null;
 }
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function request<T>(method: string, body?: unknown): Promise<T> {
-  const res = await fetch("/api/plans", {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+function request<T>(method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>("/api/plans", method, body);
 }
 
 // Exported so DataPrefetcher can warm this cache with the exact same queryFn.

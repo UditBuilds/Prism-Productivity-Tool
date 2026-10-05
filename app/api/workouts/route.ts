@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
-import { istDayContext } from "@/lib/date";
+import { DAY_MS, istDayContext } from "@/lib/date";
 import { MAX_RAW_INPUT_LENGTH, parseWorkoutInput } from "@/lib/ai/workout";
 import {
   exerciseKey,
@@ -23,16 +22,6 @@ type WorkoutSetInsert =
   Database["public"]["Tables"]["workout_sets"]["Insert"];
 type WorkoutSetUpdate =
   Database["public"]["Tables"]["workout_sets"]["Update"];
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(
-  body: ApiResponse<T>,
-  status = 200,
-  headers?: Record<string, string>
-) {
-  return NextResponse.json(body, { status, headers });
-}
 
 /**
  * The Groq round-trip runs inside POST, so give it room. Measured parses are
@@ -64,7 +53,6 @@ export const maxDuration = 30;
  * current IST day, so a wider window changes nothing it renders.
  */
 const WINDOW_DAYS = 60;
-const DAY_MS = 86_400_000;
 /** Backstop only. 60 days of heavy lifting is a few hundred rows. */
 const MAX_ROWS = 1000;
 

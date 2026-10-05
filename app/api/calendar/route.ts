@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { istDateString } from "@/lib/date";
 import type { TaskPriority } from "@/types/database";
@@ -29,12 +28,6 @@ export interface CalendarDayItems {
 export interface CalendarMonthData {
   month: string; // "YYYY-MM"
   days: CalendarDayItems[]; // sparse — only days that have items
-}
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
 }
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;

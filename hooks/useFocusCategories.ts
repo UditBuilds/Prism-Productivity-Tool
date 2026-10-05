@@ -5,6 +5,7 @@ import {
   CATEGORIES,
   categoryChartColor as staticCategoryChartColor,
 } from "@/components/focus/categories";
+import { apiFetch } from "@/lib/api/client";
 
 const FOCUS_CATEGORIES_KEY = ["focus-categories"] as const;
 
@@ -33,26 +34,12 @@ export interface FocusCategoryItem {
   sortOrder: number;
 }
 
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-}
-
-async function apiRequest<T>(
+function apiRequest<T>(
   method: string,
   body?: unknown,
   query = ""
 ): Promise<T> {
-  const res = await fetch(`/api/focus/categories${query}`, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || json.error || json.data === null) {
-    throw new Error(json.error ?? `Request failed (${res.status})`);
-  }
-  return json.data;
+  return apiFetch<T>(`/api/focus/categories${query}`, method, body);
 }
 
 // Module-level guard so the one-time seed never fires twice in a session, even

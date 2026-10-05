@@ -1,16 +1,9 @@
-import { NextResponse } from "next/server";
-
+import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
 import type { Database, SrsCard } from "@/types/database";
 
 type SrsCardUpdate = Database["public"]["Tables"]["srs_cards"]["Update"];
-
-type ApiResponse<T> = { data: T | null; error: string | null };
-
-function json<T>(body: ApiResponse<T>, status = 200) {
-  return NextResponse.json(body, { status });
-}
 
 // GET /api/srs/cards — all cards; ?deck=name filters, ?due=true → due now only
 export async function GET(request: Request) {
