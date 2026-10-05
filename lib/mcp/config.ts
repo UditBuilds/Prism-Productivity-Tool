@@ -1,4 +1,4 @@
-import { DEMO_EMAIL } from "@/lib/demo";
+import { DEMO_EMAIL, DEMO_USER_ID } from "@/lib/demo";
 import { parseAllowedClientIds, type McpTokenPolicy } from "@/lib/mcp/claims";
 
 /** Where the MCP endpoint lives. Claude's connector URL is <origin> + this. */
@@ -17,9 +17,15 @@ export const RESOURCE_METADATA_PATH = `/.well-known/oauth-protected-resource${MC
  */
 export const MCP_SCOPES = ["email"] as const;
 
-/** Supabase Auth's issuer — the authorization server for this resource. */
+/**
+ * Supabase Auth's issuer — the authorization server for this resource. It
+ * must match the issuer Supabase publishes character for character (both
+ * the metadata and the `iss` check use it), so a trailing slash on the env
+ * value is dropped rather than doubled.
+ */
 export function authorizationServerIssuer(): string {
-  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1`;
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, "");
+  return `${base}/auth/v1`;
 }
 
 /**
@@ -31,6 +37,7 @@ export function tokenPolicy(nowSeconds = Math.floor(Date.now() / 1000)): McpToke
     allowedClientIds: parseAllowedClientIds(process.env.MCP_ALLOWED_CLIENT_IDS),
     issuer: authorizationServerIssuer(),
     demoEmail: DEMO_EMAIL,
+    demoUserId: DEMO_USER_ID,
     nowSeconds,
   };
 }

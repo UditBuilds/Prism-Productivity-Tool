@@ -74,10 +74,12 @@ const ISSUER = "https://nqpdctlqdkvmsaadwahv.supabase.co/auth/v1";
 const NOW = 1_800_000_000;
 const USER = "399e74e6-1e4c-410a-9129-6cd4857548cd";
 const CLAUDE = "11111111-2222-3333-4444-555555555555";
+const DEMO_ID = "eac085cc-54df-4414-9c43-08a6ce84ecea";
 const policy = (over = {}) => ({
   allowedClientIds: [CLAUDE],
   issuer: ISSUER,
   demoEmail: "demo@prismapp.dev",
+  demoUserId: DEMO_ID,
   nowSeconds: NOW,
   ...over,
 });
@@ -148,6 +150,11 @@ eq(
   evaluateClaims({ ...oauthToken, email: "DEMO@prismapp.dev" }, policy()),
   { ok: false, reason: "the demo account cannot connect apps" }
 );
+eq(
+  "demo account by USER ID even after an email change → refused",
+  evaluateClaims({ ...oauthToken, sub: DEMO_ID, email: "renamed@example.com" }, policy()),
+  { ok: false, reason: "the demo account cannot connect apps" }
+);
 eq("anonymous user → refused", evaluateClaims({ ...oauthToken, is_anonymous: true }, policy()).ok, false);
 eq("role anon → refused", evaluateClaims({ ...oauthToken, role: "anon" }, policy()).ok, false);
 eq("role service_role → refused", evaluateClaims({ ...oauthToken, role: "service_role" }, policy()).ok, false);
@@ -175,6 +182,14 @@ eq("alg none → refused", isAcceptedSigningHeader(readJwtHeader(tokenWith({ alg
 eq("ES256 without kid → refused", isAcceptedSigningHeader(readJwtHeader(tokenWith({ alg: "ES256" }))), false);
 eq("garbage token → refused", isAcceptedSigningHeader(readJwtHeader("not-a-jwt")), false);
 eq("empty token → refused", isAcceptedSigningHeader(readJwtHeader("")), false);
+
+console.log("\nthe demo id the server refuses is the seed's demo account");
+const demoTs = readFileSync(path.join(root, "lib/demo.ts"), "utf8");
+const seedSql = readFileSync(path.join(root, "supabase/demo-seed.sql"), "utf8");
+const demoIdTs = (demoTs.match(/DEMO_USER_ID = "([0-9a-f-]{36})"/) ?? [])[1];
+const demoIdSql = (seedSql.match(/demo_id\s+constant uuid := '([0-9a-f-]{36})'/) ?? [])[1];
+eq("lib/demo.ts DEMO_USER_ID === supabase/demo-seed.sql demo_id", demoIdTs, demoIdSql);
+eq("and it is the id these tests use", demoIdTs, DEMO_ID);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) process.exit(1);

@@ -21,6 +21,11 @@ export interface McpTokenPolicy {
   issuer: string;
   /** The public demo account's email — never accepted (its password is public). */
   demoEmail: string;
+  /**
+   * The demo account's user id. Checked as well as the email: with a public
+   * password, the account's email could be changed; its id cannot.
+   */
+  demoUserId: string;
   /** "Now" in epoch seconds; a parameter so tests are deterministic. */
   nowSeconds: number;
 }
@@ -130,7 +135,10 @@ export function evaluateClaims(
     return { ok: false, reason: "token was issued to an app that is not allowed" };
   }
   const email = typeof claims.email === "string" ? claims.email : null;
-  if (email !== null && email.toLowerCase() === policy.demoEmail.toLowerCase()) {
+  if (
+    claims.sub.toLowerCase() === policy.demoUserId.toLowerCase() ||
+    (email !== null && email.toLowerCase() === policy.demoEmail.toLowerCase())
+  ) {
     return { ok: false, reason: "the demo account cannot connect apps" };
   }
   return {
