@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 import { useDueCards, useSubmitReview } from "@/hooks/useSRS";
@@ -24,6 +24,7 @@ function BackToLearn({ className }: { className?: string }) {
 }
 
 function ReviewSession() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const deck = searchParams.get("deck") ?? undefined;
 
@@ -94,6 +95,30 @@ function ReviewSession() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isFlipped, currentIndex, sessionCards, flipCard, handleRate]);
+
+  // When a session ends, refresh so the Learn page's server-rendered streak is
+  // re-rendered: it's a Server Component, so invalidating ["srs-analytics"]
+  // never reaches its prop, and router.refresh() drops the client Router Cache
+  // that "Back to Learn" would otherwise reuse.
+  //
+  // Gated on the LATEST review having saved. router.refresh() is only safe
+  // right after proof the origin answered (a failed RSC fetch hard-navigates
+  // the whole app — see the PR #72 notes), and one saved review today is all
+  // the server streak needs. Offline, the review stays paused and nothing
+  // refreshes, which is correct: no server data changed.
+  const sessionDone =
+    sessionCards.length > 0 && currentIndex >= sessionCards.length;
+  const lastReviewSaved = submitReview.isSuccess;
+  const refreshedRef = useRef(false);
+  useEffect(() => {
+    if (!sessionDone) {
+      refreshedRef.current = false; // "Review again" starts a new session
+      return;
+    }
+    if (!lastReviewSaved || refreshedRef.current) return;
+    refreshedRef.current = true;
+    router.refresh();
+  }, [sessionDone, lastReviewSaved, router]);
 
   function handleReviewAgain() {
     const againCards = sessionCards.filter((c) =>
