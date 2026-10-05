@@ -17,3 +17,5 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npx next lint
+      # Every scripts/test-*.mjs (pure-function checks; no network, no DB).
+      - run: npm test

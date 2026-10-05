@@ -38,18 +38,20 @@ the cron secret, and Supadata are optional and gate their respective features.
 | `npm run start` | Serve a production build |
 | `npm run lint` | ESLint (`next lint`) |
 | `npm run typecheck` | `tsc --noEmit` — strict type check, no emit |
+| `npm test` | Every `scripts/test-*.mjs` (pure-function checks, no network) |
 
 The service worker / PWA only activates in a production build, so push and
 offline behavior won't appear under `npm run dev`.
 
 ## Quality gates
 
-Run these three before committing — they must all pass:
+Run these four before committing — they must all pass:
 
 ```bash
 npm run typecheck    # tsc --noEmit
 npm run lint         # next lint
-npm run build        # next build  (currently 43 routes)
+npm test             # every scripts/test-*.mjs (also run by CI)
+npm run build        # next build
 ```
 
 ## Conventions
@@ -82,7 +84,7 @@ npm run build        # next build  (currently 43 routes)
 | `store/` | Zustand UI stores |
 | `types/database.ts` | Hand-authored Supabase types (kept in sync with the schema) |
 | `worker/` | Custom service-worker source (push) |
-| `scripts/` | `generate-icons.js` (PWA icon generation) |
+| `scripts/` | `test-*.mjs` unit checks (`npm test` runs them all), backfill scripts, `generate-icons.js` (PWA icon generation) |
 | `supabase/schema.sql` | Full database schema |
 
 ## Gotchas
