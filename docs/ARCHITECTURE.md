@@ -116,11 +116,14 @@ chunked, and run through the same generation + merge stage.
 
 `lib/srs/sm2.ts` is a hand-written **SM-2** implementation. Reviews record a
 grade (Again/Hard/Good/Easy); the algorithm updates ease factor, repetition
-count, and interval. The **streak** is computed server-side in
-`/api/srs/analytics` from review dates unioned with **freeze** dates: when a
-single-day gap would break the streak, the route auto-spends one of three weekly
-freezes (idempotently, via `INSERT … ON CONFLICT DO NOTHING` plus an
-inserted-row check) and surfaces the protection in the UI.
+count, and interval. The **streak** is one pure function,
+`lib/srs/streak.ts`, called by both the Learn page and `/api/srs/analytics`. It
+works from review dates and today's IST date alone and writes nothing: a missed
+day is covered by a **freeze** when the day before it has a review, up to three
+covered days per Monday–Sunday week (first three in date order). So a single
+missed day is covered while its week has a freeze left, and two missed days in
+a row always break the streak. "Freezes left" and the "Streak protected" notice
+are derived from the same function.
 
 ## Notifications
 

@@ -1,7 +1,8 @@
 import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
-import { DAY_MS, istDayContext, istDayNumber, istDateString } from "@/lib/date";
+import { DAY_MS, istDayNumber } from "@/lib/date";
+import { computeLearningStreak } from "@/lib/srs/streak";
 
 const WINDOW_DAYS = 30;
 
@@ -23,13 +24,15 @@ export interface AnalyticsData {
   needWorkCount: number;
   dailyActivity: DailyActivity[];
   deckPerformance: DeckPerformance[];
+  // The four streak fields all come from computeLearningStreak
+  // (lib/srs/streak.ts), the same function the Learn page calls.
   /** Freeze-aware consecutive-day review streak (IST). */
   streak: number;
-  /** Freezes remaining this IST week (after any consumed this call). */
+  /** Freezes not yet used in the current IST week. */
   streak_freezes: number;
-  /** True if a freeze was auto-applied on this request. */
+  /** True when a freeze covers yesterday — drives the "Streak protected" toast. */
   freeze_applied: boolean;
-  /** The IST date (YYYY-MM-DD) a freeze covered this call, or null. */
+  /** Yesterday's IST date (YYYY-MM-DD) when a freeze covers it, or null. */
   frozen_date: string | null;
 }
 
@@ -42,7 +45,14 @@ const needsWork = (
   lastReviewed: string | null
 ): boolean => easeFactor < 1.8 || (repetitions === 0 && lastReviewed !== null);
 
-// GET /api/srs/analytics — learning-curve stats for the authed user
+// GET /api/srs/analytics — learning-curve stats for the authed user.
+//
+// READ-ONLY. This route used to spend streak freezes by writing to profiles and
+// streak_freeze_logs on every GET — and DataPrefetcher calls it on every
+// authenticated page load, so the streak moved with how often the app was
+// opened. Freezes are now derived from review history alone; nothing here
+// writes, and profiles.streak_freezes / freeze_week_start and
+// streak_freeze_logs are no longer read.
 export async function GET() {
   const supabase = createClient();
   const {
@@ -52,31 +62,21 @@ export async function GET() {
 
   // Fetch ALL review timestamps (an unbounded streak can exceed 30 days; the
   // activity chart below just filters this to its window), the all-time review
-  // count, every card (mastery + per-deck), plus the profile + freeze logs.
+  // count, and every card (mastery + per-deck).
   //
   // Reviews and cards are PAGED. An unpaged read silently stops at 1,000 rows,
   // and the reviews query has no ORDER BY, so past that point the streak would
   // be walked over an arbitrary 1,000 of the user's reviews — at 50 reviews a
   // day that is three weeks of use. See lib/supabase/select-all.ts.
-  const [reviewsRes, totalRes, cardsRes, profileRes, freezeLogsRes] =
-    await Promise.all([
-      selectAllRows(() => supabase.from("srs_reviews").select("reviewed_at")),
-      supabase.from("srs_reviews").select("*", { count: "exact", head: true }),
-      selectAllRows(() =>
-        supabase
-          .from("srs_cards")
-          .select("deck_name, ease_factor, repetitions, last_reviewed")
-      ),
+  const [reviewsRes, totalRes, cardsRes] = await Promise.all([
+    selectAllRows(() => supabase.from("srs_reviews").select("reviewed_at")),
+    supabase.from("srs_reviews").select("*", { count: "exact", head: true }),
+    selectAllRows(() =>
       supabase
-        .from("profiles")
-        .select("streak_freezes, freeze_week_start")
-        .eq("id", user.id)
-        .single(),
-      supabase
-        .from("streak_freeze_logs")
-        .select("frozen_date")
-        .eq("user_id", user.id),
-    ]);
+        .from("srs_cards")
+        .select("deck_name, ease_factor, repetitions, last_reviewed")
+    ),
+  ]);
 
   if (reviewsRes.error)
     return json({ data: null, error: reviewsRes.error.message }, 500);
@@ -84,8 +84,10 @@ export async function GET() {
     return json({ data: null, error: totalRes.error.message }, 500);
   if (cardsRes.error)
     return json({ data: null, error: cardsRes.error.message }, 500);
-  // profile / freeze-log read failures degrade gracefully (no early return).
 
+  // One instant for the whole response, so the activity window and the streak
+  // can't land on different IST days across midnight.
+  const nowMs = Date.now();
   const cards = cardsRes.data ?? [];
 
   // Mastery / need-work counts.
@@ -98,7 +100,7 @@ export async function GET() {
   }
 
   // 30-day activity, bucketed by IST calendar day, gaps filled with 0.
-  const todayIdx = istDayNumber(Date.now());
+  const todayIdx = istDayNumber(nowMs);
   const startIdx = todayIdx - (WINDOW_DAYS - 1);
   const counts = new Map<number, number>();
   for (const r of reviewsRes.data ?? []) {
@@ -140,95 +142,10 @@ export async function GET() {
       return a.deckName.localeCompare(b.deckName);
     });
 
-  // ---- Streak + auto-applied freeze protection -------------------------
-  const reviewDates = new Set<string>();
-  for (const r of reviewsRes.data ?? []) {
-    reviewDates.add(istDateString(Date.parse(r.reviewed_at)));
-  }
-  const todayStr = istDateString(Date.now());
-
-  const profile = profileRes.data;
-  const profileOk = !!profile && !profileRes.error && !freezeLogsRes.error;
-  const frozenDates = new Set<string>(
-    (freezeLogsRes.data ?? []).map((f) => f.frozen_date)
+  const { streak, freezesLeft, coveredYesterday } = computeLearningStreak(
+    (reviewsRes.data ?? []).map((r) => r.reviewed_at),
+    nowMs
   );
-
-  // availableFreezes = how many the walk may spend; responseFreezes = what we
-  // return to the client (a graceful 3 when the profile can't be read, so the
-  // UI badge stays quiet rather than alarming with a wrong "0").
-  let availableFreezes = 0;
-  let responseFreezes = 3;
-  if (profileOk && profile) {
-    // Step B: replenish to 3 at the start of each IST week (Monday).
-    const currentMonday = istDateString(
-      Date.parse(istDayContext().startOfWeek)
-    );
-    if (profile.freeze_week_start < currentMonday) {
-      await supabase
-        .from("profiles")
-        .update({ streak_freezes: 3, freeze_week_start: currentMonday })
-        .eq("id", user.id);
-      availableFreezes = 3;
-    } else {
-      availableFreezes = profile.streak_freezes;
-    }
-    responseFreezes = availableFreezes;
-  } else {
-    // No usable profile/logs → ignore freezes entirely for the streak walk.
-    frozenDates.clear();
-  }
-
-  // Step C: walk backwards from the anchor, spending at most one freeze.
-  const isActive = (d: string) => reviewDates.has(d) || frozenDates.has(d);
-  let streak = 0;
-  let freezeToApply: string | null = null;
-  let freezeUsed = false;
-  let curIdx = reviewDates.has(todayStr) ? todayIdx : todayIdx - 1;
-  while (true) {
-    const dateStr = istDateString(curIdx * DAY_MS);
-    if (isActive(dateStr)) {
-      streak += 1;
-      curIdx -= 1;
-      continue;
-    }
-    if (
-      !freezeUsed &&
-      availableFreezes > 0 &&
-      dateStr !== todayStr &&
-      streak > 0
-    ) {
-      freezeToApply = dateStr;
-      freezeUsed = true;
-      streak += 1;
-      curIdx -= 1;
-      continue;
-    }
-    break;
-  }
-
-  // Step D: persist a newly-applied freeze — separate INSERT then UPDATE.
-  let freezeApplied = false;
-  let frozenDate: string | null = null;
-  if (freezeToApply && profileOk) {
-    const { data: insertedLog } = await supabase
-      .from("streak_freeze_logs")
-      .upsert(
-        { user_id: user.id, frozen_date: freezeToApply },
-        { onConflict: "user_id,frozen_date", ignoreDuplicates: true }
-      )
-      .select("id");
-    // Decrement only when THIS call actually inserted the freeze — guards a
-    // concurrent duplicate request from double-spending a freeze.
-    if (insertedLog && insertedLog.length > 0) {
-      await supabase
-        .from("profiles")
-        .update({ streak_freezes: responseFreezes - 1 })
-        .eq("id", user.id);
-      responseFreezes -= 1;
-      freezeApplied = true;
-      frozenDate = freezeToApply;
-    }
-  }
 
   return json<AnalyticsData>({
     data: {
@@ -238,9 +155,9 @@ export async function GET() {
       dailyActivity,
       deckPerformance,
       streak,
-      streak_freezes: responseFreezes,
-      freeze_applied: freezeApplied,
-      frozen_date: frozenDate,
+      streak_freezes: freezesLeft,
+      freeze_applied: coveredYesterday !== null,
+      frozen_date: coveredYesterday,
     },
     error: null,
   });

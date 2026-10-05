@@ -1,25 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/select-all";
-import { istDayNumber } from "@/lib/date";
+import { computeLearningStreak } from "@/lib/srs/streak";
 import { LearnClient } from "@/components/srs/LearnClient";
-
-/**
- * Consecutive-day review streak (IST). Counts back from today; if nothing has
- * been reviewed yet today, yesterday still anchors the streak (grace day).
- */
-function computeStreak(reviewedAt: string[]): number {
-  if (reviewedAt.length === 0) return 0;
-  const days = new Set(reviewedAt.map((iso) => istDayNumber(Date.parse(iso))));
-  const today = istDayNumber(Date.now());
-
-  let cursor = days.has(today) ? today : today - 1;
-  let streak = 0;
-  while (days.has(cursor)) {
-    streak += 1;
-    cursor -= 1;
-  }
-  return streak;
-}
 
 export default async function LearnPage() {
   const supabase = createClient();
@@ -37,7 +19,12 @@ export default async function LearnPage() {
       .order("reviewed_at", { ascending: false })
   );
 
-  const streak = computeStreak((reviews ?? []).map((r) => r.reviewed_at));
+  // The same rule GET /api/srs/analytics uses, so this server-rendered figure
+  // and the client's analytics figure agree.
+  const { streak } = computeLearningStreak(
+    (reviews ?? []).map((r) => r.reviewed_at),
+    Date.now()
+  );
 
   return <LearnClient streak={streak} />;
 }

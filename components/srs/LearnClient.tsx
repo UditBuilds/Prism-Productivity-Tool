@@ -100,13 +100,15 @@ export function LearnClient({ streak }: { streak: number }) {
     return { total: list.length, dueToday: dueTodayCount, dueNow: dueNowCount };
   }, [cards]);
 
-  // The analytics route is the freeze-aware source of truth for the streak +
-  // remaining freezes; the server prop is the no-flash fallback until it loads.
+  // The server prop and the analytics route both come from
+  // computeLearningStreak (lib/srs/streak.ts), so they agree; the prop covers
+  // the first paint, and the route also carries the remaining freezes.
   const { data: analytics } = useAnalytics();
   const streakValue = analytics?.streak ?? streak;
   const streakFreezes = analytics?.streak_freezes;
 
-  // "Streak protected" toast — fire once per page load when a freeze was used.
+  // "Streak protected" toast — once per page load on the day after a covered
+  // day. freeze_applied is derived, not stored, so nothing records "seen".
   const freezeToastShown = useRef(false);
   useEffect(() => {
     if (analytics?.freeze_applied && !freezeToastShown.current) {
