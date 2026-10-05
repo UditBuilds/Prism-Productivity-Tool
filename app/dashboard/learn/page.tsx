@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import { istDayNumber } from "@/lib/date";
 import { LearnClient } from "@/components/srs/LearnClient";
 
@@ -27,10 +28,14 @@ export default async function LearnPage() {
   } = await supabase.auth.getUser();
   if (!user) return null; // layout already redirects unauthenticated users
 
-  const { data: reviews } = await supabase
-    .from("srs_reviews")
-    .select("reviewed_at")
-    .order("reviewed_at", { ascending: false });
+  // Paged: an unpaged read silently stops at 1,000 rows, which would cap the
+  // streak at however many days the newest 1,000 reviews happen to span.
+  const { data: reviews } = await selectAllRows(() =>
+    supabase
+      .from("srs_reviews")
+      .select("reviewed_at")
+      .order("reviewed_at", { ascending: false })
+  );
 
   const streak = computeStreak((reviews ?? []).map((r) => r.reviewed_at));
 

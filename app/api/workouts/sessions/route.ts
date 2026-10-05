@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import { istDateString, istDayContext } from "@/lib/date";
 import type { WorkoutSessionStatus } from "@/types/database";
 
@@ -84,12 +85,18 @@ export async function GET() {
     return json<WorkoutSessionSummary[]>({ data: [], error: null });
   }
 
-  const { data: exercises, error: exercisesError } = await supabase
-    .from("session_exercises")
-    .select("id, session_id, display_name, position")
-    .eq("user_id", user.id)
-    .in("session_id", sessionIds)
-    .order("position", { ascending: true });
+  // Both reads below are paged: up to MAX_SESSIONS sessions can carry more
+  // than PostgREST's silent 1,000-row cap of exercises, and the set read's
+  // `.limit(MAX_SETS)` was being cut to 1,000 the same way — miscounting sets
+  // per session. See lib/supabase/select-all.ts.
+  const { data: exercises, error: exercisesError } = await selectAllRows(() =>
+    supabase
+      .from("session_exercises")
+      .select("id, session_id, display_name, position")
+      .eq("user_id", user.id)
+      .in("session_id", sessionIds)
+      .order("position", { ascending: true })
+  );
 
   if (exercisesError) {
     return json({ data: null, error: exercisesError.message }, 500);
@@ -100,12 +107,15 @@ export async function GET() {
   const { data: sets, error: setsError } =
     exerciseIds.length === 0
       ? { data: [], error: null }
-      : await supabase
-          .from("workout_sets")
-          .select("session_exercise_id")
-          .eq("user_id", user.id)
-          .in("session_exercise_id", exerciseIds)
-          .limit(MAX_SETS);
+      : await selectAllRows(
+          () =>
+            supabase
+              .from("workout_sets")
+              .select("session_exercise_id")
+              .eq("user_id", user.id)
+              .in("session_exercise_id", exerciseIds),
+          { maxRows: MAX_SETS }
+        );
 
   if (setsError) return json({ data: null, error: setsError.message }, 500);
 

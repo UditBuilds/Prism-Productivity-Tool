@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import type { Database, SrsCard } from "@/types/database";
 
 type SrsCardUpdate = Database["public"]["Tables"]["srs_cards"]["Update"];
@@ -23,15 +24,23 @@ export async function GET(request: Request) {
   const deck = searchParams.get("deck");
   const dueOnly = searchParams.get("due") === "true";
 
-  let query = supabase
-    .from("srs_cards")
-    .select("*")
-    .order("next_review", { ascending: true });
+  // One cutoff for every page, so a multi-page read can't shift "due now"
+  // between requests.
+  const dueCutoff = new Date().toISOString();
+  const buildQuery = () => {
+    let query = supabase
+      .from("srs_cards")
+      .select("*")
+      .order("next_review", { ascending: true });
 
-  if (deck) query = query.eq("deck_name", deck);
-  if (dueOnly) query = query.lte("next_review", new Date().toISOString());
+    if (deck) query = query.eq("deck_name", deck);
+    if (dueOnly) query = query.lte("next_review", dueCutoff);
+    return query;
+  };
 
-  const { data, error } = await query;
+  // Paged: AI generation adds 20-30 cards a run, and PostgREST silently stops
+  // at 1,000 rows. See lib/supabase/select-all.ts.
+  const { data, error } = await selectAllRows(buildQuery);
   if (error) return json({ data: null, error: error.message }, 500);
   return json<SrsCard[]>({ data: data ?? [], error: null });
 }
