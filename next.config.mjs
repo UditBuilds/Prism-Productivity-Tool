@@ -23,8 +23,28 @@ const withPWA = withPWAInit({
   fallbacks: {
     document: "/offline",
   },
+  // Our rules below go IN FRONT of next-pwa's defaults (resolveRuntimeCaching
+  // puts custom entries first), and Workbox uses the first route that
+  // matches. Without this flag a custom array would REPLACE the defaults.
+  extendDefaultRuntimeCaching: true,
   workboxOptions: {
     disableDevLogs: true,
+    runtimeCaching: [
+      // The OAuth approval page shows who is signed in and which app is
+      // asking, for one short-lived request. It must never be stored: the
+      // defaults would keep it in "pages" (navigations) and "pages-rsc"
+      // (soft navigations). NetworkOnly matches all three request kinds.
+      // `options` must exist — next-pwa only attaches the /offline fallback
+      // to rules that have one. (The front-end-navigation Worker caches
+      // pages outside the service worker; the page itself answers that
+      // fetch with 404 — see isBackgroundPageFetch in lib/oauth/consent.ts.)
+      {
+        urlPattern: ({ sameOrigin, url: { pathname } }) =>
+          sameOrigin && pathname.startsWith("/oauth/"),
+        handler: "NetworkOnly",
+        options: { cacheName: "oauth-never-cached" },
+      },
+    ],
   },
 });
 
@@ -35,6 +55,19 @@ const nextConfig = {
     // Bundling triggers its index.js debug branch (module.parent undefined →
     // fs.readFileSync of a test PDF → ENOENT) and pulls in pdfjs needlessly.
     serverComponentsExternalPackages: ["pdf-parse"],
+  },
+  async headers() {
+    return [
+      {
+        // An Allow button is the classic clickjacking target: no other site
+        // may frame the approval page.
+        source: "/oauth/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+    ];
   },
 };
 
