@@ -1,12 +1,10 @@
-import { headers } from "next/headers";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { DEMO_EMAIL } from "@/lib/demo";
 import {
   classifyConsentError,
   consentPathFor,
-  isBackgroundPageFetch,
   isSafeRedirectUrl,
   isValidAuthorizationId,
   redirectHostname,
@@ -32,25 +30,24 @@ export const dynamic = "force-dynamic";
  * with `?authorization_id=…`. The checks run in this order, and the order is
  * load-bearing:
  *
- *  1. Background fetch → 404. next-pwa's front-end-navigation Worker
- *     re-fetches this URL to cache it; a 404 is the one answer it skips.
- *     Before the sign-in check, or it would cache /login under this URL.
- *  2. authorization_id shape — before it goes anywhere near Supabase (see
+ *  1. authorization_id shape — before it goes anywhere near Supabase (see
  *     isValidAuthorizationId for why the shape matters).
- *  3. Signed out → /login?next=<this exact path and query>.
- *  4. Demo account → refusal. BEFORE asking Supabase for details: for a
+ *  2. Signed out → /login?next=<this exact path and query>.
+ *  3. Demo account → refusal. BEFORE asking Supabase for details: for a
  *     request that was already approved, getAuthorizationDetails answers
  *     with a redirect_url carrying a live code.
- *  5. Details → the Allow / Deny screen; an already-approved request goes
+ *  4. Details → the Allow / Deny screen; an already-approved request goes
  *     straight back to the app; an error gets a plain-words message.
+ *
+ * Never cached: next.config.mjs keeps /oauth/* out of the service worker's
+ * caches and answers next-pwa's background re-fetch with a 404 before this
+ * page runs (see the beforeFiles rewrite there for why it can't live here).
  */
 export default async function OAuthConsentPage({
   searchParams,
 }: {
   searchParams: { authorization_id?: string | string[] };
 }) {
-  if (isBackgroundPageFetch(headers())) notFound();
-
   const rawId = searchParams.authorization_id;
   if (rawId === undefined) return <ConsentNotice kind="missing" />;
   // A repeated parameter arrives as an array and fails here too.

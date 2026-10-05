@@ -79,22 +79,3 @@ export function classifyConsentError(error: {
   return "unknown";
 }
 
-/**
- * True for a request that only wants bytes, not a page to show someone:
- * next-pwa's front-end-navigation Worker (sw-entry-worker.js) re-fetches
- * every URL passed to history.pushState/replaceState and writes the
- * response into the "pages" cache. That Worker runs outside the service
- * worker, so no service-worker routing rule can stop it.
- *
- * Its fetch carries no `RSC` header (Next's soft navigation always does)
- * and only the wildcard `Accept` value — never "text/html", which every
- * real browser navigation sends. Answering such a request with 404 makes the Worker
- * skip it (`if (!s.ok) return;`), so the approval page is never stored.
- */
-export function isBackgroundPageFetch(headers: {
-  get(name: string): string | null;
-}): boolean {
-  if (headers.get("rsc") !== null) return false;
-  const accept = headers.get("accept") ?? "";
-  return !accept.includes("text/html");
-}

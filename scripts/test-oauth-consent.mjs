@@ -16,6 +16,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -72,7 +73,6 @@ const {
   isSafeRedirectUrl,
   redirectHostname,
   classifyConsentError,
-  isBackgroundPageFetch,
 } = await compile();
 
 eq("CONSENT_PATH is /oauth/consent", CONSENT_PATH, "/oauth/consent");
@@ -120,21 +120,43 @@ eq("410 → expired", classifyConsentError({ status: 410 }), "expired");
 eq("400 → unknown", classifyConsentError({ status: 400, code: "validation_failed" }), "unknown");
 eq("no status → unknown", classifyConsentError({}), "unknown");
 
-console.log("\nisBackgroundPageFetch");
-const h = (obj) => ({ get: (n) => (n in obj ? obj[n] : null) });
-eq("Worker fetch: Accept */*, no RSC → background", isBackgroundPageFetch(h({ accept: "*/*" })), true);
-eq("no headers at all → background", isBackgroundPageFetch(h({})), true);
-eq(
-  "browser navigation (Chrome Accept) → page",
-  isBackgroundPageFetch(h({ accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,*/*;q=0.8" })),
-  false
+// ── the real next.config.mjs, judged by Next's own matcher ───────────
+//
+// The background-fetch guard is a beforeFiles rewrite with `missing`
+// conditions. A page cannot do this check: Next deletes the RSC header from
+// what a page can read, and a page-level version 404'd the soft navigation
+// /login makes after sign-in. So this loads the actual config and runs it
+// through the same matchHas/getPathMatch the Next router uses.
+console.log("\nnext.config.mjs: /oauth/* background-fetch rewrite (Next's matcher)");
+const require = createRequire(import.meta.url);
+const { matchHas } = require(
+  path.join(root, "node_modules/next/dist/shared/lib/router/utils/prepare-destination.js")
 );
-eq(
-  "browser navigation (Safari Accept) → page",
-  isBackgroundPageFetch(h({ accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" })),
-  false
+const { getPathMatch } = require(
+  path.join(root, "node_modules/next/dist/shared/lib/router/utils/path-match.js")
 );
-eq("Next soft navigation (RSC: 1, Accept */*) → page", isBackgroundPageFetch(h({ rsc: "1", accept: "*/*" })), false);
+const nextConfig = (await import(pathToFileURL(path.join(root, "next.config.mjs")).href)).default;
+const rewrites = await nextConfig.rewrites();
+const oauthRule = (rewrites.beforeFiles ?? []).find((r) => r.source === "/oauth/:path*");
+eq("a beforeFiles rewrite exists for /oauth/:path*", Boolean(oauthRule), true);
+
+/** Would the rewrite fire (→ 404) for this path and these request headers? */
+const fires = (pathname, headers) =>
+  Boolean(getPathMatch(oauthRule.source)(pathname)) &&
+  matchHas({ headers }, {}, oauthRule.has, oauthRule.missing) !== false;
+
+const CHROME_NAV = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
+const SAFARI_NAV = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+const consent = "/oauth/consent";
+
+eq("next-pwa Worker fetch (Accept */*, no RSC) → 404", fires(consent, { accept: "*/*" }), true);
+eq("fetch with no Accept and no RSC → 404", fires(consent, {}), true);
+eq("Chrome navigation → page renders", fires(consent, { accept: CHROME_NAV }), false);
+eq("Safari / iOS navigation → page renders", fires(consent, { accept: SAFARI_NAV }), false);
+eq("Next soft navigation (RSC: 1, Accept */*) → page renders", fires(consent, { rsc: "1", accept: "*/*" }), false);
+eq("Next prefetch (RSC + Next-Router-Prefetch) → page renders", fires(consent, { rsc: "1", "next-router-prefetch": "1", accept: "*/*" }), false);
+eq("other paths are untouched (/login, Worker-style)", fires("/login", { accept: "*/*" }), false);
+eq("other paths are untouched (/dashboard, Worker-style)", fires("/dashboard", { accept: "*/*" }), false);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) process.exit(1);
