@@ -61,8 +61,16 @@ explains how the pieces fit together and the engineering decisions behind them.
   enforced by the database, not by hopeful application filters. See
   [SECURITY.md](../SECURITY.md).
 - **Three Supabase clients**: a browser client, a server client (per-request,
-  cookie-bound), and an admin (service-role) client used *only* by the cron push
-  endpoint.
+  cookie-bound), and an admin (service-role) client that bypasses RLS. The
+  admin client is confined to server routes with no user session to scope by,
+  or with a table no user may read: the two cron endpoints (`/api/push/due`,
+  `/api/cron/recurring-tasks`), the tiny-wins push, invite-code redemption in
+  `/api/signup`, and the single `push_health` read in `/api/push/health`.
+- **PostgREST caps every response at 1,000 rows, silently** — `200 OK`, no
+  error, `data` cut short, and `.limit(5000)` is capped the same way. Any list
+  read that can outgrow that goes through `selectAllRows()`
+  (`lib/supabase/select-all.ts`), which returns the query unchanged when it
+  fits in one page and pages with a unique tiebreaker when it does not.
 
 ### 4. Time (IST discipline)
 All civil-date logic is anchored to **Asia/Kolkata** through `lib/date.ts`. Raw

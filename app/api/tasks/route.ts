@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import { istDateString, istWeekday } from "@/lib/date";
 import type {
   Database,
@@ -230,11 +231,16 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
 
-  const { data, error } = await supabase
-    .from("tasks")
-    .select("*")
-    .order("due_date", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: false });
+  // Paged: the list includes every DONE task too, so it only grows, and an
+  // unpaged read stops at 1,000 rows with no error — undated captures (sorted
+  // last) would be the first to silently disappear. See lib/supabase/select-all.ts.
+  const { data, error } = await selectAllRows(() =>
+    supabase
+      .from("tasks")
+      .select("*")
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false })
+  );
 
   if (error) return json({ data: null, error: error.message }, 500);
   return json<Task[]>({ data: data ?? [], error: null });

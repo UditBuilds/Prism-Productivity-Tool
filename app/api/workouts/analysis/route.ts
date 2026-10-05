@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import { istDayContext, istDateString } from "@/lib/date";
 import { analyseWorkoutSets, type WorkoutAnalysis } from "@/lib/workout-analysis";
 import type { WorkoutSet } from "@/types/database";
@@ -52,14 +53,21 @@ export async function GET() {
     Date.parse(startOfToday) - (WINDOW_DAYS - 1) * DAY_MS
   ).toISOString();
 
-  const { data, error } = await supabase
-    .from("workout_sets")
-    .select("*")
-    .eq("user_id", user.id)
-    .gte("performed_at", windowStart)
-    .order("performed_at", { ascending: true })
-    .order("set_index", { ascending: true, nullsFirst: false })
-    .limit(MAX_ROWS);
+  // Paged up to MAX_ROWS. A plain `.limit(MAX_ROWS)` was silently capped at
+  // PostgREST's 1,000 rows, and with an oldest-first sort the rows it dropped
+  // were the NEWEST sets — exactly the ones a progression view is for. See
+  // lib/supabase/select-all.ts.
+  const { data, error } = await selectAllRows(
+    () =>
+      supabase
+        .from("workout_sets")
+        .select("*")
+        .eq("user_id", user.id)
+        .gte("performed_at", windowStart)
+        .order("performed_at", { ascending: true })
+        .order("set_index", { ascending: true, nullsFirst: false }),
+    { maxRows: MAX_ROWS }
+  );
 
   if (error) {
     return json<WorkoutAnalysis>({ data: null, error: error.message }, 500);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import { istDayContext, istDayNumber, istDateString } from "@/lib/date";
 import type { MoodValue } from "@/types/database";
 
@@ -135,11 +136,15 @@ export async function GET(request: Request) {
       .not("completed_at", "is", null)
       .gte("completed_at", startIso)
       .lt("completed_at", endIso),
-    supabase
-      .from("srs_reviews")
-      .select("reviewed_at")
-      .gte("reviewed_at", startIso)
-      .lt("reviewed_at", endIso),
+    // Paged: reviews are the one activity row that a heavy week can push past
+    // PostgREST's silent 1,000-row cap. See lib/supabase/select-all.ts.
+    selectAllRows(() =>
+      supabase
+        .from("srs_reviews")
+        .select("reviewed_at")
+        .gte("reviewed_at", startIso)
+        .lt("reviewed_at", endIso)
+    ),
     supabase
       .from("mood_logs")
       .select("logged_date, mood")

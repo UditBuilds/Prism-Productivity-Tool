@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import { istDayContext, istDayNumber, istDateString } from "@/lib/date";
 
 const DAY_MS = 86_400_000;
@@ -60,13 +61,20 @@ export async function GET() {
   // Fetch ALL review timestamps (an unbounded streak can exceed 30 days; the
   // activity chart below just filters this to its window), the all-time review
   // count, every card (mastery + per-deck), plus the profile + freeze logs.
+  //
+  // Reviews and cards are PAGED. An unpaged read silently stops at 1,000 rows,
+  // and the reviews query has no ORDER BY, so past that point the streak would
+  // be walked over an arbitrary 1,000 of the user's reviews — at 50 reviews a
+  // day that is three weeks of use. See lib/supabase/select-all.ts.
   const [reviewsRes, totalRes, cardsRes, profileRes, freezeLogsRes] =
     await Promise.all([
-      supabase.from("srs_reviews").select("reviewed_at"),
+      selectAllRows(() => supabase.from("srs_reviews").select("reviewed_at")),
       supabase.from("srs_reviews").select("*", { count: "exact", head: true }),
-      supabase
-        .from("srs_cards")
-        .select("deck_name, ease_factor, repetitions, last_reviewed"),
+      selectAllRows(() =>
+        supabase
+          .from("srs_cards")
+          .select("deck_name, ease_factor, repetitions, last_reviewed")
+      ),
       supabase
         .from("profiles")
         .select("streak_freezes, freeze_week_start")

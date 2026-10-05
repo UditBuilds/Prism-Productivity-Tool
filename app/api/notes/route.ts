@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import { markdownExcerpt } from "@/lib/markdown";
 import { summarizeNoteContent } from "@/lib/ai/client";
 import { checkAiRateLimit } from "@/lib/ai/rateLimit";
@@ -117,10 +118,11 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return json({ data: null, error: "Unauthorized" }, 401);
 
-  const { data, error } = await supabase
-    .from("notes")
-    .select("*")
-    .order("updated_at", { ascending: false });
+  // Paged, not a single read: PostgREST silently stops at 1,000 rows, and this
+  // is the whole notes list. See lib/supabase/select-all.ts.
+  const { data, error } = await selectAllRows(() =>
+    supabase.from("notes").select("*").order("updated_at", { ascending: false })
+  );
 
   if (error) return json({ data: null, error: error.message }, 500);
   return json<Note[]>({ data: data ?? [], error: null });

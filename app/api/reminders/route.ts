@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import type { Database, Reminder } from "@/types/database";
 
 type ReminderUpdate = Database["public"]["Tables"]["reminders"]["Update"];
@@ -79,10 +80,14 @@ export async function GET() {
   // client-side NotificationChecker can fire them — filtering by remind_at
   // here made due reminders vanish from the cache on refetch before the
   // 60s checker tick could see them.
-  const { data, error } = await supabase
-    .from("reminders")
-    .select("*")
-    .order("remind_at", { ascending: true });
+  //
+  // Paged: sent reminders stay as history, so this only grows, and it is
+  // sorted oldest-first — an unpaged read silently stops at 1,000 rows and
+  // would drop the UPCOMING reminders the checker exists to fire. See
+  // lib/supabase/select-all.ts.
+  const { data, error } = await selectAllRows(() =>
+    supabase.from("reminders").select("*").order("remind_at", { ascending: true })
+  );
 
   if (error) return json({ data: null, error: error.message }, 500);
   return json<Reminder[]>({ data: data ?? [], error: null });

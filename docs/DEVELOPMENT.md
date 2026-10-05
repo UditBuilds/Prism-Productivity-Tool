@@ -77,7 +77,7 @@ npm run build        # next build  (currently 43 routes)
 | `hooks/` | React Query data hooks (one cache key per domain) |
 | `lib/ai`, `lib/pdf`, `lib/youtube` | The three AI ingestion pipelines |
 | `lib/srs` | SM-2 algorithm |
-| `lib/supabase` | Browser / server / admin clients |
+| `lib/supabase` | Browser / server / admin clients; `select-all.ts` pages reads past PostgREST's 1,000-row cap |
 | `lib/date.ts` | IST time helpers (single source of truth) |
 | `store/` | Zustand UI stores |
 | `types/database.ts` | Hand-authored Supabase types (kept in sync with the schema) |

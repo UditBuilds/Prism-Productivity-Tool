@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { selectAllRows } from "@/lib/supabase/select-all";
 import {
   istDayContext,
   istDayNumber,
@@ -96,10 +97,15 @@ export async function GET() {
       .eq("status", "done")
       .not("completed_at", "is", null)
       .gte("completed_at", windowStartIso),
-    supabase
-      .from("srs_reviews")
-      .select("reviewed_at")
-      .gte("reviewed_at", windowStartIso),
+    // Paged: 30 days of flashcard review can pass PostgREST's silent
+    // 1,000-row cap on its own (~33 reviews a day). Focus sessions and
+    // completed tasks can't plausibly reach it in a 30-day window.
+    selectAllRows(() =>
+      supabase
+        .from("srs_reviews")
+        .select("reviewed_at")
+        .gte("reviewed_at", windowStartIso)
+    ),
   ]);
 
   const firstError = focusRes.error ?? tasksRes.error ?? reviewsRes.error;
