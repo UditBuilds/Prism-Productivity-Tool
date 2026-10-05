@@ -140,3 +140,6 @@ inserted-row check) and surfaces the protection in the UI.
 - **Dark mode only**; the accent color is themeable via CSS variables.
 - New features follow the existing shape: a route under `app/api/<x>/`, a typed
   hook in `hooks/use<X>.ts`, and a page under `app/dashboard/<x>/`.
+- **Tests** are plain Node scripts, `scripts/test-*.mjs`, that compile the pure
+  modules they cover with the project's own `tsc` — no test runner. `npm test`
+  runs all of them and CI runs `npm test` on every push and PR.
