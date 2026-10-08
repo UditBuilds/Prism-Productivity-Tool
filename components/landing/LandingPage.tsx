@@ -116,12 +116,17 @@ function Hero() {
 /**
  * Lightweight CSS mockup of the Prism dashboard with a glow treatment —
  * looks like a product screenshot, costs nothing to load. Purely decorative.
+ *
+ * It is a picture of the DARK app in both modes, like the three feature
+ * mockups below: `dark` on the root re-scopes every token inside it to dark,
+ * and `text-foreground` stops text that inherits its colour from bringing in
+ * the light page's dark text.
  */
 function DashboardMockup() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none relative select-none animate-fade-up [animation-delay:300ms]"
+      className="dark pointer-events-none relative select-none text-foreground animate-fade-up [animation-delay:300ms]"
     >
       {/* Glow halo behind the shot */}
       <div className="absolute -inset-6 rounded-[2rem] bg-accent/15 blur-3xl" />
@@ -325,7 +330,7 @@ function GenerateMockup() {
   return (
     <div
       aria-hidden
-      className="gradient-border pointer-events-none select-none rounded-2xl p-4 [--gb-bg:#0C0C0C]"
+      className="dark gradient-border pointer-events-none select-none rounded-2xl p-4 text-foreground [--gb-bg:#0C0C0C]"
     >
       <div className="flex flex-wrap gap-2">
         {[
@@ -377,7 +382,7 @@ function ReviewMockup() {
   return (
     <div
       aria-hidden
-      className="gradient-border pointer-events-none select-none rounded-2xl p-4 [--gb-bg:#0C0C0C]"
+      className="dark gradient-border pointer-events-none select-none rounded-2xl p-4 text-foreground [--gb-bg:#0C0C0C]"
     >
       <div className="rounded-xl border border-accent/25 bg-gradient-to-b from-surface-raised to-surface p-4 ring-1 ring-inset ring-accent/10">
         <p className="text-[8px] font-medium uppercase tracking-[0.18em] text-accent/70">
@@ -421,7 +426,7 @@ function WorkspaceMockup() {
   return (
     <div
       aria-hidden
-      className="gradient-border pointer-events-none select-none rounded-2xl p-4 [--gb-bg:#0C0C0C]"
+      className="dark gradient-border pointer-events-none select-none rounded-2xl p-4 text-foreground [--gb-bg:#0C0C0C]"
     >
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <div className="space-y-1.5">
@@ -539,7 +544,7 @@ function Pricing() {
           Private beta &mdash; free while we learn.
         </p>
         <div className="mt-10 flex justify-center">
-          <div className="gradient-border flex w-full max-w-md flex-col rounded-2xl p-7 shadow-glow-accent backdrop-blur-xl [--gb-bg:rgb(14_14_14_/_0.72)]">
+          <div className="gradient-border flex w-full max-w-md flex-col rounded-2xl p-7 shadow-glow-accent backdrop-blur-xl [--gb-bg:rgb(var(--landing-glass))]">
             <p className="text-center text-lg font-semibold text-foreground">
               What&apos;s included
             </p>

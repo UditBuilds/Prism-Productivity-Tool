@@ -28,6 +28,11 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { StatCard } from "@/components/shared/StatCard";
 import { MoodPanel } from "@/components/srs/MoodPanel";
 import { ProductivityPanel } from "@/components/srs/ProductivityPanel";
+import {
+  CHART_TOOLTIP_BACKGROUND,
+  CHART_TOOLTIP_LABEL,
+  useChartColors,
+} from "@/components/srs/chart-colors";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -70,6 +75,7 @@ export function AnalyticsPanel({ streak }: { streak: number }) {
 
 function StatsContent({ streak }: { streak: number }) {
   const { data, isLoading, isError, refetch } = useAnalytics();
+  const chart = useChartColors();
 
   if (isLoading) {
     return (
@@ -157,7 +163,7 @@ function StatsContent({ streak }: { streak: number }) {
                 <CartesianGrid
                   strokeDasharray="4 4"
                   vertical={false}
-                  stroke="#1A1A1A"
+                  stroke={chart.grid}
                 />
                 <XAxis
                   dataKey="date"
@@ -165,7 +171,7 @@ function StatsContent({ streak }: { streak: number }) {
                   interval={4}
                   tick={{ fill: "#555", fontSize: 11 }}
                   tickLine={false}
-                  axisLine={{ stroke: "#1A1A1A" }}
+                  axisLine={{ stroke: chart.axis }}
                 />
                 <YAxis
                   allowDecimals={false}
@@ -175,9 +181,9 @@ function StatsContent({ streak }: { streak: number }) {
                   width={32}
                 />
                 <Tooltip
-                  cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
+                  cursor={{ fill: chart.cursor }}
                   contentStyle={{
-                    backgroundColor: "rgba(17, 17, 17, 0.8)",
+                    backgroundColor: CHART_TOOLTIP_BACKGROUND,
                     backdropFilter: "blur(12px)",
                     WebkitBackdropFilter: "blur(12px)",
                     border: "1px solid rgb(var(--accent-rgb) / 0.2)",
@@ -185,7 +191,7 @@ function StatsContent({ streak }: { streak: number }) {
                     fontSize: "12px",
                     boxShadow: "0 8px 24px rgb(0 0 0 / 0.4)",
                   }}
-                  labelStyle={{ color: "#F5F5F5" }}
+                  labelStyle={{ color: CHART_TOOLTIP_LABEL }}
                   labelFormatter={(label) => shortDate(String(label))}
                   formatter={(value) => [`${value}`, "Reviews"]}
                 />

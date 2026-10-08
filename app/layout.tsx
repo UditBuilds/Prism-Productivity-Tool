@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { THEME_COLOR, colorModeScript } from "@/lib/color-mode";
 
 const instrumentSans = Instrument_Sans({
   subsets: ["latin"],
@@ -32,8 +33,9 @@ export const metadata: Metadata = {
   },
 };
 
+// theme-color is NOT set here: it is rendered by hand in <head> below so the
+// pre-paint script can repoint it for light mode before first paint.
 export const viewport: Viewport = {
-  themeColor: "#0F1012",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -51,10 +53,18 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        {/* Apply the saved accent theme before first paint (no violet flash). */}
+        {/* Dark is the server's frame; the script below repoints this for light.
+            Above the script so it already exists when the script runs. */}
+        <meta
+          name="theme-color"
+          content={THEME_COLOR.dark}
+          suppressHydrationWarning
+        />
+        {/* Apply the saved accent theme and colour mode before first paint
+            (no violet flash, no dark-to-light flash). */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("prism-theme");if(t)document.documentElement.classList.add("theme-"+t)}catch(e){}`,
+            __html: `try{var t=localStorage.getItem("prism-theme");if(t)document.documentElement.classList.add("theme-"+t);${colorModeScript()}}catch(e){}`,
           }}
         />
       </head>

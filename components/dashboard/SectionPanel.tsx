@@ -15,9 +15,13 @@ import { SectionHeader } from "@/components/shared/SectionHeader";
  * See the `variant` doc below for why these are literal values rather than
  * `bg-surface` / `border-border`, and why raising the tokens instead is a
  * different and much larger decision.
+ *
+ * Since light mode, the two values are --block-fill / --block-frame in
+ * globals.css. Their dark values are still exactly the literals quoted below;
+ * light maps them to surface-raised / border-col.
  */
 export const BLOCK_SURFACE =
-  "rounded-sm border border-[hsl(224_10%_22%)] bg-[hsl(228_10%_13%)]";
+  "rounded-sm border border-[hsl(var(--block-frame))] bg-[hsl(var(--block-fill))]";
 
 /**
  * A section: rank-1 header, then its body. Every dashboard content section

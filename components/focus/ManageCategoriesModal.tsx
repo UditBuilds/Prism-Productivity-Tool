@@ -157,7 +157,9 @@ export function ManageCategoriesModal({
                           onClick={() => setEditColor(hex)}
                           className={cn(
                             "flex h-7 w-7 items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-surface transition",
-                            editColor === hex ? "ring-white" : "ring-transparent"
+                            editColor === hex
+                              ? "ring-[rgb(var(--swatch-ring))]"
+                              : "ring-transparent"
                           )}
                           style={{ backgroundColor: hex }}
                         >

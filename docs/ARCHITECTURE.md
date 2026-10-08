@@ -144,7 +144,12 @@ are derived from the same function.
   an eslint-disable comment) for the service-role-only tables
   `push_delivery_log` and `push_health`, which are intentionally absent from
   `types/database.ts`. ES5-safe iteration (`Array.from()` over iterators).
-- **Dark mode only**; the accent color is themeable via CSS variables.
+- **Light and dark mode, dark by default.** Settings → Appearance offers
+  System, Light and Dark per device (`localStorage` `prism-color-mode`). Light
+  tokens live under `:root` in `app/globals.css`, dark under `.dark`; a script
+  in `app/layout.tsx` sets the mode before first paint (`lib/color-mode.ts`).
+  The accent color is themeable via CSS variables in both modes. Target values:
+  `DESIGN.md`.
 - New features follow the existing shape: a route under `app/api/<x>/`, a typed
   hook in `hooks/use<X>.ts`, and a page under `app/dashboard/<x>/`.
 - **Tests** are plain Node scripts, `scripts/test-*.mjs`, that compile the pure

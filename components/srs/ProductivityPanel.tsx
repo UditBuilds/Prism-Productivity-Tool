@@ -32,6 +32,11 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { MonoLabel } from "@/components/shared/MonoLabel";
+import {
+  CHART_TOOLTIP_BACKGROUND,
+  CHART_TOOLTIP_LABEL,
+  useChartColors,
+} from "@/components/srs/chart-colors";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -58,7 +63,7 @@ function formatHour(hour: number): string {
 }
 
 const chartTooltipStyle = {
-  backgroundColor: "rgba(17, 17, 17, 0.8)",
+  backgroundColor: CHART_TOOLTIP_BACKGROUND,
   backdropFilter: "blur(12px)",
   WebkitBackdropFilter: "blur(12px)",
   border: "1px solid rgb(var(--accent-rgb) / 0.2)",
@@ -121,6 +126,7 @@ function CompareTile({
 export function ProductivityPanel() {
   const { data, isLoading, isError, refetch } = useProductivityAnalytics();
   const { categoryChartColor } = useFocusCategories();
+  const chart = useChartColors();
 
   if (isLoading) {
     return (
@@ -232,14 +238,14 @@ export function ProductivityPanel() {
                     <stop offset="100%" style={{ stopColor: "rgb(var(--accent-hover-rgb))", stopOpacity: 0.55 }} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#1A1A1A" />
+                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke={chart.grid} />
                 <XAxis
                   dataKey="date"
                   tickFormatter={shortDate}
                   interval={4}
                   tick={{ fill: "#555", fontSize: 11 }}
                   tickLine={false}
-                  axisLine={{ stroke: "#1A1A1A" }}
+                  axisLine={{ stroke: chart.axis }}
                 />
                 <YAxis
                   allowDecimals={false}
@@ -249,9 +255,9 @@ export function ProductivityPanel() {
                   width={36}
                 />
                 <Tooltip
-                  cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
+                  cursor={{ fill: chart.cursor }}
                   contentStyle={chartTooltipStyle}
-                  labelStyle={{ color: "#F5F5F5" }}
+                  labelStyle={{ color: CHART_TOOLTIP_LABEL }}
                   labelFormatter={(label) => shortDate(String(label))}
                   formatter={(value) => [formatMinutes(Number(value)), "Focus"]}
                 />
@@ -283,7 +289,7 @@ export function ProductivityPanel() {
                     innerRadius={52}
                     outerRadius={78}
                     paddingAngle={2}
-                    stroke="#0E0E0E"
+                    stroke={chart.gap}
                     strokeWidth={2}
                   >
                     {data.categoryBreakdown.map((slice) => (
@@ -295,7 +301,7 @@ export function ProductivityPanel() {
                   </Pie>
                   <Tooltip
                     contentStyle={chartTooltipStyle}
-                    labelStyle={{ color: "#F5F5F5" }}
+                    labelStyle={{ color: CHART_TOOLTIP_LABEL }}
                     formatter={(value, name) => [
                       formatMinutes(Number(value)),
                       String(name),
@@ -351,14 +357,14 @@ export function ProductivityPanel() {
                 // visible — a three-digit day would have clipped 5.8px.
                 margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
               >
-                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#1A1A1A" />
+                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke={chart.grid} />
                 <XAxis
                   dataKey="date"
                   tickFormatter={shortDate}
                   interval={4}
                   tick={{ fill: "#555", fontSize: 11 }}
                   tickLine={false}
-                  axisLine={{ stroke: "#1A1A1A" }}
+                  axisLine={{ stroke: chart.axis }}
                 />
                 <YAxis
                   allowDecimals={false}
@@ -368,9 +374,9 @@ export function ProductivityPanel() {
                   width={36}
                 />
                 <Tooltip
-                  cursor={{ stroke: "rgba(255, 255, 255, 0.12)" }}
+                  cursor={{ stroke: chart.cursorLine }}
                   contentStyle={chartTooltipStyle}
-                  labelStyle={{ color: "#F5F5F5" }}
+                  labelStyle={{ color: CHART_TOOLTIP_LABEL }}
                   labelFormatter={(label) => shortDate(String(label))}
                   formatter={(value) => [`${value}`, "Tasks"]}
                 />
@@ -380,7 +386,7 @@ export function ProductivityPanel() {
                   stroke="#10B981"
                   strokeWidth={2}
                   dot={false}
-                  activeDot={{ r: 4, fill: "#10B981", stroke: "#0E0E0E" }}
+                  activeDot={{ r: 4, fill: "#10B981", stroke: chart.gap }}
                 />
               </LineChart>
             </ResponsiveContainer>

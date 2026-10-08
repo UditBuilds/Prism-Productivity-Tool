@@ -250,7 +250,9 @@ function IdleView() {
                 onClick={() => setNewColor(hex)}
                 className={cn(
                   "flex h-7 w-7 items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-surface transition",
-                  newColor === hex ? "ring-white" : "ring-transparent"
+                  newColor === hex
+                    ? "ring-[rgb(var(--swatch-ring))]"
+                    : "ring-transparent"
                 )}
                 style={{ backgroundColor: hex }}
               >
@@ -586,8 +588,9 @@ function RunningView() {
               cy="150"
               r={RING_RADIUS}
               fill="none"
-              stroke="#1A1A1A"
               strokeWidth="8"
+              // A style, not the stroke attribute: SVG attributes can't hold var().
+              style={{ stroke: "rgb(var(--timer-track))" }}
             />
             <circle
               cx="150"
@@ -605,7 +608,7 @@ function RunningView() {
           <span
             className={cn(
               "absolute text-7xl font-bold tabular-nums tracking-tight",
-              lowTime ? "text-amber-300" : "text-foreground"
+              lowTime ? "text-[rgb(var(--low-time))]" : "text-foreground"
             )}
             style={{
               textShadow: lowTime
