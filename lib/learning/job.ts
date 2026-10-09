@@ -10,7 +10,13 @@ import {
   LEARNING_WRITE_MODEL,
 } from "@/lib/learning/constants";
 import { checkGrounding, type GroundingProblem } from "@/lib/learning/grounding";
-import { LearningAiError, searchForStep, writeDraft, type CallRecord } from "@/lib/learning/groq";
+import {
+  LearningAiError,
+  searchForStep,
+  writeDraft,
+  type CallRecord,
+  type WriteAttempt,
+} from "@/lib/learning/groq";
 import { excerptFor, extractPage } from "@/lib/learning/html-text";
 import { budgetState, devOverride, logCall } from "@/lib/learning/ledger";
 import {
@@ -93,6 +99,31 @@ async function markFailed(ctx: Ctx, stepId: string, claimedAt: string, code: Ste
     .eq("user_id", ctx.userId)
     .eq("claimed_at", claimedAt);
   if (error) console.error("[learning] mark failed:", error.message);
+}
+
+/** The longest per-minute wait worth sitting out inside one request. */
+const MAX_INLINE_WAIT_MS = 30_000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Make a Groq call; if the per-minute budget refuses it and the wait fits in
+ * what is left of this request, wait and try once more. Without this, a draft
+ * that failed its checks would hit the minute limit on its corrective second
+ * turn (it usually does — the first draft just spent ~5,000 tokens), release
+ * the step, and the next request would pay for the search again.
+ */
+async function withShortWait<T>(ctx: Ctx, stepId: string, reserveMs: number, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (err) {
+    if (!(err instanceof LearningAiError) || err.failure.kind !== "minute") throw err;
+    const waitMs = err.failure.retryAfterSeconds * 1000;
+    const elapsed = Date.now() - ctx.startedAt;
+    if (waitMs > MAX_INLINE_WAIT_MS || elapsed + waitMs + reserveMs > ADVANCE_DEADLINE_MS) throw err;
+    await log(ctx, stepId, err.record);
+    await sleep(waitMs);
+    return await call();
+  }
 }
 
 function onAiError(err: unknown): AdvanceResult | null {
@@ -191,7 +222,7 @@ export async function advanceTopic(
   // 1. Search (gpt-oss-20b + browser_search).
   let hits;
   try {
-    const search = await searchForStep(claimed.search_query);
+    const search = await withShortWait(ctx, stepId, 25_000, () => searchForStep(claimed.search_query));
     await log(ctx, stepId, search.record);
     hits = search.harvest.hits;
   } catch (err) {
@@ -240,9 +271,10 @@ export async function advanceTopic(
   let retry: { previous: string; problems: string[] } | null = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     if (attempt === 2 && Date.now() - ctx.startedAt > ADVANCE_DEADLINE_MS - 20_000) break;
-    let draft;
+    let draft: WriteAttempt;
     try {
-      draft = await writeDraft(userMessage, retry, maxTokens);
+      const turn: { previous: string; problems: string[] } | null = retry;
+      draft = await withShortWait(ctx, stepId, 15_000, () => writeDraft(userMessage, turn, maxTokens));
     } catch (err) {
       if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
       const wait = onAiError(err);
@@ -250,7 +282,9 @@ export async function advanceTopic(
         await release(ctx, stepId, claimedAt);
         return wait;
       }
-      await markFailed(ctx, stepId, claimedAt, "ai_error", err instanceof LearningAiError && err.failure.kind === "timeout" ? "it did not answer in time" : undefined);
+      const detail =
+        err instanceof LearningAiError && err.failure.kind === "timeout" ? "it did not answer in time" : undefined;
+      await markFailed(ctx, stepId, claimedAt, "ai_error", detail);
       return { kind: "failed", stepId, code: "ai_error" };
     }
     if (draft.truncated) {
@@ -261,6 +295,11 @@ export async function advanceTopic(
     let problems: string[];
     let parsed: DraftLesson | null = null;
     try {
+      if (draft.invalidJson) {
+        throw new LessonFormatError(
+          "the answer was not valid JSON; inside JSON strings use ' instead of the double-quote character"
+        );
+      }
       parsed = parseDraftLesson(draft.content);
       const groundingProblems = describe(
         checkGrounding(parsed, grounding, { topicTitle: topic.title, stepTitle: claimed.title })
@@ -271,7 +310,7 @@ export async function advanceTopic(
       lastGroundingFailures = 0;
       problems = [err instanceof LessonFormatError ? err.message : "the lesson could not be read"];
     }
-    await log(ctx, stepId, { ...draft.record, outcome: problems.length ? "invalid" : "ok" });
+    await log(ctx, stepId, { ...draft.record, outcome: draft.invalidJson || problems.length ? "invalid" : "ok" });
     await debugDump(stepId, attempt, {
       topic: topic.title,
       step: claimed.title,

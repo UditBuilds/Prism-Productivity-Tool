@@ -9,15 +9,17 @@ import { claimsOf, type Claim, type DraftLesson, type Support } from "@/lib/lear
  * if every one of these holds:
  *
  *   1. Every claim has at least one quote, naming a source it was given.
- *   2. Every quote is real: at least MIN_QUOTE_WORDS words, and found word for
- *      word in THAT source's text — the same excerpt the writer was shown —
+ *   2. Every quote is real: at least MIN_QUOTE_WORDS words (MIN_CODE_QUOTE_WORDS
+ *      when it is copied from a code block), and found word for word in THAT
+ *      source's text — the same excerpt the writer was shown —
  *      after normalising case, whitespace, curly quotes and dashes. "..."
  *      inside a quote splits it into pieces that must all be found, in order.
  *   3. The claim's specifics are in its evidence. Every number, every
  *      `code span` and every capitalised name in the sentence must appear in
  *      its quotes (code spans and numbers may also come from the lesson's own
  *      example, which sentences explain; names may also come from the topic
- *      and step titles).
+ *      and step titles). The title and headings carry no quotes: their
+ *      numbers must be in some quote, and the summary's names in a source.
  *   4. The claim says mostly what its quotes say: at least MIN_COVERAGE of
  *      the sentence's content words (stop words and teaching filler removed,
  *      crude stemming) appear in its quotes or the example.
@@ -31,6 +33,13 @@ import { claimsOf, type Claim, type DraftLesson, type Support } from "@/lib/lear
  */
 
 export const MIN_QUOTE_WORDS = 4;
+/**
+ * A quote copied from a CODE BLOCK in the source may be as short as this:
+ * `>>> price = 100.50` is real evidence for a sentence about that line, and
+ * code lines are short. A fragment like `>>> while a` still has to pass the
+ * coverage rule, which it cannot.
+ */
+export const MIN_CODE_QUOTE_WORDS = 2;
 export const MIN_COVERAGE = 0.5;
 /** Claims with fewer content words than this skip rule 4 ("Try it."). */
 export const MIN_CONTENT_WORDS_FOR_COVERAGE = 3;
@@ -51,9 +60,11 @@ export interface GroundingProblem {
 export interface GroundingContext {
   topicTitle: string;
   stepTitle: string;
+  /** Measurement only: the coverage threshold to apply. The app always uses MIN_COVERAGE. */
+  minCoverage?: number;
 }
 
-/** Lower-case, one space, straight quotes, plain dashes, no Markdown emphasis. */
+/** Lower-case, one space, no quote marks, plain dashes, no Markdown emphasis. */
 export function normalize(s: string): string {
   return s
     .normalize("NFKC")
@@ -63,7 +74,10 @@ export function normalize(s: string): string {
     .replace(/[‐-―−]/g, "-")
     .replace(/…/g, "...")
     .replace(/[*_]/g, "")
-    .replace(/'(?=[^a-z]|$)|(^|[^a-z])'/g, "$1")
+    // Quote marks are dropped on both sides: the writer is told to put ' for
+    // " inside JSON strings (Groq rejects badly escaped JSON outright), and
+    // which mark a source used says nothing about what it claims.
+    .replace(/["']/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -109,14 +123,42 @@ const STOP = new Set(
   ).split(/\s+/)
 );
 
+/**
+ * A crude stemmer, applied the same way to sentence and quote: plural and
+ * tense endings first, then one derivational ending, so word FORMS match
+ * ("quotation"/"quotes", "analysis"/"analyze", "visualization"/"visualize")
+ * while different WORDS still do not ("display" is not "output" — a synonym
+ * is a meaning, and this check only reads words).
+ */
+const DERIVATIONAL: [RegExp, string][] = [
+  [/(i|y)zation$/, ""],
+  [/ation$/, ""],
+  [/ition$/, ""],
+  [/ysis$/, "y"],
+  [/y[sz]e$/, "y"],
+  [/(i|y)[sz]e$/, ""],
+  [/ment$/, ""],
+  [/ness$/, ""],
+  [/ate$/, ""],
+  [/ion$/, ""],
+];
+
 function stem(w: string): string {
   let s = w.replace(/'s$/, "").replace(/[.'-]+$/, "");
   if (s.length > 4 && s.endsWith("ies")) s = s.slice(0, -3) + "y";
   else if (s.length > 4 && /(ches|shes|sses|xes|zes)$/.test(s)) s = s.slice(0, -2);
-  else if (s.length > 3 && s.endsWith("s") && !s.endsWith("ss")) s = s.slice(0, -1);
+  else if (s.length > 3 && s.endsWith("s") && !s.endsWith("ss") && !s.endsWith("is")) s = s.slice(0, -1);
   if (s.length > 5 && s.endsWith("ing")) s = s.slice(0, -3);
   else if (s.length > 4 && s.endsWith("ed")) s = s.slice(0, -2);
   else if (s.length > 4 && s.endsWith("ly")) s = s.slice(0, -2);
+  for (const [re, rep] of DERIVATIONAL) {
+    const next = s.replace(re, rep);
+    if (next !== s && next.length >= 4) {
+      s = next;
+      break;
+    }
+  }
+  if (s.length > 4 && s.endsWith("e")) s = s.slice(0, -1);
   return s;
 }
 
@@ -177,12 +219,18 @@ function lessonCodeText(lesson: DraftLesson): string {
   return lesson.example ? normalize(`${lesson.example.code}\n${lesson.example.output}`) : "";
 }
 
+/** The fenced code blocks of a source, normalised the same way as the prose. */
+function codeOf(raw: string): string {
+  return Array.from(raw.matchAll(/```[^\n]*\n([\s\S]*?)```/g), (m) => normalize(m[1])).join(" | ");
+}
+
 function checkSupports(
   supports: Support[],
   sources: Map<number, string>,
   where: string,
   text: string,
-  problems: GroundingProblem[]
+  problems: GroundingProblem[],
+  code: Map<number, string> = new Map()
 ): string[] {
   const verified: string[] = [];
   if (supports.length === 0) {
@@ -195,7 +243,9 @@ function checkSupports(
       problems.push({ where, text, reason: `cites source ${s.source}, which it was not given` });
       continue;
     }
-    if (quoteWords(s.quote) < MIN_QUOTE_WORDS) {
+    const n = quoteWords(s.quote);
+    const fromCode = n >= MIN_CODE_QUOTE_WORDS && quoteFound(s.quote, code.get(s.source) ?? "");
+    if (n < MIN_QUOTE_WORDS && !fromCode) {
       problems.push({ where, text, reason: `quote "${s.quote}" is shorter than ${MIN_QUOTE_WORDS} words` });
       continue;
     }
@@ -214,10 +264,12 @@ function checkClaim(
   sources: Map<number, string>,
   codeText: string,
   names: Set<string>,
-  problems: GroundingProblem[]
+  problems: GroundingProblem[],
+  sourceCode: Map<number, string>,
+  minCoverage: number
 ): void {
   const before = problems.length;
-  const quotes = checkSupports(claim.support, sources, where, claim.text, problems);
+  const quotes = checkSupports(claim.support, sources, where, claim.text, problems, sourceCode);
   if (problems.length > before || quotes.length === 0) return;
 
   const evidence = quotes.join(" ");
@@ -247,11 +299,11 @@ function checkClaim(
     const have = new Set([...contentStems(evidence, true), ...contentStems(codeText, true)]);
     const hit = stems.filter((s) => have.has(s)).length;
     const coverage = hit / stems.length;
-    if (coverage < MIN_COVERAGE) {
+    if (coverage < minCoverage) {
       problems.push({
         where,
         text: claim.text,
-        reason: `only ${Math.round(coverage * 100)}% of its words are in its quote (needs ${Math.round(MIN_COVERAGE * 100)}%)`,
+        reason: `only ${Math.round(coverage * 100)}% of its words are in its quote (needs ${Math.round(minCoverage * 100)}%)`,
       });
     }
   }
@@ -284,6 +336,8 @@ export function checkGrounding(
 ): GroundingProblem[] {
   const problems: GroundingProblem[] = [];
   const sources = new Map(given.map((s) => [s.n, normalize(s.text)]));
+  const sourceCode = new Map(given.map((s) => [s.n, codeOf(s.text)]));
+  const minCoverage = ctx.minCoverage ?? MIN_COVERAGE;
   const allSourceText = Array.from(sources.values()).join(" ");
   const codeText = lessonCodeText(lesson);
   const names = new Set(tokens(`${ctx.topicTitle} ${ctx.stepTitle}`, true));
@@ -295,12 +349,12 @@ export function checkGrounding(
     if (block.type === "paragraph") {
       p += 1;
       block.sentences.forEach((c, i) =>
-        checkClaim(c, `paragraph ${p}, sentence ${i + 1}`, sources, codeText, names, problems)
+        checkClaim(c, `paragraph ${p}, sentence ${i + 1}`, sources, codeText, names, problems, sourceCode, minCoverage)
       );
     } else if (block.type === "list") {
       l += 1;
       block.items.forEach((c, i) =>
-        checkClaim(c, `list ${l}, item ${i + 1}`, sources, codeText, names, problems)
+        checkClaim(c, `list ${l}, item ${i + 1}`, sources, codeText, names, problems, sourceCode, minCoverage)
       );
     }
   }
@@ -326,6 +380,9 @@ export function checkGrounding(
         problems.push({ where, text, reason: `the number ${n} is not in any quote` });
       }
     }
+    // Titles and headings are written in Title Case, so a capital there is
+    // not a name. Only the summary, a plain sentence, has its names checked.
+    if (where !== "summary") continue;
     for (const name of properNames) {
       const lower = name.toLowerCase();
       if (!allEvidenceTokens.has(lower) && !names.has(lower) && !sourceTokens.has(lower)) {

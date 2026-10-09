@@ -80,3 +80,26 @@ export function parsePlan(content: string): PlannedStep[] {
   }
   return out;
 }
+
+/**
+ * A title that names more than one idea: "Lists, tuples and sets",
+ * "Conditionals and loops", "Install Python; run a script". Measured
+ * 2026-10-09: told plainly to split such steps, the planner still returned
+ * 4 of 10 like this, and the lessons for them drifted (a "what is
+ * programming and why Python" step got sources about strings and loops).
+ */
+export function isMultiIdea(title: string): boolean {
+  return /,|;|\s&\s|\s\/\s|\band\b/i.test(title);
+}
+
+export function planRetryMessage(steps: PlannedStep[]): string {
+  const list = steps
+    .filter((s) => isMultiIdea(s.title))
+    .map((s) => `- ${s.title}`)
+    .join("\n");
+  return (
+    `These steps each hold more than one idea:\n${list}\n\n` +
+    `Split every one of them into separate steps, one idea each, keeping the order. ` +
+    `Return the whole plan again as the same JSON object, at most ${PLAN_MAX_STEPS} steps.`
+  );
+}

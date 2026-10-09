@@ -8,7 +8,14 @@ import {
   WRITE_TIMEOUT_MS,
 } from "@/lib/learning/constants";
 import { classifyGroqFailure, type GroqFailure } from "@/lib/learning/groq-errors";
-import { PLAN_SYSTEM_PROMPT, parsePlan, planUserMessage, type PlannedStep } from "@/lib/learning/plan";
+import {
+  isMultiIdea,
+  PLAN_SYSTEM_PROMPT,
+  parsePlan,
+  planRetryMessage,
+  planUserMessage,
+  type PlannedStep,
+} from "@/lib/learning/plan";
 import { harvestSearchResults, type SearchHarvest } from "@/lib/learning/sources";
 import { WRITER_SYSTEM_PROMPT, writerRetryMessage } from "@/lib/learning/writer-prompt";
 
@@ -84,6 +91,9 @@ function toFailure(err: unknown): GroqFailure {
 
 function failed(kind: CallRecord["kind"], model: string, err: unknown, startedAt: number): LearningAiError {
   const failure = toFailure(err);
+  if (failure.kind === "other" || failure.kind === "timeout") {
+    console.error(`[learning] ${kind} call failed (${model}):`, failure.kind === "other" ? failure.message : "timeout");
+  }
   const outcome = failure.kind === "minute" || failure.kind === "day" ? "rate_limited" : "error";
   return new LearningAiError(failure, record(kind, model, outcome, undefined, startedAt));
 }
@@ -92,20 +102,17 @@ export interface PlanResult {
   steps: PlannedStep[] | null;
   /** Set when the call worked but the answer was unusable. */
   problem: string | null;
-  record: CallRecord;
+  /** One per Groq call made, in order: the plan, and the split re-ask if one ran. */
+  records: CallRecord[];
 }
 
-export async function planTopic(topic: string): Promise<PlanResult> {
+async function planCall(messages: { role: "system" | "user" | "assistant"; content: string }[]) {
   const startedAt = Date.now();
-  let completion;
   try {
-    completion = await groq.chat.completions.create(
+    const completion = await groq.chat.completions.create(
       {
         model: LEARNING_WRITE_MODEL,
-        messages: [
-          { role: "system", content: PLAN_SYSTEM_PROMPT },
-          { role: "user", content: planUserMessage(topic) },
-        ],
+        messages,
         response_format: { type: "json_object" },
         reasoning_effort: "low",
         temperature: 0.3,
@@ -113,23 +120,59 @@ export async function planTopic(topic: string): Promise<PlanResult> {
       },
       { timeout: PLAN_TIMEOUT_MS }
     );
+    return { completion, startedAt };
   } catch (err) {
     throw failed("plan", LEARNING_WRITE_MODEL, err, startedAt);
   }
-  const choice = completion.choices[0];
+}
+
+/**
+ * Plan a topic. If two or more steps still hold more than one idea, ask once
+ * more to split them; if that second answer is unusable, the first plan
+ * stands — a plan with a broad step is better than no plan.
+ */
+export async function planTopic(topic: string): Promise<PlanResult> {
+  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    { role: "system", content: PLAN_SYSTEM_PROMPT },
+    { role: "user", content: planUserMessage(topic) },
+  ];
+  const first = await planCall(messages);
+  const choice = first.completion.choices[0];
+  const records: CallRecord[] = [];
   if (choice?.finish_reason === "length") {
-    return { steps: null, problem: "The AI's plan was cut off.", record: record("plan", LEARNING_WRITE_MODEL, "truncated", completion.usage, startedAt) };
+    records.push(record("plan", LEARNING_WRITE_MODEL, "truncated", first.completion.usage, first.startedAt));
+    return { steps: null, problem: "The AI's plan was cut off.", records };
   }
+  let steps: PlannedStep[];
   try {
-    const steps = parsePlan(choice?.message?.content ?? "");
-    return { steps, problem: null, record: record("plan", LEARNING_WRITE_MODEL, "ok", completion.usage, startedAt) };
+    steps = parsePlan(choice?.message?.content ?? "");
   } catch (err) {
-    return {
-      steps: null,
-      problem: err instanceof Error ? err.message : "The AI's plan could not be read.",
-      record: record("plan", LEARNING_WRITE_MODEL, "invalid", completion.usage, startedAt),
-    };
+    records.push(record("plan", LEARNING_WRITE_MODEL, "invalid", first.completion.usage, first.startedAt));
+    return { steps: null, problem: err instanceof Error ? err.message : "The AI's plan could not be read.", records };
   }
+  records.push(record("plan", LEARNING_WRITE_MODEL, "ok", first.completion.usage, first.startedAt));
+
+  if (steps.filter((s) => isMultiIdea(s.title)).length >= 2) {
+    try {
+      const second = await planCall([
+        ...messages,
+        { role: "assistant", content: choice?.message?.content ?? "" },
+        { role: "user", content: planRetryMessage(steps) },
+      ]);
+      const c2 = second.completion.choices[0];
+      try {
+        if (c2?.finish_reason === "length") throw new Error("cut off");
+        steps = parsePlan(c2?.message?.content ?? "");
+        records.push(record("plan", LEARNING_WRITE_MODEL, "ok", second.completion.usage, second.startedAt));
+      } catch {
+        records.push(record("plan", LEARNING_WRITE_MODEL, "invalid", second.completion.usage, second.startedAt));
+      }
+    } catch (err) {
+      // The first plan is good enough to keep; only log what the re-ask cost.
+      if (err instanceof LearningAiError) records.push(err.record);
+    }
+  }
+  return { steps, problem: null, records };
 }
 
 const SEARCH_SYSTEM = `You find web pages for a lesson writer. Run exactly ONE browser search. Do NOT open any page. Then reply with the single word DONE.`;
@@ -172,7 +215,30 @@ export async function searchForStep(query: string): Promise<SearchResult> {
 export interface WriteAttempt {
   content: string;
   truncated: boolean;
+  /** Groq refused the answer as invalid JSON (HTTP 400 json_validate_failed). */
+  invalidJson: boolean;
   record: CallRecord;
+}
+
+/**
+ * Groq's JSON mode answers HTTP 400 "Failed to validate JSON" when the
+ * model's output does not parse, and puts the text in `failed_generation`.
+ * Measured 2026-10-09: a 13-second, quote-heavy lesson came back this way.
+ * The text is returned so the corrective turn can show the model its answer.
+ */
+function failedGeneration(err: unknown): string | null {
+  if (!(err instanceof APIError) || err.status !== 400) return null;
+  const body = err.error as { error?: { failed_generation?: unknown }; failed_generation?: unknown } | undefined;
+  const text = body?.error?.failed_generation ?? body?.failed_generation;
+  if (/failed to validate json/i.test(err.message) || typeof text === "string") {
+    return typeof text === "string" ? text : "";
+  }
+  return null;
+}
+
+/** Groq reports no usage for a refused generation; count ~4 characters a token. */
+function estimateTokens(...texts: string[]): number {
+  return Math.ceil(texts.reduce((n, t) => n + t.length, 0) / 4);
 }
 
 /**
@@ -207,6 +273,23 @@ export async function writeDraft(
       { timeout: WRITE_TIMEOUT_MS }
     );
   } catch (err) {
+    const generated = failedGeneration(err);
+    if (generated !== null) {
+      const prompt = messages.map((m) => m.content).join("");
+      const prompt_tokens = estimateTokens(prompt);
+      const completion_tokens = estimateTokens(generated);
+      return {
+        content: generated,
+        truncated: false,
+        invalidJson: true,
+        record: {
+          ...record("write", LEARNING_WRITE_MODEL, "invalid", undefined, startedAt),
+          prompt_tokens,
+          completion_tokens,
+          total_tokens: prompt_tokens + completion_tokens,
+        },
+      };
+    }
     throw failed("write", LEARNING_WRITE_MODEL, err, startedAt);
   }
   const choice = completion.choices[0];
@@ -215,6 +298,7 @@ export async function writeDraft(
   return {
     content,
     truncated,
+    invalidJson: false,
     record: record("write", LEARNING_WRITE_MODEL, truncated ? "truncated" : content ? "ok" : "empty", completion.usage, startedAt),
   };
 }

@@ -238,7 +238,9 @@ export async function runPlan(supabase: Client, userId: string, topic: LearningT
     await setTopic({ status: "failed", error_message: "The AI could not plan this topic. Try again." });
     return { kind: "failed", message: "The AI could not plan this topic. Try again." };
   }
-  await logCall(supabase, userId, { topicId: topic.id, stepId: null }, plan.record);
+  for (const rec of plan.records) {
+    await logCall(supabase, userId, { topicId: topic.id, stepId: null }, rec);
+  }
   if (!plan.steps) {
     const message = `${plan.problem ?? "The plan could not be read."} Try again.`;
     await setTopic({ status: "failed", error_message: message });
