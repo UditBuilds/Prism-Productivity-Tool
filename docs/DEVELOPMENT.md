@@ -65,8 +65,11 @@ npm run build        # next build
   return a `{ data, error }` envelope. Hooks unwrap it and throw on `error`.
 - **State**: server data via React Query hooks in `hooks/*`; UI-only state via
   Zustand in `store/*`.
-- **Styling**: dark mode only; use the accent tokens (`text-accent`, `bg-accent`,
-  …) rather than hard-coded colors so the themeable accent keeps working.
+- **Styling**: light and dark mode, dark by default; see `DESIGN.md`. Use the
+  tokens (`bg-surface`, `text-foreground`, `text-accent`, `bg-accent`, …) rather
+  than hard-coded colors, so both modes and the themeable accent keep working.
+  A color that must differ between modes goes in `app/globals.css` as a variable
+  with a light value under `:root` and a dark value under `.dark`.
 - **Adding a feature** typically means: a route under `app/api/<x>/route.ts`, a
   typed hook in `hooks/use<X>.ts`, and a page under `app/dashboard/<x>/`.
 

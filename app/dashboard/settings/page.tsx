@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { AppearanceCard } from "@/components/settings/AppearanceCard";
 import { NotificationsCard } from "@/components/settings/NotificationsCard";
 import { ThemeCard } from "@/components/settings/ThemeCard";
 
@@ -127,6 +128,7 @@ export default function SettingsPage() {
       </div>
 
       <ThemeCard />
+      <AppearanceCard />
       <NotificationsCard />
     </div>
   );

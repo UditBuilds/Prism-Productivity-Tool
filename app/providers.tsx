@@ -82,10 +82,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <Toaster
         position="bottom-center"
         toastOptions={{
+          // Dark values are the old #1A1A1A / #FFFFFF / #2A2A2A (globals.css).
           style: {
-            background: "#1A1A1A",
-            color: "#ffffff",
-            border: "1px solid #2A2A2A",
+            background: "rgb(var(--toast))",
+            color: "rgb(var(--toast-foreground))",
+            border: "1px solid rgb(var(--toast-border))",
             borderRadius: "12px",
             fontSize: "14px",
             padding: "12px 16px",

@@ -96,6 +96,14 @@ const config: Config = {
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         danger: "hsl(var(--danger))",
+
+        // Pre-redesign literals that shared components take as a class, so a
+        // caller's bg-* still overrides them. Dark values are the old
+        // hard-coded colours; see "Pre-redesign literals" in globals.css.
+        field: "rgb(var(--field) / <alpha-value>)",
+        sheet: "rgb(var(--sheet) / <alpha-value>)",
+        "tab-track": "rgb(var(--tab-track) / <alpha-value>)",
+        floating: "rgb(var(--floating) / <alpha-value>)",
       },
       backgroundImage: {
         // Accent gradients resolve from the theme vars so all 6 accent themes work
@@ -111,7 +119,7 @@ const config: Config = {
         "glow-accent": "0 0 16px rgb(var(--accent-rgb) / 0.25)",
         "glow-accent-sm": "0 0 8px rgb(var(--accent-rgb) / 0.2)",
         "lift":
-          "0 8px 24px rgb(0 0 0 / 0.4), 0 0 12px rgb(var(--accent-rgb) / 0.06)",
+          "0 8px 24px rgb(var(--lift-shadow)), 0 0 12px rgb(var(--accent-rgb) / 0.06)",
       },
       keyframes: {
         "accordion-down": {

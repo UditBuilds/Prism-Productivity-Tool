@@ -209,7 +209,7 @@ export function FloatingTimer() {
 
   return (
     <div
-      className={`fixed left-1/2 top-[calc(env(safe-area-inset-top)_+_0.5rem)] z-50 flex -translate-x-1/2 items-center gap-1 rounded-full border border-accent/30 bg-[#111111]/80 py-1 pl-1 pr-1 shadow-lg shadow-black/40 backdrop-blur-xl transition-transform hover:scale-[1.03] sm:bottom-6 sm:left-auto sm:right-6 sm:top-auto sm:translate-x-0 ${
+      className={`fixed left-1/2 top-[calc(env(safe-area-inset-top)_+_0.5rem)] z-50 flex -translate-x-1/2 items-center gap-1 rounded-full border border-accent/30 bg-floating/80 py-1 pl-1 pr-1 shadow-lg shadow-black/40 backdrop-blur-xl transition-transform hover:scale-[1.03] sm:bottom-6 sm:left-auto sm:right-6 sm:top-auto sm:translate-x-0 ${
         isPaused ? "" : "animate-pulse-ring"
       }`}
     >

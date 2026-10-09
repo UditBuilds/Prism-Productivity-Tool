@@ -3,34 +3,108 @@
 @tailwind utilities;
 
 /*
-  PRISM design system — "Graphite & Spectrum" (dark mode default).
+  PRISM colour tokens — light and dark. See DESIGN.md.
+
+  DARK is the default and is "Graphite & Spectrum": every value under `.dark`
+  is exactly what the app shipped with before light mode existed. LIGHT is
+  opt-in (Settings → Appearance) and its values come from DESIGN.md. The mode
+  is the `dark` class on <html>: rendered by the server, removed before first
+  paint by the script in app/layout.tsx when the stored choice resolves to
+  light, and kept in sync after that by ThemeProvider (lib/color-mode.ts).
+
   All tokens defined in HSL so shadcn's `hsl(var(--x))` mappings resolve cleanly.
   The graphite scale is cool-biased (~hue 225), NOT pure gray — deliberate.
 
   Hex reference — these are what the HSL below ACTUALLY computes to in the
-  browser, recomputed and corrected. Nine of the twelve were off by 1-2 per
-  channel, which matters because contrast work on this palette is done in these
-  numbers: #16171B and #17181C look like the same colour in a comment and are
-  not the same value in a ratio.
+  browser, recomputed and corrected. Nine of the twelve dark entries were once
+  off by 1-2 per channel, which matters because contrast work on this palette
+  is done in these numbers: #16171B and #17181C look like the same colour in a
+  comment and are not the same value in a ratio. The light HSL is written to a
+  decimal place so that it lands on the DESIGN.md hex exactly.
 
-    background     #0F1012   surface        #17181C   surface-raised #1E2025
-    border         #272930   border-col     #32353E
-    text-primary   #EDEEF2   text-muted     #A2A7B3
-    success (Moss) #56B881   warning (Amber)#E9B449   danger (Signal)#E45A53
+                     light     dark
+    background       #FFFFFF   #0F1012
+    foreground       #15171C   #EDEEF2
+    surface          #F6F7F9   #17181C
+    surface-raised   #F1F2F5   #1E2025
+    border           #E9EBEF   #272930
+    border-col       #D9DCE3   #32353E
+    input            #C9CDD6   #32353E
+    muted-foreground #5C6270   #A2A7B3
+    success (Moss)   #1F7A4D   #56B881
+    warning (Amber)  #9A4608   #E9B449
+    danger (Signal)  #C2362F   #E45A53
 
   Iris is the one entry where the comment was NOT the wrong number. The brand
   colour is #5B67EE and that is the literal in --accent-rgb below; the HSL
   round-trip (235 81% 65%) lands 2 units away at #5D6AEE. Both are live: the
   HSL feeds shadcn's hsl(var(--accent)) mappings, the RGB triplet feeds the
   Tailwind accent utilities. Left alone rather than "fixed" — picking one would
-  change rendered colour somewhere.
+  change rendered colour somewhere. In light both spellings are #4350D9.
 
-    accent (Iris)  #5B67EE via --accent-rgb / #5D6AEE via --accent HSL
-    accent-hover   #6F79F0 via --accent-hover-rgb / #707BF0 via HSL
+    accent (Iris)  dark  #5B67EE via --accent-rgb / #5D6AEE via --accent HSL
+                   light #4350D9
+    accent-hover   dark  #6F79F0 via --accent-hover-rgb / #707BF0 via HSL
+                   light #3440B8
 */
 
 @layer base {
-  :root,
+  /* LIGHT (opt-in). DESIGN.md values. Tokens DESIGN.md does not name take
+     the tier they hold in dark: card = surface; popover, secondary and muted
+     = surface-raised; primary and ring = accent. Text on an accent or danger
+     fill is white — DESIGN.md: "Text on an accent fill is #FFFFFF". */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.9 14.3% 9.6%;
+
+    --card: 220 20% 97%;
+    --card-foreground: 222.9 14.3% 9.6%;
+
+    --popover: 225 16.7% 95.3%;
+    --popover-foreground: 222.9 14.3% 9.6%;
+
+    --primary: 234.8 66.4% 55.7%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 225 16.7% 95.3%;
+    --secondary-foreground: 222.9 14.3% 9.6%;
+
+    --muted: 225 16.7% 95.3%;
+    --muted-foreground: 222 10% 40%;
+
+    --accent: 234.8 66.4% 55.7%;
+    --accent-foreground: 0 0% 100%;
+    --accent-hover: 234.5 55.9% 46.3%;
+
+    --destructive: 2.9 61% 47.3%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15.8% 92.5%;
+    --input: 221.5 13.7% 81.4%;
+    --ring: 234.8 66.4% 55.7%;
+
+    /* PRISM extras */
+    --surface: 220 20% 97%;
+    --surface-raised: 225 16.7% 95.3%;
+    --border-col: 222 15% 87%;
+    --success: 150 59% 30%;
+    --warning: 25.5 90.1% 31.8%;
+    --danger: 2.9 61% 47.3%;
+
+    --radius: 0.75rem;
+
+    /* Theme accent (RGB triplets for Tailwind's rgb(var()/alpha) syntax).
+       In light, accent-soft IS the accent: it is used as text (page-title
+       gradients, the Learn streak line), so it must clear 4.5:1 on white. */
+    --accent-rgb: 67 80 217; /* Iris, light */
+    --accent-hover-rgb: 52 64 184;
+    --accent-soft-rgb: 67 80 217;
+  }
+
+  /* DARK (the default). Unchanged values. A bare `.dark`, not `html.dark`,
+     on purpose: any element carrying the class re-scopes every token to
+     dark for its subtree — that is how the landing-page mockups stay a
+     picture of the dark app when the page around them is light. */
   .dark {
     --background: 220 9% 6.5%;
     --foreground: 228 16% 94%;
@@ -78,39 +152,197 @@
     --accent-hover-rgb: 111 121 240;
     --accent-soft-rgb: 148 156 244;
   }
+
+  /* ── Pre-redesign literals ──────────────────────────────────────────
+     Colours that were hard-coded while the app was dark-only. Each is a
+     variable now: the dark value is what master ACTUALLY RENDERED (the
+     old literal is noted beside it), so dark renders unchanged; the light
+     value maps to a DESIGN.md token. Each one should disappear when its
+     screen is migrated.
+
+     "Actually rendered" is not always the literal. The production CSS
+     minifier rewrote four of them through hsla() with whole-percent
+     lightness, e.g. rgb(14 14 14 / .95) shipped as hsla(0,0%,5%,.95) =
+     12.75 per channel. Those four carry the fractional value the minifier
+     produced, so a pixel diff against master stays at zero.
+
+     RGB triplets (optionally "/ alpha") for rgb(var(--x)), except the two
+     dashboard block values, which were HSL and stay HSL. */
+  :root {
+    --field: 255 255 255; /* background */
+    --sheet: 255 255 255; /* background */
+    --tab-track: 255 255 255; /* background */
+    --floating: 246 247 249; /* surface */
+    --toast: 246 247 249; /* surface */
+    --toast-foreground: 21 23 28; /* foreground */
+    --toast-border: 217 220 227; /* border-col */
+    --glass: 255 255 255 / 0.72;
+    --landing-glass: 255 255 255 / 0.72;
+    --block-fill: 225 16.7% 95.3%; /* surface-raised — dark fill is ~surface-raised too */
+    --block-frame: 222 15% 87%; /* border-col */
+    --lift-shadow: 15 16 18 / 0.12;
+    --auth-glow: 255 255 255; /* background */
+    --auth-edge: 246 247 249; /* surface */
+    --scrollbar: 217 220 227; /* border-col */
+    --scrollbar-hover: 201 205 214; /* input */
+    --selection-foreground: 21 23 28; /* foreground */
+    --prose-rule: 233 235 239; /* border */
+    --prose-rule-faint: 241 242 245; /* surface-raised */
+    --prose-strong: 21 23 28; /* foreground */
+    --prose-th: 92 98 112; /* muted-foreground */
+    --swatch-gap: 246 247 249; /* surface — the card behind the swatches */
+    --swatch-ring: 21 23 28; /* foreground */
+    --timer-track: 233 235 239; /* border */
+    --low-time: 154 70 8; /* warning */
+    --plan-active: 29 78 216; /* blue-700 */
+    --pill-violet: 109 40 217; /* violet-700 */
+    --pill-blue: 29 78 216; /* blue-700 */
+    --pill-emerald: 6 95 70; /* emerald-800: 700 is 4.49:1 on its own tint */
+    --pill-amber: 146 64 14; /* amber-800: 700 is 4.22:1 on its own tint */
+    --pill-rose: 190 18 60; /* rose-700 */
+    --chart-grid: 233 235 239; /* border */
+    --chart-axis: 217 220 227; /* border-col */
+    --chart-cursor: 15 16 18 / 0.04;
+    --chart-cursor-line: 15 16 18 / 0.12;
+    --chart-tooltip: 255 255 255 / 0.92;
+    --chart-tooltip-label: 21 23 28; /* foreground */
+    --chart-gap: 246 247 249; /* surface — the card behind the chart */
+  }
+  .dark {
+    --field: 13 13 13; /* #0D0D0D */
+    --sheet: 12.75 12.75 12.75; /* #0E0E0E/95, shipped as hsla(0,0%,5%,.95) */
+    --tab-track: 14 14 14; /* #0E0E0E */
+    --floating: 17.85 17.85 17.85; /* #111111/80, shipped as hsla(0,0%,7%,.8) */
+    --toast: 26 26 26; /* #1A1A1A */
+    --toast-foreground: 255 255 255; /* #FFFFFF */
+    --toast-border: 42 42 42; /* #2A2A2A */
+    --glass: 10.2 10.2 10.2 / 0.65; /* rgb(10 10 10/.65), shipped as hsla(0,0%,4%,.65) */
+    --landing-glass: 12.75 12.75 12.75 / 0.72; /* rgb(14 14 14/.72), shipped as hsla(0,0%,5%,.72) */
+    --block-fill: 228 10% 13%; /* #1E1F24, PR 48 */
+    --block-frame: 224 10% 22%; /* #32353E, PR 48 */
+    --lift-shadow: 0 0 0 / 0.4;
+    --auth-glow: 10 10 10; /* #0A0A0A */
+    --auth-edge: 5 5 5; /* #050505 */
+    --scrollbar: 38 40 46; /* #26282E */
+    --scrollbar-hover: 52 55 63; /* #34373F */
+    --selection-foreground: 255 255 255; /* white */
+    --prose-rule: 31 31 31; /* #1F1F1F */
+    --prose-rule-faint: 17 17 17; /* #111111 */
+    --prose-strong: 255 255 255; /* white */
+    --prose-th: 136 136 136; /* #888 */
+    --swatch-gap: 10 10 10; /* #0A0A0A */
+    --swatch-ring: 255 255 255; /* white */
+    --timer-track: 26 26 26; /* #1A1A1A */
+    --low-time: 252 211 77; /* amber-300 */
+    --plan-active: 96 165 250; /* blue-400 */
+    --pill-violet: 196 181 253; /* violet-300 */
+    --pill-blue: 147 197 253; /* blue-300 */
+    --pill-emerald: 110 231 183; /* emerald-300 */
+    --pill-amber: 252 211 77; /* amber-300 */
+    --pill-rose: 253 164 175; /* rose-300 */
+    --chart-grid: 26 26 26; /* #1A1A1A */
+    --chart-axis: 26 26 26; /* #1A1A1A */
+    --chart-cursor: 255 255 255 / 0.04;
+    --chart-cursor-line: 255 255 255 / 0.12;
+    --chart-tooltip: 17 17 17 / 0.8;
+    --chart-tooltip-label: 245 245 245; /* #F5F5F5 */
+    --chart-gap: 14 14 14; /* #0E0E0E */
+  }
 }
 
 /* Accent theme classes — applied to <html> by ThemeProvider. The picker
-   re-points Iris only; graphite + semantic hues are fixed information. */
+   re-points Iris only; graphite + semantic hues are fixed information.
+
+   Each class carries its LIGHT values. The rule after it carries the dark
+   values (unchanged) and matches both a dark <html> and a `.dark` element
+   inside a themed <html>, so a dark island keeps the reader's accent instead
+   of falling back to the Iris in the bare `.dark` block above.
+
+   Light values: Iris from DESIGN.md; the other five are Tailwind 700 with
+   800 for hover. Each clears 4.5:1 as text on background and on surface. */
 html.theme-violet {
-  --accent-rgb: 91 103 238; /* legacy "violet" slot now carries brand Iris */
+  --accent-rgb: 67 80 217; /* legacy "violet" slot now carries brand Iris */
+  --accent-hover-rgb: 52 64 184;
+  --accent-soft-rgb: 67 80 217;
+}
+html.theme-violet.dark,
+html.theme-violet .dark {
+  --accent-rgb: 91 103 238;
   --accent-hover-rgb: 111 121 240;
   --accent-soft-rgb: 148 156 244;
 }
 html.theme-blue {
+  --accent-rgb: 29 78 216;
+  --accent-hover-rgb: 30 64 175;
+  --accent-soft-rgb: 29 78 216;
+}
+html.theme-blue.dark,
+html.theme-blue .dark {
   --accent-rgb: 59 130 246;
   --accent-hover-rgb: 37 99 235;
   --accent-soft-rgb: 96 165 250;
 }
 html.theme-emerald {
+  --accent-rgb: 4 120 87;
+  --accent-hover-rgb: 6 95 70;
+  --accent-soft-rgb: 4 120 87;
+}
+html.theme-emerald.dark,
+html.theme-emerald .dark {
   --accent-rgb: 16 185 129;
   --accent-hover-rgb: 5 150 105;
   --accent-soft-rgb: 52 211 153;
 }
 html.theme-amber {
+  --accent-rgb: 180 83 9;
+  --accent-hover-rgb: 146 64 14;
+  --accent-soft-rgb: 180 83 9;
+}
+html.theme-amber.dark,
+html.theme-amber .dark {
   --accent-rgb: 245 158 11;
   --accent-hover-rgb: 217 119 6;
   --accent-soft-rgb: 251 191 36;
 }
 html.theme-rose {
+  --accent-rgb: 190 18 60;
+  --accent-hover-rgb: 159 18 57;
+  --accent-soft-rgb: 190 18 60;
+}
+html.theme-rose.dark,
+html.theme-rose .dark {
   --accent-rgb: 244 63 94;
   --accent-hover-rgb: 225 29 72;
   --accent-soft-rgb: 251 113 133;
 }
 html.theme-cyan {
+  --accent-rgb: 14 116 144;
+  --accent-hover-rgb: 21 94 117;
+  --accent-soft-rgb: 14 116 144;
+}
+html.theme-cyan.dark,
+html.theme-cyan .dark {
   --accent-rgb: 6 182 212;
   --accent-hover-rgb: 8 145 178;
   --accent-soft-rgb: 34 211 238;
+}
+
+/* iPhone home-screen app: statusBarStyle "black-translucent" draws WHITE
+   status-bar glyphs over the page, and iOS fixes that style when the icon is
+   added. In light mode, paint the strip under the glyphs in the dark page
+   colour (dark --background) so they stay readable. The inset is 0 on
+   desktop (measured) and is expected to be 0 on Android and in an iOS
+   Safari tab, so the strip should only show on the installed iPhone app —
+   the Safari-tab case still needs a check on a real iPhone. Nothing moves:
+   it is a fixed overlay on the inset. */
+:root:not(.dark) body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: env(safe-area-inset-top, 0px);
+  background-color: hsl(220 9% 6.5%);
+  z-index: 100;
+  pointer-events: none;
 }
 
 @layer base {
@@ -165,7 +397,7 @@ html.theme-cyan {
 
 /* Glass-morphism surface (Layer 3 / overlays) */
 .glass {
-  background-color: rgb(10 10 10 / 0.65);
+  background-color: rgb(var(--glass));
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -411,15 +643,15 @@ html.theme-cyan {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #26282e;
+  background: rgb(var(--scrollbar));
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #34373f;
+  background: rgb(var(--scrollbar-hover));
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: #26282e transparent;
+  scrollbar-color: rgb(var(--scrollbar)) transparent;
 }
 
 /* Smooth page load */
@@ -507,7 +739,7 @@ body {
 /* Custom text selection color (follows the accent theme) */
 ::selection {
   background-color: rgb(var(--accent-rgb) / 0.3);
-  color: white;
+  color: rgb(var(--selection-foreground));
 }
 
 /* Custom focus ring — accent instead of default */
@@ -548,7 +780,7 @@ body {
   margin-top: 1.5rem;
   margin-bottom: 0.5rem;
   padding-bottom: 0.375rem;
-  border-bottom: 1px solid #1f1f1f;
+  border-bottom: 1px solid rgb(var(--prose-rule));
 }
 
 .prose-preview h3 {
@@ -588,7 +820,7 @@ body {
 
 .prose-preview strong {
   font-weight: 600;
-  color: white;
+  color: rgb(var(--prose-strong));
 }
 
 .prose-preview em {
@@ -603,12 +835,12 @@ body {
   color: rgb(var(--accent-rgb));
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
-  border: 1px solid #1f1f1f;
+  border: 1px solid rgb(var(--prose-rule));
 }
 
 .prose-preview pre {
   background-color: hsl(var(--surface-raised));
-  border: 1px solid #1f1f1f;
+  border: 1px solid rgb(var(--prose-rule));
   border-radius: 0.75rem;
   padding: 1rem;
   overflow-x: auto;
@@ -651,18 +883,18 @@ body {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #888;
+  color: rgb(var(--prose-th));
   padding: 0.5rem;
-  border-bottom: 1px solid #1f1f1f;
+  border-bottom: 1px solid rgb(var(--prose-rule));
 }
 
 .prose-preview td {
   padding: 0.5rem;
-  border-bottom: 1px solid #111111;
+  border-bottom: 1px solid rgb(var(--prose-rule-faint));
 }
 
 .prose-preview hr {
   border: none;
-  border-top: 1px solid #1f1f1f;
+  border-top: 1px solid rgb(var(--prose-rule));
   margin: 1.5rem 0;
 }

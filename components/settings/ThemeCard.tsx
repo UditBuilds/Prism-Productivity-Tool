@@ -27,7 +27,7 @@ export function ThemeCard() {
             style={{
               backgroundColor: t.hex,
               ...(theme === t.id && {
-                boxShadow: `0 0 0 2px #0A0A0A, 0 0 0 4px ${t.hex}66, 0 0 16px ${t.hex}59`,
+                boxShadow: `0 0 0 2px rgb(var(--swatch-gap)), 0 0 0 4px ${t.hex}66, 0 0 16px ${t.hex}59`,
               }),
             }}
           >
