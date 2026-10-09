@@ -330,9 +330,11 @@ html.theme-cyan .dark {
 /* iPhone home-screen app: statusBarStyle "black-translucent" draws WHITE
    status-bar glyphs over the page, and iOS fixes that style when the icon is
    added. In light mode, paint the strip under the glyphs in the dark page
-   colour (dark --background) so they stay readable. The inset is 0 in a
-   browser tab, on Android and on desktop, so this only shows on the
-   installed iPhone app. Nothing moves: it is a fixed overlay on the inset. */
+   colour (dark --background) so they stay readable. The inset is 0 on
+   desktop (measured) and is expected to be 0 on Android and in an iOS
+   Safari tab, so the strip should only show on the installed iPhone app —
+   the Safari-tab case still needs a check on a real iPhone. Nothing moves:
+   it is a fixed overlay on the inset. */
 :root:not(.dark) body::before {
   content: "";
   position: fixed;
