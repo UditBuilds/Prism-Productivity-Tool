@@ -280,9 +280,18 @@ export async function advanceTopic(
     } catch (err) {
       if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
       const wait = onAiError(err);
-      if (wait) {
+      if (wait && attempt === 1) {
+        // Nothing written yet: hand the step back and let the screen wait.
         await release(ctx, stepId, claimedAt);
         return wait;
+      }
+      if (wait) {
+        // The fix turn could not run. Releasing here made the next request
+        // search and write the whole lesson again — measured 2026-10-09: four
+        // full restarts in a row, ~16,000 tokens, which is a loop. So the step
+        // fails honestly instead and waits for a "Try again" tap (condition 3).
+        await markFailed(ctx, stepId, claimedAt, "ai_error", "the AI was too busy to finish checking it");
+        return { kind: "failed", stepId, code: "ai_error", problems: firstProblems.slice(0, 10) };
       }
       const detail =
         err instanceof LearningAiError && err.failure.kind === "timeout" ? "it did not answer in time" : undefined;
@@ -327,12 +336,16 @@ export async function advanceTopic(
         lastGroundingFailures = problems.length;
       } catch (err) {
         if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
-        const wait = onAiError(err);
-        if (wait) {
-          await release(ctx, stepId, claimedAt);
-          return wait;
-        }
-        await markFailed(ctx, stepId, claimedAt, "ai_error", "the meaning check did not answer");
+        // A draft has already been paid for, so a busy check is not a reason
+        // to start again from the search: fail honestly, never loop.
+        const busy = onAiError(err) !== null;
+        await markFailed(
+          ctx,
+          stepId,
+          claimedAt,
+          "ai_error",
+          busy ? "the meaning check was too busy to answer" : "the meaning check did not answer"
+        );
         return { kind: "failed", stepId, code: "ai_error" };
       }
     }
