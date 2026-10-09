@@ -92,6 +92,7 @@ function block(b: Block, i: number, blocks: Block[]): ReactNode {
         <pre
           key={i}
           className={CODE}
+          translate="no"
           tabIndex={0}
           aria-label={isOutput ? "Expected output" : "Code example"}
         >

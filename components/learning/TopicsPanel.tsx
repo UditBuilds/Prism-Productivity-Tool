@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, BookOpen, ChevronRight, GraduationCap, Loader2 } from "lucide-react";
@@ -64,7 +64,7 @@ function TopicRow({ topic }: { topic: TopicSummary }) {
     <li>
       <Link
         href={`/dashboard/learn/topics/${topic.id}`}
-        className={cn("flex min-h-[64px] items-center gap-3 py-3", FOCUS, "rounded-lg")}
+        className={cn("-mx-2 flex min-h-[64px] items-center gap-3 rounded-lg px-2 py-3 hover:bg-surface", FOCUS)}
       >
         <TopicIcon topic={topic} />
         <span className="min-w-0 flex-1">
@@ -110,6 +110,8 @@ export function TopicsPanel() {
   const create = useCreateTopic();
   const [title, setTitle] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [empty, setEmpty] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const demo = topics.isError && topics.error instanceof Error && topics.error.message === DEMO_REFUSAL;
   const active = (topics.data ?? []).filter((t) => !t.archived_at);
@@ -118,7 +120,12 @@ export function TopicsPanel() {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const value = title.trim();
-    if (!value || create.isPending) return;
+    if (create.isPending) return;
+    if (!value) {
+      setEmpty(true);
+      inputRef.current?.focus();
+      return;
+    }
     // The field is cleared only on success: a failed request keeps the text.
     create.mutate(value, {
       onSuccess: (detail) => {
@@ -155,9 +162,15 @@ export function TopicsPanel() {
           </label>
           <input
             id="topic-title"
+            ref={inputRef}
             name="topic"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setEmpty(false);
+            }}
+            aria-invalid={empty || undefined}
+            aria-describedby={empty || create.isError ? "topic-error" : undefined}
             maxLength={TOPIC_TITLE_MAX}
             autoComplete="off"
             placeholder={`e.g. ${SUGGESTION}…`}
@@ -166,7 +179,7 @@ export function TopicsPanel() {
               FOCUS
             )}
           />
-          <button type="submit" className={PRIMARY_PILL} disabled={create.isPending || !title.trim()}>
+          <button type="submit" className={PRIMARY_PILL} disabled={create.isPending}>
             {create.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
@@ -176,9 +189,9 @@ export function TopicsPanel() {
               "Plan this topic"
             )}
           </button>
-          {create.isError && (
-            <p className={cn(META, "text-danger")} role="alert" aria-live="polite">
-              {learningErrorMessage(create.error)}
+          {(empty || create.isError) && (
+            <p id="topic-error" className={cn(META, "text-danger")} role="alert" aria-live="polite">
+              {empty ? "Type what you want to learn first." : learningErrorMessage(create.error)}
             </p>
           )}
         </form>

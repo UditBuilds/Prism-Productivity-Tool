@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AlertCircle, Flag, Globe, Loader2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -84,6 +83,7 @@ function WrongDialog({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           maxLength={WRONG_NOTE_MAX}
+          autoComplete="off"
           rows={4}
           placeholder="e.g. The example does not print what it says…"
           className={cn(
@@ -110,7 +110,6 @@ function WrongDialog({
 }
 
 export function LessonScreen({ topicId, stepId }: { topicId: string; stepId: string }) {
-  const router = useRouter();
   const lessonQ = useLearningLesson(stepId);
   const update = useUpdateStep();
   const job = useLearningJob(topicId, stepId);
@@ -156,7 +155,7 @@ export function LessonScreen({ topicId, stepId }: { topicId: string; stepId: str
   return (
     <section
       aria-label="Lesson"
-      className="fixed inset-0 z-40 overflow-y-auto overscroll-contain bg-background animate-sheet-up motion-reduce:animate-none"
+      className="fixed inset-0 z-40 scroll-pb-48 scroll-pt-20 overflow-y-auto overscroll-contain bg-background animate-sheet-up motion-reduce:animate-none"
     >
       <TopBar topicId={topicId} view={view} />
 
@@ -299,30 +298,20 @@ export function LessonScreen({ topicId, stepId }: { topicId: string; stepId: str
             className="pointer-events-none fixed inset-x-0 bottom-0 h-32 bg-gradient-to-b from-background/0 to-background"
           />
           <div className="fixed inset-x-5 bottom-[calc(20px_+_env(safe-area-inset-bottom,0px))] mx-auto max-w-[640px]">
-            {view.nextStepId ? (
-              <button
-                type="button"
-                className={cn(
-                  "flex h-[52px] w-full items-center justify-center rounded-full bg-accent text-[16px] font-semibold text-white shadow-[0_8px_24px_rgb(var(--accent-rgb)/0.35)]",
-                  PRESS,
-                  FOCUS
-                )}
-                onClick={() => router.push(`/dashboard/learn/topics/${topicId}/lessons/${view.nextStepId}`)}
-              >
-                Next lesson
-              </button>
-            ) : (
-              <Link
-                href={`/dashboard/learn/topics/${topicId}`}
-                className={cn(
-                  "flex h-[52px] w-full items-center justify-center rounded-full bg-accent text-[16px] font-semibold text-white shadow-[0_8px_24px_rgb(var(--accent-rgb)/0.35)]",
-                  PRESS,
-                  FOCUS
-                )}
-              >
-                Back to the steps
-              </Link>
-            )}
+            <Link
+              href={
+                view.nextStepId
+                  ? `/dashboard/learn/topics/${topicId}/lessons/${view.nextStepId}`
+                  : `/dashboard/learn/topics/${topicId}`
+              }
+              className={cn(
+                "flex h-[52px] w-full items-center justify-center rounded-full bg-accent text-[16px] font-semibold text-white shadow-[0_8px_24px_rgb(var(--accent-rgb)/0.35)] hover:bg-accent-hover",
+                PRESS,
+                FOCUS
+              )}
+            >
+              {view.nextStepId ? "Next lesson" : "Back to the steps"}
+            </Link>
           </div>
         </>
       )}

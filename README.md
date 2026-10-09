@@ -84,7 +84,7 @@ Three ingestion pipelines converge on one review queue:
 | Styling | Tailwind CSS v3 · shadcn/ui (Radix primitives) |
 | Server state | TanStack Query v5 |
 | UI state | Zustand v5 |
-| AI | Groq — GPT-OSS 120B (`openai/gpt-oss-120b`) |
+| AI | Groq — GPT-OSS 120B (`openai/gpt-oss-120b`); learning web search on GPT-OSS 20B (`openai/gpt-oss-20b`) |
 | Transcripts | Supadata transcript API |
 | PDF | `pdf-parse` |
 | Charts | Recharts |

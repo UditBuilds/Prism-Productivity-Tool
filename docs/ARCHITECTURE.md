@@ -112,6 +112,18 @@ limit:
 datacenter IPs like Vercel's. Transcript text is cleaned of caption noise,
 chunked, and run through the same generation + merge stage.
 
+## Learning: why its reads are POST
+Every `/api/learning/*` route is a POST, reads included. The production service
+worker uses next-pwa's default `runtimeCaching` (`next.config.mjs` does not
+override it), which caches every same-origin **GET** under `/api/` for 24 hours,
+NetworkFirst, and answers from that cache when the network fails or is slower
+than 10 seconds. Learning is online-only: offline it must say so rather than show
+an old topic list as current. The rule matches GET only, so a POST read is never
+cached and simply fails offline, and the screen shows its offline message. New
+GET URLs would also crowd the 16-entry cache the other screens' offline copies
+use. The service worker is off under `npm run dev`, so this only shows on a
+production build. (`lib/learning/reads.ts` carries the same note.)
+
 ## Spaced repetition
 
 `lib/srs/sm2.ts` is a hand-written **SM-2** implementation. Reviews record a

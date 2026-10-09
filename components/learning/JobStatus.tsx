@@ -33,6 +33,9 @@ export function JobStatus({ state, className }: { state: JobState; className?: s
 
   let icon = <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />;
   let text: string | null = null;
+  // What a screen reader hears. Kept steady while a countdown ticks on screen,
+  // so the live region does not announce a new number every second.
+  let spoken: string | null = null;
   switch (state.phase) {
     case "working":
       text = "Writing the next lesson from web sources…";
@@ -42,10 +45,12 @@ export function JobStatus({ state, className }: { state: JobState; className?: s
         state.reason === "ai_busy"
           ? `The AI is busy. Carrying on in ${left} second${left === 1 ? "" : "s"}.`
           : "Another screen is writing this lesson. Checking again shortly.";
+      spoken = state.reason === "ai_busy" ? "The AI is busy. Carrying on shortly." : null;
       icon = <Clock className="h-4 w-4" aria-hidden />;
       break;
     case "budget":
       text = `Today's learning budget is used up. Lessons carry on in ${hoursOrMinutes(left)}.`;
+      spoken = "Today's learning budget is used up. Lessons carry on later.";
       icon = <Clock className="h-4 w-4" aria-hidden />;
       break;
     case "groq_daily":
@@ -62,7 +67,14 @@ export function JobStatus({ state, className }: { state: JobState; className?: s
   return (
     <p className={cn(META, "flex items-center gap-2", className)} role="status" aria-live="polite">
       {icon}
-      <span>{text}</span>
+      {spoken ? (
+        <>
+          <span aria-hidden>{text}</span>
+          <span className="sr-only">{spoken}</span>
+        </>
+      ) : (
+        <span>{text}</span>
+      )}
     </p>
   );
 }

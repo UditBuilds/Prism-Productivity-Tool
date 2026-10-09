@@ -39,7 +39,7 @@ Run it signed in as yourself, on `npm run dev` or the deployed app.
 - Every card has a non-empty question *and* answer, and the last card's answer
   ends in a complete sentence (not mid-word — that would mean truncation).
 - After Save, a toast reads **"N cards added to <deck> deck"**.
-- The cards are really there: go to **Learn** and confirm the deck's count went
+- The cards are really there: go to **Learn** → **Decks** and confirm the deck's count went
   up by N.
 
 **Fail**
@@ -133,7 +133,7 @@ Both can show at once.
 ## 4. YouTube → flashcards · `/api/youtube/analyze`
 
 **Trigger**
-1. Go to **Learn** (`/dashboard/learn`).
+1. Go to **Learn** (`/dashboard/learn`) and open the **Decks** tab.
 2. In the YouTube panel, paste a URL for a video **with captions** and a decent
    amount of speech (10+ minutes is a good test).
 3. Set **Cards** and optionally a **Deck** name.
@@ -143,7 +143,7 @@ Both can show at once.
 - The button steps through "Fetching transcript…" then "Generating cards…".
 - Cards are inserted **straight into the deck** — there is no draft/save step on
   this route, unlike items 1 and 3.
-- Open the deck on **Learn** and confirm the new cards are there.
+- Open the deck on **Learn** → **Decks** and confirm the new cards are there.
 - No card says anything like "the video", "the speaker", or "as mentioned" —
   the prompt forbids it and cards must stand alone.
 - If some transcript sections were refused, an amber sub-line appears under the

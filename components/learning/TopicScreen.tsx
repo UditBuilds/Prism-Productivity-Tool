@@ -83,7 +83,7 @@ function StepRow({ step, n, topicId, onChanged }: { step: StepSummary; n: number
       ) : (
         <Link
           href={`/dashboard/learn/topics/${topicId}/lessons/${step.id}`}
-          className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-lg", FOCUS)}
+          className={cn("-mx-2 flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 hover:bg-surface", FOCUS)}
         >
           <StepNumber step={step} n={n} />
           <span className="min-w-0 flex-1">

@@ -72,8 +72,7 @@ screens), JetBrains Mono (code only).
 - Quote box: accent-tint panel, serif italic.
 
 ## Motion
-Defined with the first migrated screen. Rules that already hold: transform and opacity
-only, about 200ms ease-out, and prefers-reduced-motion is respected.
+Screens enter with a 200ms ease-out slide and fade. Buttons press to 0.98. Only transform and opacity animate. Reduced-motion users get no movement.
 
 ## Migration status
 | Screen | Status |
