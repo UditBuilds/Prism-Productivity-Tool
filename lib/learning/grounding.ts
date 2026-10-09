@@ -394,7 +394,7 @@ export function checkGrounding(
   // Python, Graph API… — were in the sources, just not in that one quote. An
   // invented name is in no source and is still rejected; what the sentence
   // says about a name is the judge's to check.
-  const names = new Set([...tokens(`${ctx.topicTitle} ${ctx.stepTitle}`, true), ...sourceTokens]);
+  const names = new Set([...tokens(`${ctx.topicTitle} ${ctx.stepTitle}`, true), ...Array.from(sourceTokens)]);
 
   let p = 0;
   let l = 0;

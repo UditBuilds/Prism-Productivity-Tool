@@ -676,7 +676,7 @@ console.log("\nname rule: in the quote or anywhere in the given sources");
   );
   ok(
     "a name in no source is still rejected",
-    grounding.checkGrounding(l([c("Microsoft keeps the same core features available.", 2, "keep the same core features available to you")]), srcs, ctx).some((p) => p.reason.includes('"Microsoft" is in no source'))
+    grounding.checkGrounding(l([c("It was made by Microsoft and keeps the same core features available.", 2, "keep the same core features available to you")]), srcs, ctx).some((p) => p.reason.includes('"Microsoft" is in no source'))
   );
 }
 
