@@ -155,9 +155,17 @@
 
   /* ── Pre-redesign literals ──────────────────────────────────────────
      Colours that were hard-coded while the app was dark-only. Each is a
-     variable now: the dark value is the EXACT old literal (noted beside
-     it), so dark renders unchanged; the light value maps to a DESIGN.md
-     token. Each one should disappear when its screen is migrated.
+     variable now: the dark value is what master ACTUALLY RENDERED (the
+     old literal is noted beside it), so dark renders unchanged; the light
+     value maps to a DESIGN.md token. Each one should disappear when its
+     screen is migrated.
+
+     "Actually rendered" is not always the literal. The production CSS
+     minifier rewrote four of them through hsla() with whole-percent
+     lightness, e.g. rgb(14 14 14 / .95) shipped as hsla(0,0%,5%,.95) =
+     12.75 per channel. Those four carry the fractional value the minifier
+     produced, so a pixel diff against master stays at zero.
+
      RGB triplets (optionally "/ alpha") for rgb(var(--x)), except the two
      dashboard block values, which were HSL and stay HSL. */
   :root {
@@ -202,14 +210,14 @@
   }
   .dark {
     --field: 13 13 13; /* #0D0D0D */
-    --sheet: 14 14 14; /* #0E0E0E */
+    --sheet: 12.75 12.75 12.75; /* #0E0E0E/95, shipped as hsla(0,0%,5%,.95) */
     --tab-track: 14 14 14; /* #0E0E0E */
-    --floating: 17 17 17; /* #111111 */
+    --floating: 17.85 17.85 17.85; /* #111111/80, shipped as hsla(0,0%,7%,.8) */
     --toast: 26 26 26; /* #1A1A1A */
     --toast-foreground: 255 255 255; /* #FFFFFF */
     --toast-border: 42 42 42; /* #2A2A2A */
-    --glass: 10 10 10 / 0.65;
-    --landing-glass: 14 14 14 / 0.72;
+    --glass: 10.2 10.2 10.2 / 0.65; /* rgb(10 10 10/.65), shipped as hsla(0,0%,4%,.65) */
+    --landing-glass: 12.75 12.75 12.75 / 0.72; /* rgb(14 14 14/.72), shipped as hsla(0,0%,5%,.72) */
     --block-fill: 228 10% 13%; /* #1E1F24, PR #48 */
     --block-frame: 224 10% 22%; /* #32353E, PR #48 */
     --lift-shadow: 0 0 0 / 0.4;
