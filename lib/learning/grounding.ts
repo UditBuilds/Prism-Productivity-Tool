@@ -300,7 +300,7 @@ function checkClaim(
   for (const name of properNames) {
     const lower = name.toLowerCase();
     if (!evidenceTokens.has(lower) && !names.has(lower)) {
-      problems.push({ where, text: claim.text, reason: `the name "${name}" is not in its quote` });
+      problems.push({ where, text: claim.text, reason: `the name "${name}" is in no source` });
     }
   }
 
@@ -387,8 +387,14 @@ export function checkGrounding(
   const minCoverage = ctx.minCoverage ?? MIN_COVERAGE;
   const allSourceText = Array.from(sources.values()).join(" ");
   const codeText = lessonCodeText(lesson);
-  const names = new Set(tokens(`${ctx.topicTitle} ${ctx.stepTitle}`, true));
   const sourceTokens = new Set(tokens(allSourceText, true));
+  // A capitalised name may come from its own quote, the topic and step titles,
+  // or ANY of the pages the lesson was given (Udit's decision, 2026-10-09):
+  // measured on 7 real drafts, all 14 names this rule flagged — AI, API, LLM,
+  // Python, Graph API… — were in the sources, just not in that one quote. An
+  // invented name is in no source and is still rejected; what the sentence
+  // says about a name is the judge's to check.
+  const names = new Set([...tokens(`${ctx.topicTitle} ${ctx.stepTitle}`, true), ...sourceTokens]);
 
   let p = 0;
   let l = 0;

@@ -659,5 +659,26 @@ console.log("\nsource tags and paragraph splitting");
   ok("one paragraph is no longer a rule failure", !lessonFormat.checkLessonRules(twelve).some((p) => p.includes("paragraph")));
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+console.log("\nname rule: in the quote or anywhere in the given sources");
+{
+  const srcs = [
+    { n: 1, text: "The Graph API and the Functional API share core features such as persistence and streaming." },
+    { n: 2, text: "Both styles of writing a workflow keep the same core features available to you." },
+  ];
+  const c = (text, source, quote) => ({ text, support: [{ source, quote }] });
+  const l = (claims) => ({ title: "T", summary: "S.", unparsed: [], example: null, blocks: [{ type: "paragraph", sentences: claims }] });
+  const ctx = { topicTitle: "LangGraph basics", stepTitle: "Why use LangGraph" };
+  eq(
+    "a name from ANOTHER given source passes (real false flag, 2026-10-09: 'API')",
+    grounding.checkGrounding(l([c("Either the Graph API or the Functional API keeps the same core features.", 2, "keep the same core features available to you")]), srcs, ctx),
+    []
+  );
+  ok(
+    "a name in no source is still rejected",
+    grounding.checkGrounding(l([c("Microsoft keeps the same core features available.", 2, "keep the same core features available to you")]), srcs, ctx).some((p) => p.reason.includes('"Microsoft" is in no source'))
+  );
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) process.exit(1);
