@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { AlertCircle, ChevronLeft, Loader2, MoreHorizontal } from "lucide-react";
+import { AlertCircle, ChevronLeft, Clock, Loader2, MoreHorizontal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { StepSummary } from "@/lib/learning/types";
@@ -190,7 +190,9 @@ export function TopicScreen({ topicId }: { topicId: string }) {
 
       <p className={cn(EYEBROW, "mt-5")}>{t.archived_at ? "Archived topic" : "Topic"}</p>
       <h1 className={cn(TITLE, "mt-1")}>{t.title}</h1>
-      <p className={cn(META, "mt-1", t.status === "failed" && "text-danger")}>{topicStateLine(t)}</p>
+      {t.status !== "planning" && (
+        <p className={cn(META, "mt-1", t.status === "failed" && "text-danger")}>{topicStateLine(t)}</p>
+      )}
       <JobStatus state={job.state} className="mt-3" />
 
       {t.status === "failed" && (
@@ -204,8 +206,14 @@ export function TopicScreen({ topicId }: { topicId: string }) {
 
       {t.status === "planning" && (
         <p className={cn(META, "mt-4 flex items-center gap-2")} role="status">
-          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
-          {plan.isError ? learningErrorMessage(plan.error) : "The AI is planning the steps. This takes a few seconds."}
+          {t.error_message ? (
+            <Clock className="h-4 w-4 shrink-0" aria-hidden />
+          ) : (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden />
+          )}
+          {plan.isError
+            ? learningErrorMessage(plan.error)
+            : t.error_message ?? "The AI is planning the steps. This takes a few seconds."}
         </p>
       )}
 

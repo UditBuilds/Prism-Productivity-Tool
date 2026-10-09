@@ -141,6 +141,8 @@ const DERIVATIONAL: [RegExp, string][] = [
   [/ness$/, ""],
   [/ate$/, ""],
   [/ion$/, ""],
+  // "integrated" → (ed) "integrat" must meet "integration" → (ation) "integr".
+  [/at$/, ""],
 ];
 
 function stem(w: string): string {
@@ -326,6 +328,43 @@ export function exampleNames(code: string): string[] {
   return Array.from(new Set([...called, ...imported])).filter(
     (n) => !defined.has(n) && !PY_BUILTIN_SYNTAX.has(n)
   );
+}
+
+/**
+ * Fix source NUMBERS before the check runs: when a quote is not in the
+ * source it names but is found word for word in another source the writer
+ * was given, the number is corrected to that source. The evidence is real;
+ * only the label was wrong (measured 2026-10-09: 3 of 3 "not in source"
+ * flags on one draft were real quotes from a different source). Without
+ * this, the lesson's source list would credit the wrong page.
+ *
+ * Returns a new lesson and how many labels were corrected. A quote found in
+ * no source is left alone, for the check to reject.
+ */
+export function relabelSources(
+  lesson: DraftLesson,
+  given: GroundingSource[]
+): { lesson: DraftLesson; corrected: number } {
+  const hay = given.map((s) => ({ n: s.n, text: normalize(s.text), code: codeOf(s.text) }));
+  let corrected = 0;
+  const fix = (supports: Support[]): Support[] =>
+    supports.map((s) => {
+      const named = hay.find((h) => h.n === s.source);
+      if (named && (quoteFound(s.quote, named.text) || quoteFound(s.quote, named.code))) return s;
+      const other = hay.find((h) => h.n !== s.source && quoteFound(s.quote, h.text));
+      if (!other) return s;
+      corrected += 1;
+      return { ...s, source: other.n };
+    });
+  const blocks = lesson.blocks.map((b) =>
+    b.type === "paragraph"
+      ? { ...b, sentences: b.sentences.map((c) => ({ ...c, support: fix(c.support) })) }
+      : b.type === "list"
+        ? { ...b, items: b.items.map((c) => ({ ...c, support: fix(c.support) })) }
+        : b
+  );
+  const example = lesson.example ? { ...lesson.example, support: fix(lesson.example.support) } : null;
+  return { lesson: { ...lesson, blocks, example }, corrected };
 }
 
 /** Run every rule. An empty list means the lesson is tied to its sources. */

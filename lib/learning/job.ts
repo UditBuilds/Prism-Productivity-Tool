@@ -9,7 +9,7 @@ import {
   STALE_CLAIM_MS,
   LEARNING_WRITE_MODEL,
 } from "@/lib/learning/constants";
-import { checkGrounding, type GroundingProblem } from "@/lib/learning/grounding";
+import { checkGrounding, relabelSources, type GroundingProblem } from "@/lib/learning/grounding";
 import {
   LearningAiError,
   searchForStep,
@@ -295,12 +295,7 @@ export async function advanceTopic(
     let problems: string[];
     let parsed: DraftLesson | null = null;
     try {
-      if (draft.invalidJson) {
-        throw new LessonFormatError(
-          "the answer was not valid JSON; inside JSON strings use ' instead of the double-quote character"
-        );
-      }
-      parsed = parseDraftLesson(draft.content);
+      parsed = relabelSources(parseDraftLesson(draft.content), grounding).lesson;
       const groundingProblems = describe(
         checkGrounding(parsed, grounding, { topicTitle: topic.title, stepTitle: claimed.title })
       );
@@ -310,7 +305,7 @@ export async function advanceTopic(
       lastGroundingFailures = 0;
       problems = [err instanceof LessonFormatError ? err.message : "the lesson could not be read"];
     }
-    await log(ctx, stepId, { ...draft.record, outcome: draft.invalidJson || problems.length ? "invalid" : "ok" });
+    await log(ctx, stepId, { ...draft.record, outcome: problems.length ? "invalid" : "ok" });
     await debugDump(stepId, attempt, {
       topic: topic.title,
       step: claimed.title,

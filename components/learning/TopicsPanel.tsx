@@ -29,7 +29,7 @@ import {
 const SUGGESTION = "Python for AI work, from zero";
 
 export function topicStateLine(t: TopicSummary): string {
-  if (t.status === "planning") return "Planning the steps…";
+  if (t.status === "planning") return t.error_message ?? "Planning the steps…";
   if (t.status === "failed") return t.error_message ?? "Planning failed. Open it to try again.";
   const parts = [`${t.counts.ready} of ${t.counts.steps} lessons ready`];
   if (t.counts.writing > 0) parts.push("writing");

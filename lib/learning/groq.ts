@@ -215,35 +215,15 @@ export async function searchForStep(query: string): Promise<SearchResult> {
 export interface WriteAttempt {
   content: string;
   truncated: boolean;
-  /** Groq refused the answer as invalid JSON (HTTP 400 json_validate_failed). */
-  invalidJson: boolean;
   record: CallRecord;
 }
 
 /**
- * Groq's JSON mode answers HTTP 400 "Failed to validate JSON" when the
- * model's output does not parse, and puts the text in `failed_generation`.
- * Measured 2026-10-09: a 13-second, quote-heavy lesson came back this way.
- * The text is returned so the corrective turn can show the model its answer.
- */
-function failedGeneration(err: unknown): string | null {
-  if (!(err instanceof APIError) || err.status !== 400) return null;
-  const body = err.error as { error?: { failed_generation?: unknown }; failed_generation?: unknown } | undefined;
-  const text = body?.error?.failed_generation ?? body?.failed_generation;
-  if (/failed to validate json/i.test(err.message) || typeof text === "string") {
-    return typeof text === "string" ? text : "";
-  }
-  return null;
-}
-
-/** Groq reports no usage for a refused generation; count ~4 characters a token. */
-function estimateTokens(...texts: string[]): number {
-  return Math.ceil(texts.reduce((n, t) => n + t.length, 0) / 4);
-}
-
-/**
- * One draft. `previous` + `problems` turn it into the corrective second turn:
- * the first draft is sent back with the list of checks it failed.
+ * One draft, as plain text in the line format lesson-format.ts parses — not
+ * JSON mode, which refused 3 of 9 quote-heavy drafts outright (HTTP 400
+ * "Failed to validate JSON", measured 2026-10-09). `retry` turns this into
+ * the corrective second turn: the first draft is sent back with the list of
+ * checks it failed.
  */
 export async function writeDraft(
   userMessage: string,
@@ -265,7 +245,6 @@ export async function writeDraft(
       {
         model: LEARNING_WRITE_MODEL,
         messages,
-        response_format: { type: "json_object" },
         reasoning_effort: "low",
         temperature: 0.3,
         max_tokens: maxTokens,
@@ -273,23 +252,6 @@ export async function writeDraft(
       { timeout: WRITE_TIMEOUT_MS }
     );
   } catch (err) {
-    const generated = failedGeneration(err);
-    if (generated !== null) {
-      const prompt = messages.map((m) => m.content).join("");
-      const prompt_tokens = estimateTokens(prompt);
-      const completion_tokens = estimateTokens(generated);
-      return {
-        content: generated,
-        truncated: false,
-        invalidJson: true,
-        record: {
-          ...record("write", LEARNING_WRITE_MODEL, "invalid", undefined, startedAt),
-          prompt_tokens,
-          completion_tokens,
-          total_tokens: prompt_tokens + completion_tokens,
-        },
-      };
-    }
     throw failed("write", LEARNING_WRITE_MODEL, err, startedAt);
   }
   const choice = completion.choices[0];
@@ -298,7 +260,6 @@ export async function writeDraft(
   return {
     content,
     truncated,
-    invalidJson: false,
     record: record("write", LEARNING_WRITE_MODEL, truncated ? "truncated" : content ? "ok" : "empty", completion.usage, startedAt),
   };
 }

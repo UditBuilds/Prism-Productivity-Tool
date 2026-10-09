@@ -441,26 +441,41 @@ console.log("\ngrounding check");
 console.log("\nlesson rules and rendering");
 {
   const words = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
-  const draft = lessonFormat.parseDraftLesson(
-    JSON.stringify({
-      title: "Lists",
-      summary: "What a list is.",
-      blocks: [
-        { type: "heading", text: "## What a list is" },
-        { type: "paragraph", sentences: [{ text: words(200), support: [{ source: 1, quote: "a b c d" }] }] },
-        { type: "list", items: [{ text: words(110), support: [{ source: "1", quote: "a b c d" }] }] },
-        { type: "code", text: "not a block type" },
-      ],
-      example: { after_block: 1, code: "nums = [1, 2]\nprint(nums[0])\n", output: "1\n", support: [{ source: 1, quote: "q q q q" }] },
-      extra_example: { code: "ignored" },
-    })
-  );
-  eq("unknown block types are dropped", draft.blocks.map((b) => b.type), ["heading", "paragraph", "list"]);
+  const F = "```";
+  const body = [
+    "TITLE: Lists",
+    "SUMMARY: What a list is.",
+    "",
+    "## What a list is",
+    `[1] «a b c d» → ${words(100)}`,
+    `[2] “e f g h” → ${words(100)}`,
+    "",
+    `- [1] «a b c d» [2] "e f g h" → ${words(110)}`,
+    "",
+    "EXAMPLE [1] «q q q q»",
+    `${F}python`, "nums = [1, 2]", "print(nums[0])", F,
+    "OUTPUT",
+    `${F}text`, "1", F,
+    "",
+    "EXAMPLE [1] «a second example is ignored»",
+    `${F}python`, "print(2)", F,
+  ];
+  const draft = lessonFormat.parseDraftLesson(body.join("\n"));
+  eq("blocks are read from the line format", draft.blocks.map((b) => b.type), ["heading", "paragraph", "list"]);
   eq("a heading's markdown hashes are stripped", draft.blocks[0].text, "What a list is");
-  eq("a numeric source given as a string is read", draft.blocks[2].items[0].support[0].source, 1);
-  eq("there is exactly one example field", draft.example.code, "nums = [1, 2]\nprint(nums[0])");
+  eq("two sentences make one paragraph until a blank line", draft.blocks[1].sentences.length, 2);
+  eq("«», “” and \"\" all delimit a quote", [draft.blocks[1].sentences[1].support[0].quote, draft.blocks[2].items[0].support.map((s) => s.source)], ["e f g h", [1, 2]]);
+  eq("only the first EXAMPLE is kept", draft.example.code, "nums = [1, 2]\nprint(nums[0])");
+  eq("the example keeps its output and its quote", [draft.example.output, draft.example.support[0].quote], ["1", "q q q q"]);
+  eq("nothing was left unparsed", draft.unparsed, []);
   eq("prose word count excludes the example", lessonFormat.proseWordCount(draft), 314);
   eq("a 314-word lesson with an example and output passes the rules", lessonFormat.checkLessonRules(draft), []);
+
+  const chatty = lessonFormat.parseDraftLesson(["Sure! Here is your lesson.", ...body, "A sentence with no quote at all."].join("\n"));
+  eq("lines outside the format are kept out of the lesson", chatty.unparsed, ["Sure! Here is your lesson.", "A sentence with no quote at all."]);
+  ok("…and reported, so the corrective turn can fix them", lessonFormat.checkLessonRules(chatty).some((p) => p.startsWith("2 lines were not in the format")));
+  const stray = lessonFormat.parseDraftLesson([...body.slice(0, 7), `${F}python`, "print(1)", F].join("\n"));
+  ok("a code block outside EXAMPLE is not shown and is reported", stray.unparsed.includes("a code block outside EXAMPLE") && stray.example === null);
 
   const short = { ...draft, blocks: [draft.blocks[0], { type: "paragraph", sentences: [{ text: words(50), support: [] }] }, { type: "paragraph", sentences: [{ text: "x", support: [] }] }] };
   ok("under 300 words is refused", lessonFormat.checkLessonRules(short).some((p) => p.includes("300 to 500")));
@@ -476,17 +491,40 @@ console.log("\nlesson rules and rendering");
   eq(
     "the stored body parses back into the blocks the reader draws",
     blocks.map((b) => b.type),
-    ["heading", "paragraph", "code", "paragraph", "code", "list"]
+    ["heading", "paragraph", "list", "code", "paragraph", "code"]
   );
-  eq("the example is followed by its labelled output", [blocks[2].value, blocks[4].value], ["nums = [1, 2]\nprint(nums[0])", "1"]);
+  eq("the example is followed by its labelled output", [blocks[3].value, blocks[5].value], ["nums = [1, 2]\nprint(nums[0])", "1"]);
   eq("reading time: 314 words is 2 minutes", lessonFormat.minutesToRead(md), 2);
 
   try {
-    lessonFormat.parseDraftLesson("Sure! Here is the lesson:");
-    eq("non-JSON throws LessonFormatError", "no error", "LessonFormatError");
+    lessonFormat.parseDraftLesson("Sure! Here is the lesson:\nIt is about lists.");
+    eq("an answer with no lesson in it throws LessonFormatError", "no error", "LessonFormatError");
   } catch (e) {
-    eq("non-JSON throws LessonFormatError", e.name, "LessonFormatError");
+    eq("an answer with no lesson in it throws LessonFormatError", e.name, "LessonFormatError");
   }
+}
+
+console.log("\nsource relabelling");
+{
+  const given = [
+    { n: 1, text: "LangGraph is inspired by Pregel and Apache Beam. The public interface draws inspiration from NetworkX." },
+    { n: 3, text: "LangGraph’s built-in memory stores conversation histories and maintains context over time." },
+  ];
+  const draft = {
+    title: "LangGraph", summary: "What it is.", unparsed: [], example: null,
+    blocks: [{ type: "paragraph", sentences: [
+      { text: "LangGraph is inspired by Pregel and Apache Beam.", support: [{ source: 3, quote: "LangGraph is inspired by Pregel and Apache Beam" }] },
+      { text: "Its memory keeps conversation histories over time.", support: [{ source: 3, quote: "built-in memory stores conversation histories" }] },
+      { text: "It was made at Google.", support: [{ source: 1, quote: "LangGraph was made at Google in 2020" }] },
+    ] }],
+  };
+  const { lesson, corrected } = grounding.relabelSources(draft, given);
+  eq("a real quote under the wrong number is moved to the source that has it", lesson.blocks[0].sentences[0].support[0].source, 1);
+  eq("a quote already in its source is left alone", lesson.blocks[0].sentences[1].support[0].source, 3);
+  eq("a quote in no source is left for the check to reject", lesson.blocks[0].sentences[2].support[0].source, 1);
+  eq("one label was corrected", corrected, 1);
+  ok("the input lesson is not changed", draft.blocks[0].sentences[0].support[0].source === 3);
+  ok("…and the check still rejects the invented quote", grounding.checkGrounding(lesson, given, { topicTitle: "LangGraph basics", stepTitle: "What LangGraph is" }).some((p) => p.reason.includes("not in source 1")));
 }
 
 // ─────────────────────────────────────────────────────────────────────────

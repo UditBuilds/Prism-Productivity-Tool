@@ -202,23 +202,28 @@ export type PlanOutcome =
  * when the AI is busy or the plan comes back unusable.
  */
 export async function runPlan(supabase: Client, userId: string, topic: LearningTopic): Promise<PlanOutcome> {
-  const rate = checkAiRateLimit(userId);
-  if (!rate.allowed) {
-    return { kind: "waiting", retryAfterSeconds: rate.retryAfterSeconds, message: "Too many AI requests in a short time." };
-  }
-  const budget = await budgetState(supabase, userId);
-  if (budget.retryAfterSeconds > 0) {
-    return {
-      kind: "waiting",
-      retryAfterSeconds: budget.retryAfterSeconds,
-      message: "Today's learning budget is used up.",
-    };
-  }
-
   const setTopic = async (patch: Database["public"]["Tables"]["learning_topics"]["Update"]) => {
     const { error } = await supabase.from("learning_topics").update(patch).eq("id", topic.id).eq("user_id", userId);
     if (error) console.error("[learning] topic update failed:", error.message);
   };
+  // A topic that cannot be planned YET stays "planning", and says why in
+  // error_message, so the screen shows the real reason (and still does after
+  // a reload) instead of "planning…" for hours.
+  const wait = async (retryAfterSeconds: number, message: string): Promise<PlanOutcome> => {
+    await setTopic({ status: "planning", error_message: message });
+    return { kind: "waiting", retryAfterSeconds, message };
+  };
+
+  const rate = checkAiRateLimit(userId);
+  if (!rate.allowed) return wait(rate.retryAfterSeconds, "Too many AI requests in a short time. Planning carries on in a moment.");
+  const budget = await budgetState(supabase, userId);
+  if (budget.retryAfterSeconds > 0) {
+    const hours = Math.max(1, Math.round(budget.retryAfterSeconds / 3600));
+    return wait(
+      budget.retryAfterSeconds,
+      `Today's learning budget is used up. Planning can start again in about ${hours} hour${hours === 1 ? "" : "s"}.`
+    );
+  }
 
   let plan;
   try {
@@ -227,8 +232,7 @@ export async function runPlan(supabase: Client, userId: string, topic: LearningT
     if (err instanceof LearningAiError) {
       await logCall(supabase, userId, { topicId: topic.id, stepId: null }, err.record);
       if (err.failure.kind === "minute") {
-        await setTopic({ status: "planning", error_message: null });
-        return { kind: "waiting", retryAfterSeconds: err.failure.retryAfterSeconds, message: "The AI is busy right now." };
+        return wait(err.failure.retryAfterSeconds, "The AI is busy right now. Planning carries on in a moment.");
       }
       if (err.failure.kind === "day") {
         await setTopic({ status: "failed", error_message: "The AI's daily limit is reached. Try again tomorrow." });

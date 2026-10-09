@@ -8,14 +8,36 @@ import { URL_IN_TEXT } from "@/lib/learning/sources";
  * The lesson as the writer returns it, and the rules checked in CODE rather
  * than trusted to the prompt. Pure.
  *
- * The writer does not return Markdown. It returns structured blocks in which
- * every sentence carries the source number and the exact words it rests on
- * (`support`). That structure is what makes the grounding check
- * (grounding.ts) possible, and it also makes two of decision 11's rules hold
- * by construction: there is ONE optional `example` field, so a lesson cannot
- * carry three code blocks (2 of 3 probe lessons did when the rule lived only in
- * the prompt), and an example cannot be stored without its expected output.
- * The stored `body` is Markdown rendered from this structure.
+ * The writer does not return Markdown and does not return JSON. It returns a
+ * line format in which every sentence carries the number of a source and the
+ * exact words it rests on:
+ *
+ *   TITLE: What a list is
+ *   SUMMARY: A list keeps many values in order, in one variable.
+ *   ## Making a list
+ *   [1] «A list holds many values in order» → A list keeps many values, in order.
+ *   - [2] «indexes start at 0» → The first item is at position 0.
+ *   EXAMPLE [2] «fruits = ["apple", "pear"]»
+ *   ```python
+ *   ...
+ *   ```
+ *   OUTPUT
+ *   ```text
+ *   ...
+ *   ```
+ *
+ * Why not JSON: measured 2026-10-09, 3 of 9 nested-JSON drafts were refused
+ * by Groq's JSON mode ("Failed to validate JSON", HTTP 400) — quotes copied
+ * from web pages are full of double quotes, and one structural slip loses
+ * the whole lesson. A line that does not parse here is reported and the rest
+ * survives.
+ *
+ * The structure is what makes the grounding check (grounding.ts) possible,
+ * and it also makes two of decision 11's rules hold by construction: only one
+ * EXAMPLE is read, so a lesson cannot carry three code blocks (2 of 3 probe
+ * lessons did when the rule lived only in the prompt), and an example cannot
+ * be stored without its expected output. The stored `body` is Markdown
+ * rendered from this structure.
  */
 
 export interface Support {
@@ -46,6 +68,8 @@ export interface DraftLesson {
   summary: string;
   blocks: LessonBlock[];
   example: LessonExample | null;
+  /** Non-empty lines that were not in the format — reported, never shown. */
+  unparsed: string[];
 }
 
 export class LessonFormatError extends Error {
@@ -55,80 +79,129 @@ export class LessonFormatError extends Error {
   }
 }
 
-function str(v: unknown): string {
-  return typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
+function clean(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
 }
 
-function parseSupport(v: unknown): Support[] {
-  if (!Array.isArray(v)) return [];
-  const out: Support[] = [];
-  for (const raw of v.slice(0, 3)) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const r = raw as Record<string, unknown>;
-    const source = typeof r.source === "number" ? r.source : Number(r.source);
-    const quote = str(r.quote);
-    if (Number.isInteger(source) && quote) out.push({ source, quote });
-  }
-  return out;
+/** `[2] «quote»` pairs, also accepting “quote” or "quote" as the delimiters. */
+const SUPPORT_RE = /\[(\d{1,2})\]\s*(?:«([^»]+)»|“([^”]+)”|"([^"]+)")/g;
+const CLAIM_RE = /^(-\s+|\*\s+)?((?:\[\d{1,2}\]\s*(?:«[^»]+»|“[^”]+”|"[^"]+")\s*)+)(?:→|->|=>|—>)\s*(.+)$/;
+
+function supportsIn(s: string): Support[] {
+  return Array.from(s.matchAll(SUPPORT_RE), (m) => ({
+    source: Number(m[1]),
+    quote: clean(m[2] ?? m[3] ?? m[4] ?? ""),
+  }))
+    .filter((x) => Number.isInteger(x.source) && x.quote)
+    .slice(0, 3);
 }
 
-function parseClaims(v: unknown): Claim[] {
-  if (!Array.isArray(v)) return [];
-  return v
-    .map((raw) => {
-      if (typeof raw !== "object" || raw === null) return null;
-      const r = raw as Record<string, unknown>;
-      const text = str(r.text);
-      return text ? { text, support: parseSupport(r.support) } : null;
-    })
-    .filter((c): c is Claim => c !== null);
+function fence(lines: string[], from: number): { body: string; next: number } | null {
+  let i = from;
+  while (i < lines.length && !lines[i].trim()) i++;
+  if (i >= lines.length || !lines[i].trim().startsWith("```")) return null;
+  const body: string[] = [];
+  i++;
+  while (i < lines.length && !lines[i].trim().startsWith("```")) body.push(lines[i++]);
+  return { body: body.join("\n").replace(/^\n+|\s+$/g, ""), next: i + 1 };
 }
 
-/** Parse the writer's JSON into a DraftLesson. Throws on a broken shape. */
+/** Parse the writer's answer. Throws only when nothing usable came back. */
 export function parseDraftLesson(content: string): DraftLesson {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new LessonFormatError("The AI returned a lesson that was not valid JSON.");
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new LessonFormatError("The AI returned an empty lesson.");
-  }
-  const p = parsed as Record<string, unknown>;
-  const blocks: LessonBlock[] = [];
-  for (const raw of Array.isArray(p.blocks) ? p.blocks : []) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const b = raw as Record<string, unknown>;
-    if (b.type === "heading") {
-      const text = str(b.text).replace(/^#+\s*/, "");
-      if (text) blocks.push({ type: "heading", text });
-    } else if (b.type === "paragraph") {
-      const sentences = parseClaims(b.sentences);
-      if (sentences.length) blocks.push({ type: "paragraph", sentences });
-    } else if (b.type === "list") {
-      const items = parseClaims(b.items);
-      if (items.length) blocks.push({ type: "list", items });
-    }
-  }
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const lesson: DraftLesson = { title: "", summary: "", blocks: [], example: null, unparsed: [] };
+  let open: { type: "paragraph"; sentences: Claim[] } | { type: "list"; items: Claim[] } | null = null;
+  const close = () => {
+    if (open) lesson.blocks.push(open);
+    open = null;
+  };
 
-  let example: LessonExample | null = null;
-  if (typeof p.example === "object" && p.example !== null) {
-    const e = p.example as Record<string, unknown>;
-    const code = typeof e.code === "string" ? e.code.replace(/\r\n/g, "\n").replace(/^\n+|\s+$/g, "") : "";
-    const output = typeof e.output === "string" ? e.output.replace(/\r\n/g, "\n").replace(/^\n+|\s+$/g, "") : "";
-    const afterBlock = Number(e.after_block ?? e.afterBlock);
-    if (code) {
-      example = {
-        code,
-        output,
-        afterBlock: Number.isInteger(afterBlock) ? afterBlock : blocks.length - 1,
-        support: parseSupport(e.support),
-      };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      close();
+      continue;
     }
+    const title = /^TITLE\s*:\s*(.+)$/i.exec(line);
+    if (title) {
+      lesson.title = clean(title[1]);
+      continue;
+    }
+    const summary = /^SUMMARY\s*:\s*(.+)$/i.exec(line);
+    if (summary) {
+      lesson.summary = clean(summary[1]);
+      continue;
+    }
+    const heading = /^#{1,6}\s+(.+)$/.exec(line);
+    if (heading) {
+      close();
+      lesson.blocks.push({ type: "heading", text: clean(heading[1]) });
+      continue;
+    }
+    if (/^EXAMPLE\b/i.test(line)) {
+      close();
+      const code = fence(lines, i + 1);
+      if (!code) {
+        lesson.unparsed.push(line);
+        continue;
+      }
+      i = code.next - 1;
+      let output = "";
+      let j = code.next;
+      while (j < lines.length && !lines[j].trim()) j++;
+      if (j < lines.length && /^OUTPUT\b/i.test(lines[j].trim())) {
+        const out = fence(lines, j + 1);
+        if (out) {
+          output = out.body;
+          i = out.next - 1;
+        }
+      }
+      // Only the first example is kept: one example per lesson, by construction.
+      if (!lesson.example && code.body) {
+        lesson.example = {
+          code: code.body,
+          output,
+          afterBlock: lesson.blocks.length - 1,
+          support: supportsIn(line),
+        };
+      }
+      continue;
+    }
+    if (line.startsWith("```")) {
+      // A stray code block outside EXAMPLE: skip it whole, and say so.
+      const stray = fence(lines, i);
+      lesson.unparsed.push("a code block outside EXAMPLE");
+      if (stray) i = stray.next - 1;
+      continue;
+    }
+    const claim = CLAIM_RE.exec(line);
+    if (claim) {
+      const isItem = Boolean(claim[1]);
+      const c: Claim = { text: clean(claim[3]), support: supportsIn(claim[2]) };
+      if (!c.text) continue;
+      if (isItem) {
+        if (!open || open.type !== "list") {
+          close();
+          open = { type: "list", items: [] };
+        }
+        open.items.push(c);
+      } else {
+        if (!open || open.type !== "paragraph") {
+          close();
+          open = { type: "paragraph", sentences: [] };
+        }
+        open.sentences.push(c);
+      }
+      continue;
+    }
+    lesson.unparsed.push(line.slice(0, 120));
   }
+  close();
 
-  return { title: str(p.title), summary: str(p.summary), blocks, example };
+  if (!lesson.title && lesson.blocks.length === 0) {
+    throw new LessonFormatError("The AI's answer was not in the lesson format.");
+  }
+  return lesson;
 }
 
 /** Every claim in reading order. */
@@ -159,6 +232,11 @@ export const MAX_EXAMPLE_LINES = 12;
  */
 export function checkLessonRules(lesson: DraftLesson): string[] {
   const problems: string[] = [];
+  if (lesson.unparsed.length > 0) {
+    problems.push(
+      `${lesson.unparsed.length} line${lesson.unparsed.length === 1 ? " was" : "s were"} not in the format; every sentence must be [n] «exact quote» → sentence`
+    );
+  }
   if (!lesson.title || lesson.title.length > 90) problems.push("the title must be 1 to 90 characters");
   if (!lesson.summary || lesson.summary.length > 200) problems.push("the summary must be one sentence under 200 characters");
   if (lesson.blocks.filter((b) => b.type !== "heading").length < 2) problems.push("the lesson needs at least two paragraphs");
