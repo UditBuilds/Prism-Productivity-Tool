@@ -19,6 +19,8 @@ const config: Config = {
           "Roboto",
           "sans-serif",
         ],
+        // Newsreader — long reading text only (DESIGN.md, Type).
+        serif: ["var(--font-serif)", "ui-serif", "Georgia", "Cambria", "serif"],
         mono: [
           "var(--font-jetbrains-mono)",
           "ui-monospace",
@@ -93,6 +95,8 @@ const config: Config = {
         "border-col": "hsl(var(--border-col))",
         "accent-hover": "rgb(var(--accent-hover-rgb) / <alpha-value>)",
         "accent-soft": "rgb(var(--accent-soft-rgb) / <alpha-value>)",
+        "accent-tint": "rgb(var(--accent-tint-rgb) / <alpha-value>)",
+        reading: "rgb(var(--reading-rgb) / <alpha-value>)",
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         danger: "hsl(var(--danger))",
@@ -137,6 +141,15 @@ const config: Config = {
         "fade-in": {
           from: { opacity: "0" },
           to: { opacity: "1" },
+        },
+        // DESIGN.md Motion: screens enter with a slide and fade.
+        "screen-in": {
+          from: { opacity: "0", transform: "translateY(12px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "sheet-up": {
+          from: { opacity: "0", transform: "translateY(32px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
         },
         "slide-in-right": {
           from: { opacity: "0", transform: "translateX(16px)" },
@@ -198,6 +211,8 @@ const config: Config = {
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-up": "fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both",
         "fade-in": "fade-in 0.3s ease-out both",
+        "screen-in": "screen-in 200ms ease-out both",
+        "sheet-up": "sheet-up 200ms ease-out both",
         "slide-in-right":
           "slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) both",
         shake: "shake 0.3s ease-in-out",

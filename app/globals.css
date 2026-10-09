@@ -99,6 +99,12 @@
     --accent-rgb: 67 80 217; /* Iris, light */
     --accent-hover-rgb: 52 64 184;
     --accent-soft-rgb: 67 80 217;
+
+    /* DESIGN.md accent-tint (#EEF0FE): icon circles, the one filled panel.
+       Written as Iris's tint for every accent theme for now. */
+    --accent-tint-rgb: 238 240 254;
+    /* Long reading text: a touch softer than foreground (#22252C). */
+    --reading-rgb: 34 37 44;
   }
 
   /* DARK (the default). Unchanged values. A bare `.dark`, not `html.dark`,
@@ -151,6 +157,9 @@
     --accent-rgb: 91 103 238; /* Iris */
     --accent-hover-rgb: 111 121 240;
     --accent-soft-rgb: 148 156 244;
+
+    --accent-tint-rgb: 28 31 58; /* DESIGN.md accent-tint, dark (#1C1F3A) */
+    --reading-rgb: 225 227 233; /* reading text, dark (#E1E3E9) */
   }
 
   /* ── Pre-redesign literals ──────────────────────────────────────────

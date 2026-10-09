@@ -10,18 +10,22 @@
  * should be revisited before signups ever reopen — the durable version is a
  * counter table or a shared store, which is deliberately out of scope here.
  *
- * THREE TIERS, and every split is deliberate:
+ * FOUR TIERS, and every split is deliberate:
  *
- *   checkAiRateLimit       — 20/60s, ONE budget shared by the five routes a
- *                            user drives by hand (notes/reformat,
- *                            srs/generate, pdf/analyze, youtube/analyze,
- *                            youtube/notes/start).
+ *   checkAiRateLimit       — 20/60s, ONE budget shared by the routes a user
+ *                            drives by hand (notes/reformat, srs/generate,
+ *                            pdf/analyze, youtube/analyze,
+ *                            youtube/notes/start, learning/topics/create and
+ *                            learning/topics/plan).
  *   checkWorkoutRateLimit  — 100/60s, a SEPARATE budget for /api/workouts.
  *   checkYoutubeContinueRateLimit
  *                          — 100/60s, a SEPARATE budget for
  *                            /api/youtube/notes/continue.
+ *   checkLearningAdvanceRateLimit
+ *                          — 30/60s, a SEPARATE budget for
+ *                            /api/learning/advance.
  *
- * The three are fully decoupled: exhausting one leaves the others untouched.
+ * The four are fully decoupled: exhausting one leaves the others untouched.
  * See MAX_WORKOUT_REQUESTS_PER_WINDOW for why workouts can't share the low
  * ceiling — a rejection there destroys user input, which is not true of the
  * other five.
@@ -128,6 +132,22 @@ const MAX_WORKOUT_REQUESTS_PER_WINDOW = 100;
 const MAX_YOUTUBE_CONTINUE_REQUESTS_PER_WINDOW = 100;
 
 /**
+ * Ceiling for /api/learning/advance alone.
+ *
+ * Same reason as /continue: advance is not a user action but the client's
+ * job loop, one request per lesson (plus quick "nothing to do" and "someone
+ * else is writing it" answers). On the shared 20/60s tier, keeping a topic
+ * one lesson ahead would lock the user out of reformat and flashcards.
+ *
+ * 30, not 100: one advance writes at most one lesson, and a lesson takes
+ * seconds, so a healthy loop makes a handful of calls a minute. Token spend is
+ * bounded separately and durably — LEARNING_DAILY_TOKEN_CAP in
+ * lib/learning/constants.ts, summed from learning_ai_calls — so this only
+ * has to stop a runaway client.
+ */
+const MAX_LEARNING_ADVANCE_REQUESTS_PER_WINDOW = 30;
+
+/**
  * Backstop on each map. Entries are pruned lazily per user on their own next
  * check, so a user who never returns would otherwise hold their array forever.
  * Irrelevant at two users; present so this can't become a slow leak on a
@@ -217,6 +237,9 @@ const workoutLimiter = createRateLimiter(MAX_WORKOUT_REQUESTS_PER_WINDOW);
 const youtubeContinueLimiter = createRateLimiter(
   MAX_YOUTUBE_CONTINUE_REQUESTS_PER_WINDOW
 );
+const learningAdvanceLimiter = createRateLimiter(
+  MAX_LEARNING_ADVANCE_REQUESTS_PER_WINDOW
+);
 
 /**
  * Record one request against the SHARED five-route budget and say whether it
@@ -252,6 +275,17 @@ export function checkYoutubeContinueRateLimit(
   return youtubeContinueLimiter.check(userId);
 }
 
+/**
+ * Record one request against the /api/learning/advance budget. Same contract
+ * as checkAiRateLimit, separate counter — see
+ * MAX_LEARNING_ADVANCE_REQUESTS_PER_WINDOW.
+ */
+export function checkLearningAdvanceRateLimit(
+  userId: string
+): AiRateLimitResult {
+  return learningAdvanceLimiter.check(userId);
+}
+
 /** The user-facing 429 message. One wording across every AI route. */
 export function aiRateLimitMessage(retryAfterSeconds: number): string {
   return `Too many AI requests in a short time. Try again in ${retryAfterSeconds} second${
@@ -272,6 +306,7 @@ export const AI_RATE_LIMITS = {
   shared: MAX_REQUESTS_PER_WINDOW,
   workouts: MAX_WORKOUT_REQUESTS_PER_WINDOW,
   youtubeContinue: MAX_YOUTUBE_CONTINUE_REQUESTS_PER_WINDOW,
+  learningAdvance: MAX_LEARNING_ADVANCE_REQUESTS_PER_WINDOW,
 } as const;
 
 /** Test-only: requests currently in-window per tier. Not called by app code. */
@@ -279,17 +314,20 @@ export function __peekAiRateLimit(userId: string): {
   shared: number;
   workouts: number;
   youtubeContinue: number;
+  learningAdvance: number;
 } {
   return {
     shared: sharedLimiter.peek(userId),
     workouts: workoutLimiter.peek(userId),
     youtubeContinue: youtubeContinueLimiter.peek(userId),
+    learningAdvance: learningAdvanceLimiter.peek(userId),
   };
 }
 
-/** Test-only: clear both counters. Not called by application code. */
+/** Test-only: clear every counter. Not called by application code. */
 export function __resetAiRateLimit(): void {
   sharedLimiter.reset();
   workoutLimiter.reset();
   youtubeContinueLimiter.reset();
+  learningAdvanceLimiter.reset();
 }

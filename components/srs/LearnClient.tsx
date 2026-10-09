@@ -24,6 +24,7 @@ import { CardForm } from "@/components/srs/CardForm";
 import { ManageDeckModal } from "@/components/srs/ManageDeckModal";
 import { YoutubeAnalyzer } from "@/components/learn/YoutubeAnalyzer";
 import { PDFUploadModal } from "@/components/pdf/PDFUploadModal";
+import { TopicsPanel } from "@/components/learning/TopicsPanel";
 
 // Lazy-load the analytics panel so recharts only ships when the Analytics tab
 // is opened (keeps the Learn page's initial bundle lean).
@@ -152,11 +153,16 @@ export function LearnClient({ streak }: { streak: number }) {
         }
       />
 
-      <Tabs defaultValue="decks" className="mt-4">
-        <TabsList className="grid w-full max-w-xs grid-cols-2">
+      <Tabs defaultValue="topics" className="mt-4">
+        <TabsList className="grid w-full max-w-sm grid-cols-3">
+          <TabsTrigger value="topics">Topics</TabsTrigger>
           <TabsTrigger value="decks">Decks</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="topics">
+          <TopicsPanel />
+        </TabsContent>
 
         <TabsContent value="decks">
       {/* Stats banner */}

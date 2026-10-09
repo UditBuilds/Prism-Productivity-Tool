@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Sans, JetBrains_Mono } from "next/font/google";
+import { Instrument_Sans, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { THEME_COLOR, colorModeScript } from "@/lib/color-mode";
@@ -13,6 +13,14 @@ const instrumentSans = Instrument_Sans({
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-jetbrains-mono",
+  display: "swap",
+});
+
+// Reading text in lessons (DESIGN.md, Type). Only regular is used.
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  weight: ["400"],
+  variable: "--font-serif",
   display: "swap",
 });
 
@@ -49,7 +57,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${instrumentSans.variable} ${jetbrainsMono.variable}`}
+      className={`dark ${instrumentSans.variable} ${jetbrainsMono.variable} ${newsreader.variable}`}
       suppressHydrationWarning
     >
       <head>

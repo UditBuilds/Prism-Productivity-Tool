@@ -19,6 +19,15 @@ export type YoutubeNoteJobStatus =
   | "processing"
   | "completed"
   | "failed";
+export type LearningTopicStatus = "planning" | "active" | "failed";
+export type LearningStepStatus = "pending" | "writing" | "ready" | "failed";
+export type LearningStepErrorCode =
+  | "sources_unreachable"
+  | "ungrounded"
+  | "truncated"
+  | "ai_error";
+export type LearningRewriteReason = "wrong" | "redo";
+export type LearningSourceOrigin = "search" | "github";
 
 /**
  * Mirrors workout_sessions_status_check in the database.
@@ -828,6 +837,212 @@ export interface Database {
         };
         Relationships: [];
       };
+      // Learning (supabase/migrations/2026-10-09-learning-topics-lessons.sql).
+      // Hand-written to match information_schema as read 2026-10-09.
+      learning_topics: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          status: LearningTopicStatus;
+          error_message: string | null;
+          archived_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          status?: LearningTopicStatus;
+          error_message?: string | null;
+          archived_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          status?: LearningTopicStatus;
+          error_message?: string | null;
+          archived_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      learning_steps: {
+        Row: {
+          id: string;
+          user_id: string;
+          topic_id: string;
+          position: number;
+          title: string;
+          goal: string;
+          search_query: string;
+          status: LearningStepStatus;
+          error_code: LearningStepErrorCode | null;
+          error_message: string | null;
+          rewrite_reason: LearningRewriteReason | null;
+          rewrite_note: string | null;
+          claimed_at: string | null;
+          opened_at: string | null;
+          removed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          topic_id: string;
+          position: number;
+          title: string;
+          goal?: string;
+          search_query: string;
+          status?: LearningStepStatus;
+          error_code?: LearningStepErrorCode | null;
+          error_message?: string | null;
+          rewrite_reason?: LearningRewriteReason | null;
+          rewrite_note?: string | null;
+          claimed_at?: string | null;
+          opened_at?: string | null;
+          removed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: LearningStepStatus;
+          error_code?: LearningStepErrorCode | null;
+          error_message?: string | null;
+          rewrite_reason?: LearningRewriteReason | null;
+          rewrite_note?: string | null;
+          claimed_at?: string | null;
+          opened_at?: string | null;
+          removed_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      learning_lessons: {
+        Row: {
+          id: string;
+          user_id: string;
+          step_id: string;
+          title: string;
+          summary: string;
+          body: string;
+          model: string;
+          reason: "first" | LearningRewriteReason;
+          feedback: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          step_id: string;
+          title: string;
+          summary: string;
+          body: string;
+          model: string;
+          reason?: "first" | LearningRewriteReason;
+          feedback?: string | null;
+          created_at?: string;
+        };
+        // Saved once: there is no UPDATE policy. Present only for the client's types.
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      learning_lesson_sources: {
+        Row: {
+          id: string;
+          user_id: string;
+          lesson_id: string;
+          position: number;
+          url: string;
+          title: string;
+          site_name: string;
+          origin: LearningSourceOrigin;
+          http_status: number;
+          fetched_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          lesson_id: string;
+          position: number;
+          url: string;
+          title: string;
+          site_name: string;
+          origin: LearningSourceOrigin;
+          http_status: number;
+          fetched_at: string;
+          created_at?: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      learning_ai_calls: {
+        Row: {
+          id: string;
+          user_id: string;
+          topic_id: string | null;
+          step_id: string | null;
+          kind: "plan" | "search" | "write";
+          model: string;
+          outcome: "ok" | "rate_limited" | "truncated" | "empty" | "invalid" | "error";
+          prompt_tokens: number;
+          completion_tokens: number;
+          total_tokens: number;
+          pages_opened: number;
+          duration_ms: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          topic_id?: string | null;
+          step_id?: string | null;
+          kind: "plan" | "search" | "write";
+          model: string;
+          outcome: "ok" | "rate_limited" | "truncated" | "empty" | "invalid" | "error";
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+          pages_opened?: number;
+          duration_ms?: number;
+          created_at?: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      // Created by the learning migration; read by nothing until the
+      // follow-up PR (GitHub project digest).
+      learning_profiles: {
+        Row: {
+          id: string;
+          user_id: string;
+          github_username: string | null;
+          project_digest: unknown[];
+          digest_updated_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          github_username?: string | null;
+          project_digest?: unknown[];
+          digest_updated_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          github_username?: string | null;
+          project_digest?: unknown[];
+          digest_updated_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -874,3 +1089,8 @@ export type TemplateSet =
   Database["public"]["Tables"]["template_sets"]["Row"];
 export type YoutubeNoteJob =
   Database["public"]["Tables"]["youtube_note_jobs"]["Row"];
+export type LearningTopic = Database["public"]["Tables"]["learning_topics"]["Row"];
+export type LearningStep = Database["public"]["Tables"]["learning_steps"]["Row"];
+export type LearningLesson = Database["public"]["Tables"]["learning_lessons"]["Row"];
+export type LearningLessonSource =
+  Database["public"]["Tables"]["learning_lesson_sources"]["Row"];
