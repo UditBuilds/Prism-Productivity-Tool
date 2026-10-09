@@ -1,6 +1,8 @@
 import Groq, { APIConnectionTimeoutError, APIError } from "groq-sdk";
 
 import {
+  JUDGE_TIMEOUT_MS,
+  LEARNING_JUDGE_MODEL,
   LEARNING_SEARCH_MODEL,
   LEARNING_WRITE_MODEL,
   PLAN_TIMEOUT_MS,
@@ -17,6 +19,13 @@ import {
   type PlannedStep,
 } from "@/lib/learning/plan";
 import { harvestSearchResults, type SearchHarvest } from "@/lib/learning/sources";
+import {
+  JUDGE_SYSTEM_PROMPT,
+  judgeUserMessage,
+  parseVerdicts,
+  type JudgePair,
+  type Verdict,
+} from "@/lib/learning/judge";
 import { WRITER_SYSTEM_PROMPT, writerRetryMessage } from "@/lib/learning/writer-prompt";
 
 /**
@@ -31,7 +40,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY, maxRetries: 0 });
 
 /** One row for learning_ai_calls. Every call produces one, success or not. */
 export interface CallRecord {
-  kind: "plan" | "search" | "write";
+  kind: "plan" | "search" | "write" | "judge";
   model: string;
   outcome: "ok" | "rate_limited" | "truncated" | "empty" | "invalid" | "error";
   prompt_tokens: number;
@@ -261,5 +270,45 @@ export async function writeDraft(
     content,
     truncated,
     record: record("write", LEARNING_WRITE_MODEL, truncated ? "truncated" : content ? "ok" : "empty", completion.usage, startedAt),
+  };
+}
+
+export interface JudgeResult {
+  verdicts: Map<number, Verdict>;
+  record: CallRecord;
+}
+
+/**
+ * The meaning check (judge.ts): one call on gpt-oss-20b with only the
+ * sentence/passage pairs. A cut-off or empty answer leaves sentences without a
+ * verdict, and parseVerdicts counts those as NOT supported — the check fails
+ * closed.
+ */
+export async function judgeClaims(pairs: JudgePair[], model: string = LEARNING_JUDGE_MODEL): Promise<JudgeResult> {
+  const startedAt = Date.now();
+  let completion;
+  try {
+    completion = await groq.chat.completions.create(
+      {
+        model,
+        messages: [
+          { role: "system", content: JUDGE_SYSTEM_PROMPT },
+          { role: "user", content: judgeUserMessage(pairs) },
+        ],
+        reasoning_effort: "low",
+        temperature: 0,
+        max_tokens: 3000,
+      },
+      { timeout: JUDGE_TIMEOUT_MS }
+    );
+  } catch (err) {
+    throw failed("judge", model, err, startedAt);
+  }
+  const choice = completion.choices[0];
+  const content = choice?.message?.content ?? "";
+  const truncated = choice?.finish_reason === "length";
+  return {
+    verdicts: parseVerdicts(content, pairs.map((p) => p.id)),
+    record: record("judge", model, truncated ? "truncated" : content ? "ok" : "empty", completion.usage, startedAt),
   };
 }

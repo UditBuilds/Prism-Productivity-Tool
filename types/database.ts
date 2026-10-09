@@ -986,7 +986,7 @@ export interface Database {
           user_id: string;
           topic_id: string | null;
           step_id: string | null;
-          kind: "plan" | "search" | "write";
+          kind: "plan" | "search" | "write" | "judge";
           model: string;
           outcome: "ok" | "rate_limited" | "truncated" | "empty" | "invalid" | "error";
           prompt_tokens: number;
@@ -1001,7 +1001,7 @@ export interface Database {
           user_id: string;
           topic_id?: string | null;
           step_id?: string | null;
-          kind: "plan" | "search" | "write";
+          kind: "plan" | "search" | "write" | "judge";
           model: string;
           outcome: "ok" | "rate_limited" | "truncated" | "empty" | "invalid" | "error";
           prompt_tokens?: number;

@@ -20,6 +20,16 @@ export const LEARNING_WRITE_MODEL = "openai/gpt-oss-120b";
 export const LEARNING_SEARCH_MODEL = "openai/gpt-oss-20b";
 
 /**
+ * Reads each lesson sentence next to its source passage and says whether the
+ * passage supports it (judge.ts). On 20b, so it spends 20b's own daily budget,
+ * not the 120b one the rest of the app shares. Measured 2026-10-09 on the
+ * development set: caught 10 of 10 planted fakes and flagged 1 of 61
+ * hand-checked supported sentences; about 160 tokens per sentence checked.
+ */
+export const LEARNING_JUDGE_MODEL = "openai/gpt-oss-20b";
+export const JUDGE_TIMEOUT_MS = 20_000;
+
+/**
  * The most tokens one user's learning may spend in any rolling 24 hours,
  * across both models, counted from learning_ai_calls (so it survives cold
  * starts, unlike the in-memory rate limiter).

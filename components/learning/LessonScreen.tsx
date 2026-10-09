@@ -279,11 +279,14 @@ export function LessonScreen({ topicId, stepId }: { topicId: string; stepId: str
                 </button>
                 {update.isError && <p className={cn(META, "text-danger")}>{learningErrorMessage(update.error)}</p>}
               </div>
-            ) : !view.step.removed_at ? (
+            ) : !view.step.removed_at && (job.state.phase === "working" || view.step.status === "writing") ? (
               <p className={cn(META, "mt-6 flex items-center gap-2")} role="status">
                 <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
                 This lesson is being written from web sources. It usually takes under a minute.
               </p>
+            ) : !view.step.removed_at ? (
+              // Not being written right now: the line below (JobStatus) says why.
+              <p className={cn(META, "mt-6")}>This lesson has not been written yet.</p>
             ) : null}
 
             <JobStatus state={job.state} className="mt-4" />

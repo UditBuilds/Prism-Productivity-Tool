@@ -40,7 +40,15 @@ export const MIN_QUOTE_WORDS = 4;
  * coverage rule, which it cannot.
  */
 export const MIN_CODE_QUOTE_WORDS = 2;
-export const MIN_COVERAGE = 0.5;
+/**
+ * Rule 4 (word coverage) is OFF in the app: 0 means it never fires. Udit's
+ * decision, 2026-10-09, on measured numbers: at 0.5 it wrongly flagged 17 of
+ * 61 hand-checked supported sentences, because a faithful plain-language
+ * rewrite shares few words with its source — and decision 11 asks for plain
+ * words. Meaning is checked by the judge call instead (judge.ts). The rule's
+ * code stays so the measurement can be re-run (ctx.minCoverage).
+ */
+export const MIN_COVERAGE = 0;
 /** Claims with fewer content words than this skip rule 4 ("Try it."). */
 export const MIN_CONTENT_WORDS_FOR_COVERAGE = 3;
 

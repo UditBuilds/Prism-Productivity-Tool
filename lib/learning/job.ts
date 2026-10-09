@@ -10,7 +10,9 @@ import {
   LEARNING_WRITE_MODEL,
 } from "@/lib/learning/constants";
 import { checkGrounding, relabelSources, type GroundingProblem } from "@/lib/learning/grounding";
+import { judgePairs } from "@/lib/learning/judge";
 import {
+  judgeClaims,
   LearningAiError,
   searchForStep,
   writeDraft,
@@ -306,12 +308,41 @@ export async function advanceTopic(
       problems = [err instanceof LessonFormatError ? err.message : "the lesson could not be read"];
     }
     await log(ctx, stepId, { ...draft.record, outcome: problems.length ? "invalid" : "ok" });
+
+    // The meaning check, only for a draft the free rules accept: one 20b call
+    // that reads each sentence next to its source passage.
+    let judgeLog: { where: string; ok: boolean; why: string }[] = [];
+    if (problems.length === 0 && parsed) {
+      const pairs = judgePairs(parsed, grounding);
+      try {
+        const judged = await withShortWait(ctx, stepId, 10_000, () => judgeClaims(pairs));
+        await log(ctx, stepId, judged.record);
+        judgeLog = pairs.map((p) => ({ where: p.where, ...(judged.verdicts.get(p.id) ?? { ok: false, why: "" }) }));
+        problems = pairs
+          .filter((p) => !judged.verdicts.get(p.id)?.ok)
+          .map(
+            (p) =>
+              `${p.where} ("${p.sentence.slice(0, 90)}"): its source passage does not support it (${judged.verdicts.get(p.id)?.why || "no reason given"})`
+          );
+        lastGroundingFailures = problems.length;
+      } catch (err) {
+        if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
+        const wait = onAiError(err);
+        if (wait) {
+          await release(ctx, stepId, claimedAt);
+          return wait;
+        }
+        await markFailed(ctx, stepId, claimedAt, "ai_error", "the meaning check did not answer");
+        return { kind: "failed", stepId, code: "ai_error" };
+      }
+    }
     await debugDump(stepId, attempt, {
       topic: topic.title,
       step: claimed.title,
       sources: sources.map((s) => ({ n: s.n, url: s.page.url, site: s.siteName, excerpt: s.excerpt })),
       content: draft.content,
       problems,
+      judge: judgeLog,
       record: draft.record,
     });
     if (attempt === 1) firstProblems = problems;
@@ -324,7 +355,9 @@ export async function advanceTopic(
   }
   if (!lesson) {
     const ungrounded = lastGroundingFailures > 0;
-    await markFailed(ctx, stepId, claimedAt, ungrounded ? "ungrounded" : "ai_error", `${lastProblems.length} check${lastProblems.length === 1 ? "" : "s"} failed`);
+    // At most one fix attempt (Udit, condition 3): the step is marked failed
+    // and waits for a "Try again" tap. The job never retries it by itself.
+    await markFailed(ctx, stepId, claimedAt, ungrounded ? "ungrounded" : "ai_error");
     console.warn("[learning] lesson rejected:", JSON.stringify(lastProblems.slice(0, 10)));
     return { kind: "failed", stepId, code: ungrounded ? "ungrounded" : "ai_error", problems: lastProblems.slice(0, 10) };
   }

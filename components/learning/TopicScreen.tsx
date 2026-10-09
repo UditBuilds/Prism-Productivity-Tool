@@ -45,7 +45,8 @@ export function stepStateLine(s: StepSummary): string {
 
 function StepNumber({ step, n }: { step: StepSummary; n: number }) {
   const base = "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold";
-  if (step.removed_at) return <span className={cn(base, "border border-dashed border-border-col text-muted-foreground")}>{n}</span>;
+  // A removed step has no number: the steps around it are numbered as if it were gone.
+  if (step.removed_at) return <span className={cn(base, "border border-dashed border-border-col text-muted-foreground")} aria-hidden>–</span>;
   if (step.status === "writing") {
     return (
       <span className={cn(base, "bg-surface-raised text-muted-foreground")}>

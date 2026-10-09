@@ -1362,7 +1362,7 @@ create table if not exists public.learning_ai_calls (
   user_id           uuid not null references auth.users (id) on delete cascade,
   topic_id          uuid references public.learning_topics (id) on delete set null,
   step_id           uuid references public.learning_steps (id) on delete set null,
-  kind              text not null check (kind in ('plan', 'search', 'write')),
+  kind              text not null check (kind in ('plan', 'search', 'write', 'judge')),
   model             text not null check (char_length(model) between 1 and 100),
   outcome           text not null
                       check (outcome in ('ok', 'rate_limited', 'truncated', 'empty', 'invalid', 'error')),
