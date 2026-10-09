@@ -640,5 +640,24 @@ console.log("\nmeaning check (judge) input and parsing");
   eq("an empty answer fails every item", [...judge.parseVerdicts("", [1, 2]).values()].map((x) => x.ok), [false, false]);
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+console.log("\nsource tags and paragraph splitting");
+{
+  const d = lessonFormat.parseDraftLesson([
+    "TITLE: T",
+    "SUMMARY: S.",
+    "[source 2] «two» → A.",
+    "[S3] «three» → B.",
+    "[ Source 1 ] «one» [source 2] «two again» → C.",
+  ].join("\n"));
+  eq("[source 2], [S3] and [ Source 1 ] are all read as source numbers", d.blocks[0].sentences.map((s) => s.support.map((x) => x.source)), [[2], [3], [1, 2]]);
+  eq("nothing left unparsed", d.unparsed, []);
+
+  const twelve = { title: "T", summary: "S.", unparsed: [], example: null, blocks: [{ type: "paragraph", sentences: Array.from({ length: 12 }, (_, i) => ({ text: `S${i}.`, support: [] })) }] };
+  const lines = lessonFormat.renderLessonMarkdown(twelve).split("\n\n");
+  eq("a 12-sentence paragraph is shown as 3 paragraphs of 4", lines.map((l) => l.split(" ").length), [4, 4, 4]);
+  ok("one paragraph is no longer a rule failure", !lessonFormat.checkLessonRules(twelve).some((p) => p.includes("paragraph")));
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) process.exit(1);

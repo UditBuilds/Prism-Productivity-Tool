@@ -41,13 +41,13 @@ TITLE: <under 70 characters>
 SUMMARY: <one plain sentence under 160 characters>
 
 ## <optional short heading>
-[1] «exact words from source 1» → A plain sentence saying what they say.
-[2] «exact words from source 2» → The next sentence of the same paragraph.
+[source 1] «exact words from source 1» → A plain sentence saying what they say.
+[source 2] «exact words from source 2» → The next sentence of the same paragraph.
 
-- [1] «exact words» → A list item.
-- [3] «exact words» [1] «more exact words» → A list item backed by two passages.
+- [source 1] «exact words» → A list item.
+- [source 3] «exact words» [source 1] «more exact words» → A list item backed by two passages.
 
-EXAMPLE [2] «exact words the example is based on»
+EXAMPLE [source 2] «exact words the example is based on»
 ${FENCE}python
 <the code>
 ${FENCE}
@@ -56,7 +56,7 @@ ${FENCE}text
 <exactly what it prints>
 ${FENCE}
 
-Every sentence and list item is one line in the form [n] «passage» → sentence. Any other line is thrown away.`;
+Every sentence and list item is one line in the form [source n] «passage» → sentence, where n is the number of the SOURCE (1, 2 or 3), never a line number. Any other line is thrown away.`;
 
 export interface WriterSource {
   n: number;

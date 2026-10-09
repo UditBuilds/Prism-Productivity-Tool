@@ -83,9 +83,20 @@ function clean(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/** `[2] «quote»` pairs, also accepting “quote” or "quote" as the delimiters. */
-const SUPPORT_RE = /\[(\d{1,2})\]\s*(?:«([^»]+)»|“([^”]+)”|"([^"]+)")/g;
-const CLAIM_RE = /^(-\s+|\*\s+)?((?:\[\d{1,2}\]\s*(?:«[^»]+»|“[^”]+”|"[^"]+")\s*)+)(?:→|->|=>|—>)\s*(.+)$/;
+/**
+ * `[source 2] «quote»` pairs. The word "source" is asked for because a bare
+ * `[2]` was read by the model as a LINE number: measured 2026-10-09, a draft
+ * with 21 one-line paragraphs cited "source 21" and "source 16" when it had
+ * been given 3. `[S2]` and a bare `[2]` are still read. “quote” and "quote"
+ * are accepted as delimiters as well as «quote».
+ */
+const SOURCE_TAG = String.raw`\[\s*(?:source\s*|s\s*)?(\d{1,2})\s*\]`;
+const QUOTE = String.raw`(?:«([^»]+)»|“([^”]+)”|"([^"]+)")`;
+const SUPPORT_RE = new RegExp(`${SOURCE_TAG}\\s*${QUOTE}`, "gi");
+const CLAIM_RE = new RegExp(
+  String.raw`^(-\s+|\*\s+)?((?:\[\s*(?:source\s*|s\s*)?\d{1,2}\s*\]\s*(?:«[^»]+»|“[^”]+”|"[^"]+")\s*)+)(?:→|->|=>|—>)\s*(.+)$`,
+  "i"
+);
 
 function supportsIn(s: string): Support[] {
   return Array.from(s.matchAll(SUPPORT_RE), (m) => ({
@@ -234,12 +245,14 @@ export function checkLessonRules(lesson: DraftLesson): string[] {
   const problems: string[] = [];
   if (lesson.unparsed.length > 0) {
     problems.push(
-      `${lesson.unparsed.length} line${lesson.unparsed.length === 1 ? " was" : "s were"} not in the format; every sentence must be [n] «exact quote» → sentence`
+      `${lesson.unparsed.length} line${lesson.unparsed.length === 1 ? " was" : "s were"} not in the format; every sentence must be [source n] «exact quote» → sentence`
     );
   }
   if (!lesson.title || lesson.title.length > 90) problems.push("the title must be 1 to 90 characters");
   if (!lesson.summary || lesson.summary.length > 200) problems.push("the summary must be one sentence under 200 characters");
-  if (lesson.blocks.filter((b) => b.type !== "heading").length < 2) problems.push("the lesson needs at least two paragraphs");
+  // No "at least two paragraphs" rule: it rejected 4 of 7 drafts on
+  // 2026-10-09 for layout alone. Long paragraphs are split when rendered.
+  if (lesson.blocks.filter((b) => b.type !== "heading").length < 1) problems.push("the lesson has no sentences");
 
   const count = proseWordCount(lesson);
   if (count < LESSON_MIN_WORDS || count > LESSON_MAX_WORDS) {
@@ -266,6 +279,9 @@ export function checkLessonRules(lesson: DraftLesson): string[] {
   return problems;
 }
 
+/** Sentences per displayed paragraph before a long one is split. */
+export const PARAGRAPH_SENTENCES = 5;
+
 /** The stored lesson body. One line per paragraph, as lib/markdown-blocks.ts reads it. */
 export function renderLessonMarkdown(lesson: DraftLesson): string {
   const out: string[] = [];
@@ -280,7 +296,15 @@ export function renderLessonMarkdown(lesson: DraftLesson): string {
     : -1;
   lesson.blocks.forEach((b, i) => {
     if (b.type === "heading") out.push(`### ${b.text}`);
-    else if (b.type === "paragraph") out.push(b.sentences.map((s) => s.text).join(" "));
+    else if (b.type === "paragraph") {
+      // A long paragraph is split into readable chunks of at most
+      // PARAGRAPH_SENTENCES sentences, as evenly as the count allows.
+      const parts = Math.ceil(b.sentences.length / PARAGRAPH_SENTENCES);
+      const size = Math.ceil(b.sentences.length / parts);
+      for (let k = 0; k < b.sentences.length; k += size) {
+        out.push(b.sentences.slice(k, k + size).map((s) => s.text).join(" "));
+      }
+    }
     else out.push(b.items.map((it) => `- ${it.text}`).join("\n"));
     if (i === after) pushExample();
   });
