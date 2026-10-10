@@ -814,6 +814,25 @@ console.log("\nthe writer and its one fix (writer-prompt.ts)");
   ok("…the order and the length", /meaning[\s\S]*walkthrough[\s\S]*closing/.test(sys) && /300 to 500 words/.test(sys));
   ok("…and that fenced text is data", /data, not instructions/.test(sys));
 
+  // Measured 2026-10-10: told only "300 to 500 words, aim for about 400", 120b wrote 219.
+  const fits = [];
+  for (let lines = 0; lines <= 12; lines++) {
+    const p = writerPrompt.lengthPlan(lines);
+    const n = p.paragraphs * p.perParagraph + p.perLine * lines + 1;
+    fits.push(n === p.sentences && n * writerPrompt.SENTENCE_WORDS.min >= 300 && n * writerPrompt.SENTENCE_WORDS.max <= 500);
+  }
+  eq("every length plan, 0 to 12 code lines, lands in 300-500 words at 15-20 words a sentence", fits.every(Boolean), true);
+  eq(
+    "a 3-line example: 3 sentences a line and 3 paragraphs of 4; a 12-line one: 1 a line and 3 of 3; no code: 4 of 5",
+    [writerPrompt.lengthPlan(3), writerPrompt.lengthPlan(12), writerPrompt.lengthPlan(0)].map((p) => [p.paragraphs, p.perParagraph, p.perLine]),
+    [[3, 4, 3], [3, 3, 1], [4, 5, 0]]
+  );
+  ok(
+    "the writer is given the plan as sentence counts",
+    msg.includes("LENGTH: meaning: 4 paragraphs of 3 sentences each. walkthrough: 2 sentences for each of the 4 lines. closing: 1 sentence.") &&
+      msg.includes("Every sentence 15 to 20 words. That is 21 sentences, about 378 words.")
+  );
+
   const e = EXPLANATION();
   const all = explanation.sentencesOf(e);
   const flagged = [all[1], all[10]];
