@@ -1,14 +1,18 @@
 /**
  * Send the meaning check's test set (scripts/judge-cases.json) to the REAL
- * G2 judge (lib/learning/judge.ts on gpt-oss-20b, strict JSON, exactly as
- * the lesson job calls it) and compare its verdicts with the expected ones.
+ * G2 judge — lib/learning/judge.ts, strict JSON, each group's explanation
+ * sent exactly as the lesson job sends it — on gpt-oss-20b and gpt-oss-120b,
+ * and score both: each scored sentence's verdict, and the unexplained words
+ * each group must and must not report.
  *
- * This SPENDS Groq tokens on the live app's account (about 1,500-2,500 on
- * 20b per run), so it is not part of `npm test` (which only runs
+ * This SPENDS Groq tokens on the live app's account (a few thousand per
+ * model per run), so it is not part of `npm test` (which only runs
  * scripts/test-*.mjs). The key is read from .env.local on purpose: the shell
- * may hold a different key, on the same account.
+ * may hold a different key, on the same account. A 429 is waited out
+ * (Retry-After) and tried again, at most three times.
  *
- * Run:  node scripts/eval-judge.mjs
+ * Run:  node scripts/eval-judge.mjs            (both models)
+ *       node scripts/eval-judge.mjs 120b       (one)
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,7 +22,7 @@ import { pathToFileURL } from "node:url";
 
 const root = process.cwd();
 const out = mkdtempSync(path.join(tmpdir(), "prism-judge-eval-"));
-const MODULES = ["constants", "net-guard", "html-text", "sources", "passages", "explanation", "answers", "judge"];
+const MODULES = ["constants", "answers", "net-guard", "html-text", "sources", "passages", "explanation", "judge"];
 const files = MODULES.map((name) => {
   const text = readFileSync(path.join(root, "lib", "learning", `${name}.ts`), "utf8").replace(
     /["']@\/lib\/learning\/([a-z-]+)["']/g,
@@ -42,7 +46,8 @@ execFileSync(
 writeFileSync(path.join(out, "package.json"), JSON.stringify({ type: "module" }));
 const judge = await import(pathToFileURL(path.join(out, "judge.js")).href);
 const answers = await import(pathToFileURL(path.join(out, "answers.js")).href);
-const { LEARNING_JUDGE_MODEL, JUDGE_MAX_TOKENS } = await import(pathToFileURL(path.join(out, "constants.js")).href);
+const explanation = await import(pathToFileURL(path.join(out, "explanation.js")).href);
+const { JUDGE_MAX_TOKENS } = await import(pathToFileURL(path.join(out, "constants.js")).href);
 
 const env = Object.fromEntries(
   readFileSync(path.join(root, ".env.local"), "utf8")
@@ -55,21 +60,48 @@ const env = Object.fromEntries(
 );
 if (!env.GROQ_API_KEY) throw new Error("GROQ_API_KEY is not in .env.local");
 
+const MODELS = { "20b": "openai/gpt-oss-20b", "120b": "openai/gpt-oss-120b" };
+const which = process.argv[2] ? [process.argv[2]] : ["20b", "120b"];
 const set = JSON.parse(readFileSync(path.join(root, "scripts", "judge-cases.json"), "utf8"));
-let total = 0;
-const rows = [];
-for (const group of set.groups) {
-  const sentences = group.cases.map((c, i) => ({
-    id: i + 1,
-    text: c.sentence,
-    part: c.line ? "walkthrough" : "meaning",
-    line: c.line ?? null,
-  }));
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: LEARNING_JUDGE_MODEL,
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function call(model, body) {
+  for (let tries = 0; ; tries++) {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, ...body }),
+    });
+    const json = await res.json();
+    if (res.status === 429 && tries < 3) {
+      const wait = Math.ceil(Number(res.headers.get("retry-after") ?? "20")) + 1;
+      console.log(`    (429 on ${model}: waiting ${wait}s)`);
+      await sleep(wait * 1000);
+      continue;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${JSON.stringify(json.error ?? json).slice(0, 600)}`);
+    return json;
+  }
+}
+
+const summary = [];
+for (const key of which) {
+  const model = MODELS[key];
+  if (!model) throw new Error(`unknown model ${key}; use 20b or 120b`);
+  console.log(`\n━━ ${model}`);
+  let tokens = 0;
+  let verdictsOk = 0;
+  let verdictsAll = 0;
+  let wordsOk = 0;
+  let wordsAll = 0;
+  for (const group of set.groups) {
+    const sentences = group.cases.map((c, i) => ({
+      id: i + 1,
+      text: c.sentence,
+      part: c.closing ? "closing" : c.line ? "walkthrough" : "meaning",
+      line: c.line ?? null,
+    }));
+    const body = await call(model, {
       messages: [
         { role: "system", content: judge.JUDGE_SYSTEM_PROMPT },
         { role: "user", content: judge.judgeUserMessage(group.source, sentences) },
@@ -78,30 +110,44 @@ for (const group of set.groups) {
       reasoning_effort: "low",
       temperature: 0,
       max_tokens: JUDGE_MAX_TOKENS,
-    }),
-  });
-  const body = await res.json();
-  if (!res.ok) {
-    console.error(`HTTP ${res.status}:`, JSON.stringify(body.error ?? body).slice(0, 600));
-    process.exit(1);
+    });
+    tokens += body.usage?.total_tokens ?? 0;
+    const answer = answers.readAnswer(body.choices?.[0]?.message?.content ?? "", judge.JUDGE_SCHEMA, "the meaning check's answer");
+    const read = judge.readVerdicts(answer, sentences, group.source, sentences);
+    if ("bad" in read) {
+      console.log(`  group ${group.name}: the answer could not be used: ${read.bad}`);
+      verdictsAll += group.cases.filter((c) => c.expect).length;
+      continue;
+    }
+    console.log(`  ${group.name} (${body.usage?.total_tokens ?? 0} tokens)`);
+    group.cases.forEach((c, i) => {
+      if (!c.expect) return;
+      const v = answer.verdicts.find((x) => x.id === i + 1);
+      const got = v?.verdict ?? "none";
+      const pass = got === c.expect || (c.accept ?? []).includes(got);
+      verdictsAll += 1;
+      if (pass) verdictsOk += 1;
+      console.log(`    ${pass ? "ok  " : "MISS"} ${c.id.padEnd(40)} expect ${c.expect.padEnd(11)} got ${got.padEnd(11)}${v?.reason ? ` ${v.reason}` : ""}`);
+    });
+    const listed = read.words.map((w) => w.word).concat(read.dropped);
+    if (group.words) {
+      for (const w of group.words.include) {
+        const pass = listed.some((x) => explanation.mentionsWord(x, w) || explanation.mentionsWord(w, x));
+        wordsAll += 1;
+        if (pass) wordsOk += 1;
+        console.log(`    ${pass ? "ok  " : "MISS"} unexplained word must be listed: ${w}`);
+      }
+      for (const w of group.words.exclude) {
+        const pass = !listed.some((x) => explanation.mentionsWord(x, w) || explanation.mentionsWord(w, x));
+        wordsAll += 1;
+        if (pass) wordsOk += 1;
+        console.log(`    ${pass ? "ok  " : "MISS"} explained word must NOT be listed: ${w}`);
+      }
+    }
+    console.log(`    unexplained words it listed: ${listed.length ? listed.join(", ") : "(none)"}`);
   }
-  total += body.usage?.total_tokens ?? 0;
-  const answer = answers.readAnswer(body.choices?.[0]?.message?.content ?? "", judge.JUDGE_SCHEMA, "the meaning check's answer");
-  const read = judge.readVerdicts(answer, sentences);
-  if ("bad" in read) {
-    console.error(`group ${group.name}: the answer could not be used: ${read.bad}`);
-    process.exit(1);
-  }
-  group.cases.forEach((c, i) => {
-    const p = read.problems.find((x) => x.sentence === i + 1);
-    rows.push({ id: c.id, expect: c.expect, got: p ? "flag" : "ok", why: p ? p.reason : "" });
-  });
+  const line = `${model}: verdicts ${verdictsOk}/${verdictsAll}, words ${wordsOk}/${wordsAll}, ${tokens} tokens`;
+  summary.push(line);
+  console.log(`\n${line}`);
 }
-
-for (const r of rows) {
-  const mark = r.expect === r.got ? "ok  " : "MISS";
-  console.log(`${mark} ${r.id.padEnd(40)} expect ${r.expect.padEnd(4)}  got ${r.got.padEnd(4)}${r.why ? `  ${r.why}` : ""}`);
-}
-const misses = rows.filter((r) => r.expect !== r.got);
-console.log(`\n${rows.length - misses.length}/${rows.length} as expected; ${total} tokens on ${LEARNING_JUDGE_MODEL}`);
-process.exit(misses.length > 0 ? 1 : 0);
+console.log(`\n━━ summary\n${summary.join("\n")}`);

@@ -1,5 +1,5 @@
 {
-  "about": "The test set for G2, the meaning check (lib/learning/judge.ts). Each group is a SOURCE as the reader sees it (passages and a code example); each case is one sentence of an AI explanation under it, with the verdict a careful reader gives: 'flag' when it contradicts the source or states a technical fact the source does not support, 'ok' otherwise (analogies and plain definitions are allowed). 'line' marks a walk-through sentence and the code line it explains. scripts/eval-judge.mjs sends every group to the real judge (it costs 20b tokens; it is not part of npm test).",
+  "about": "The test set for G2, the meaning check (lib/learning/judge.ts). Each group is a SOURCE as the reader sees it (passages and a code example) and an explanation under it, sentence by sentence in reading order, sent to the judge exactly as the lesson job sends it. A case with 'expect' is scored: the judge's verdict must be 'expect' or one listed in 'accept'; a case without it is context only. 'line' marks a walk-through sentence and the code line it explains; 'closing' the closing line. 'words' lists technical words the judge must report as unexplained ('include') and must not ('exclude', because the explanation explains them). Verdicts (Udit, 2026-10-10): ok, contradicts, unsupported, filler. scripts/eval-judge.mjs runs the set on gpt-oss-20b and gpt-oss-120b; it costs tokens and is not part of npm test.",
   "groups": [
     {
       "name": "calculator",
@@ -14,8 +14,8 @@
           "id": "2026-10-10-parentheses-calculate-first",
           "found": "first live lesson, 2026-10-10: the old judge passed it",
           "sentence": "Parentheses tell Python which parts to calculate first.",
-          "expect": "flag",
-          "why": "the source only says parentheses are for grouping; the order of calculation is a new technical claim"
+          "expect": "unsupported",
+          "why": "order of evaluation: the source only says parentheses are for grouping"
         },
         {
           "id": "grouping-restated",
@@ -50,26 +50,30 @@
         {
           "id": "contradicts-division",
           "sentence": "Dividing one whole number by another always gives a whole number.",
-          "expect": "flag",
+          "expect": "contradicts",
           "why": "the code shows 8 / 5 giving 1.6"
         },
         {
           "id": "unsupported-checks-whole-program",
           "sentence": "The interpreter checks your whole program for mistakes before it runs any of it.",
-          "expect": "flag",
-          "why": "a claim about how the interpreter works that the source does not make"
+          "expect": "unsupported",
+          "why": "a specific claim about how the interpreter works that nothing shows"
         },
         {
           "id": "unsupported-speed",
           "sentence": "Python is one of the fastest languages for arithmetic.",
-          "expect": "flag"
+          "expect": "unsupported",
+          "why": "a specific comparison nothing shows"
         },
         {
           "id": "walk-stores-result",
           "line": 3,
           "sentence": "Python works this out and saves the answer in a variable called result.",
-          "expect": "flag",
-          "why": "the code shows the value; nothing stores it"
+          "expect": "contradicts",
+          "accept": [
+            "unsupported"
+          ],
+          "why": "the code shows the value written out; nothing stores it"
         }
       ]
     },
@@ -98,19 +102,225 @@
         {
           "id": "define-variable-never-changes",
           "sentence": "A variable is a value that can never change once it is set.",
-          "expect": "flag",
-          "why": "a technical claim the source does not support"
+          "expect": "unsupported",
+          "why": "a limit nothing shows"
         },
         {
           "id": "close-faster-programs",
+          "closing": true,
           "sentence": "Variables also make your programs run faster.",
-          "expect": "flag"
+          "expect": "unsupported",
+          "accept": [
+            "filler"
+          ],
+          "why": "a performance claim nothing shows"
         },
         {
           "id": "close-restates",
+          "closing": true,
           "sentence": "So the equal sign gives a name a value that later lines can use.",
           "expect": "ok",
           "why": "line 3 uses width and height again"
+        }
+      ]
+    },
+    {
+      "name": "attempt-1",
+      "found": "the first Style B gate, 2026-10-10, attempt 1 (219 words): Udit could not follow 'interpreter', 'variable' and 'arguments'",
+      "source": {
+        "passages": [
+          "The print() function writes the value of the argument(s) it is given. It differs from just writing the expression you want to write (as we did earlier in the calculator examples) in the way it handles multiple arguments, floating-point quantities, and strings. Strings are printed without quotes, and a space is inserted between items, so you can format things nicely, like this:"
+        ],
+        "code": ">>> i = 256*256\n>>> print('The value of i is', i)\nThe value of i is 65536",
+        "words": 63
+      },
+      "words": {
+        "include": [
+          "interpreter",
+          "variable",
+          "arguments"
+        ],
+        "exclude": [
+          "function",
+          "string"
+        ]
+      },
+      "cases": [
+        {
+          "id": "a1-1",
+          "sentence": "The idea is that a computer can show you information by using the built-in function called `print()`."
+        },
+        {
+          "id": "a1-2",
+          "sentence": "A function is a named piece of code that performs a specific job when you ask it to, and `print()`'s job is to write whatever you give it to the screen."
+        },
+        {
+          "id": "a1-3",
+          "sentence": "When you place text inside single quotes, you create a string, which is just a series of characters like letters and numbers."
+        },
+        {
+          "id": "a1-4",
+          "sentence": "If you also give `print()` a number, it will turn that number into characters and show it right after the string, automatically adding a space between them."
+        },
+        {
+          "id": "a1-5",
+          "sentence": "The function also removes the quotation marks that you used to define the string, so the output looks clean and readable."
+        },
+        {
+          "id": "a1-6",
+          "sentence": "This behavior lets you combine words and computed values in a single line of output without extra formatting work."
+        },
+        {
+          "id": "a1-7",
+          "line": 1,
+          "sentence": "The interpreter calculates `256*256` and stores the result, 65536, in the variable named `i`."
+        },
+        {
+          "id": "a1-8",
+          "line": 2,
+          "sentence": "The `print()` function is called with two arguments: the string `'The value of i is'` and the variable `i`."
+        },
+        {
+          "id": "a1-9",
+          "line": 2,
+          "sentence": "It writes the string, adds a space, then writes the numeric value of `i`, producing a readable sentence."
+        },
+        {
+          "id": "a1-10",
+          "line": 3,
+          "sentence": "The screen shows exactly what `print()` produced: `The value of i is 65536`."
+        },
+        {
+          "id": "a1-11",
+          "closing": true,
+          "sentence": "Using `print()` lets you quickly display any combination of text and computed data on the screen."
+        }
+      ]
+    },
+    {
+      "name": "attempt-2",
+      "found": "the first Style B gate, 2026-10-10, attempt 2 draft: the old G2 rejected 13-17 and passed 9, 12 and the closing line",
+      "source": {
+        "passages": [
+          "The print() function writes the value of the argument(s) it is given. It differs from just writing the expression you want to write (as we did earlier in the calculator examples) in the way it handles multiple arguments, floating-point quantities, and strings. Strings are printed without quotes, and a space is inserted between items, so you can format things nicely, like this:"
+        ],
+        "code": ">>> i = 256*256\n>>> print('The value of i is', i)\nThe value of i is 65536",
+        "words": 63
+      },
+      "cases": [
+        {
+          "id": "a2-1",
+          "sentence": "The print function displays information on the screen, turning data into readable text for the user."
+        },
+        {
+          "id": "a2-2",
+          "sentence": "It accepts one or more arguments, which can be numbers, strings, or results of calculations you performed."
+        },
+        {
+          "id": "a2-3",
+          "sentence": "When printing strings, the function removes quotation marks, showing the characters exactly as you wrote them."
+        },
+        {
+          "id": "a2-4",
+          "sentence": "Multiple items are separated by a single space, making the output look neat without extra formatting code."
+        },
+        {
+          "id": "a2-5",
+          "sentence": "In the example, variable i stores the product of 256 multiplied by itself, resulting in a large integer."
+        },
+        {
+          "id": "a2-6",
+          "sentence": "The expression i = 256*256 assigns this computed value to i, so it can be reused later."
+        },
+        {
+          "id": "a2-7",
+          "sentence": "The print call combines a literal string with the variable i, showing how text and numbers mix."
+        },
+        {
+          "id": "a2-8",
+          "sentence": "Python automatically inserts a space between the string and the numeric value, producing a readable sentence."
+        },
+        {
+          "id": "a2-9",
+          "sentence": "When the code runs, the interpreter evaluates i first, then passes both arguments to print.",
+          "expect": "unsupported",
+          "why": "order of evaluation (Udit, 2026-10-10)"
+        },
+        {
+          "id": "a2-10",
+          "sentence": "Print displays the combined result on the console, which is the standard output window for programs."
+        },
+        {
+          "id": "a2-11",
+          "sentence": "The final line shown, 'The value of i is 65536', confirms the calculation and formatting succeeded."
+        },
+        {
+          "id": "a2-12",
+          "sentence": "Understanding this simple print statement forms the foundation for more complex output tasks in AI projects.",
+          "expect": "filler",
+          "why": "pep talk (Udit, 2026-10-10)"
+        },
+        {
+          "id": "a2-13",
+          "line": 1,
+          "sentence": "This line computes 256 multiplied by 256, producing the integer 65536, and stores it in variable i.",
+          "expect": "ok",
+          "why": "what line 1 does, with 65536 shown in the output (Udit, 2026-10-10)"
+        },
+        {
+          "id": "a2-14",
+          "line": 1,
+          "sentence": "The asterisk (*) acts as the multiplication operator, combining two numbers into their product.",
+          "expect": "ok",
+          "why": "the basic syntax on line 1 (Udit, 2026-10-10)"
+        },
+        {
+          "id": "a2-15",
+          "line": 1,
+          "sentence": "Assignment uses the equals sign (=) to give the resulting value a name for later use.",
+          "expect": "ok",
+          "why": "the basic syntax on line 1 (Udit, 2026-10-10)"
+        },
+        {
+          "id": "a2-16",
+          "line": 2,
+          "sentence": "Here the print function is called with two arguments: a literal string and the variable i.",
+          "expect": "ok",
+          "why": "what line 2 does (Udit, 2026-10-10)"
+        },
+        {
+          "id": "a2-17",
+          "line": 2,
+          "sentence": "The string 'The value of i is' provides descriptive text that will appear before the numeric result.",
+          "expect": "ok",
+          "why": "what line 2 shows (Udit, 2026-10-10)"
+        },
+        {
+          "id": "a2-18",
+          "line": 2,
+          "sentence": "Python inserts a space between the string and i, then outputs the combined message to the console."
+        },
+        {
+          "id": "a2-19",
+          "line": 3,
+          "sentence": "The console shows exactly what print produced: the descriptive text followed by the calculated number."
+        },
+        {
+          "id": "a2-20",
+          "line": 3,
+          "sentence": "No quotation marks appear around the string because print removes them when displaying output."
+        },
+        {
+          "id": "a2-21",
+          "line": 3,
+          "sentence": "The space between words comes from print’s default separator, ensuring the output reads naturally."
+        },
+        {
+          "id": "a2-22",
+          "closing": true,
+          "sentence": "Using print this way lets you quickly show results, a vital skill for any beginner in Python.",
+          "expect": "filler",
+          "why": "pep talk: 'a vital skill' (Udit, 2026-10-10)"
         }
       ]
     }

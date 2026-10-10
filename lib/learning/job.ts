@@ -20,7 +20,17 @@ import {
   WRITE_MAX_TOKENS,
 } from "@/lib/learning/constants";
 import { isLocalDevRuntime } from "@/lib/learning/dev-override";
-import { checkShape, renderLessonBody, sentencesOf, withReplacements, type Explanation, type Problem, type Sentence } from "@/lib/learning/explanation";
+import {
+  checkShape,
+  renderLessonBody,
+  sentencesOf,
+  settleAfterFix,
+  withChanges,
+  type Changes,
+  type Explanation,
+  type Problem,
+  type Sentence,
+} from "@/lib/learning/explanation";
 import {
   BadAnswerError,
   copySource,
@@ -33,14 +43,14 @@ import {
   type RateLimits,
 } from "@/lib/learning/groq";
 import { excerptFor, extractPage } from "@/lib/learning/html-text";
-import { JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts } from "@/lib/learning/judge";
+import { JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts, type JudgeReading } from "@/lib/learning/judge";
 import { budgetState, logCall } from "@/lib/learning/ledger";
 import { pickStepToWrite, type StepState } from "@/lib/learning/next-step";
 import { chooseSource, copierUserMessage, COPIER_SYSTEM_PROMPT, numberPage, pageThinness, type SourceBlock } from "@/lib/learning/passages";
 import { safeFetchPage, type FetchedPage } from "@/lib/learning/safe-fetch";
 import { isLandingPage, onDocsSite, pickCandidates, pickDocsCandidates, siteQuery, SourceProvenance, type SearchHit } from "@/lib/learning/sources";
 import type { AdvanceResult, StepErrorCode } from "@/lib/learning/types";
-import { readReplacements, writerFixMessage, writerUserMessage, WRITER_SYSTEM_PROMPT } from "@/lib/learning/writer-prompt";
+import { readFix, writerFixMessage, writerUserMessage, WRITER_SYSTEM_PROMPT } from "@/lib/learning/writer-prompt";
 import type { Database } from "@/types/database";
 
 /**
@@ -204,7 +214,7 @@ async function debugDump(stepId: string, data: unknown): Promise<void> {
 }
 
 function describe(problems: Problem[]): string[] {
-  return problems.map((p) => (p.sentence === null ? p.reason : `sentence ${p.sentence} (${p.check}): ${p.reason}`));
+  return problems.map((p) => (p.sentence === null ? p.reason : `sentence ${p.sentence} (${p.check}${p.verdict ? `, ${p.verdict}` : ""}): ${p.reason}`));
 }
 
 /** What a failed or unusable call means for the stored message. */
@@ -465,68 +475,73 @@ export async function advanceTopic(
     return fail("ai_error", `The AI's explanation did not have the lesson's shape, so it was not saved: ${describe(shape).join("; ")}. Try again.`, describe(shape));
   }
 
-  /** G2 on these sentences. Returns its problems, or a result that ends this advance. */
-  const meaningCheck = async (sentences: Sentence[]): Promise<Problem[] | AdvanceResult> => {
-    if (sentences.length === 0) return [];
-    const message = judgeUserMessage(source, sentences);
+  /**
+   * G2 (120b) on the `judged` sentences, with the whole explanation as
+   * context. Returns what it found, or a result that ends this advance.
+   */
+  const meaningCheck = async (all: Sentence[], judged: Sentence[], pass: string): Promise<JudgeReading | AdvanceResult> => {
+    const message = judgeUserMessage(source, all, judged.map((s) => s.id));
     const room = spend.room(LEARNING_JUDGE_MODEL, promptTokens(JUDGE_SYSTEM_PROMPT, message), JUDGE_MAX_TOKENS);
     if (room === null) return fail("ai_error", `The explanation was not checked: ${spend.overMessage(LEARNING_JUDGE_MODEL)}. Try again.`);
     try {
       // A draft has already been paid for, so a busy check is not a reason
       // to start again from the search: it fails honestly, never loops.
-      const judged = await withShortWait(ctx, stepId, 8_000, () => judgeSentences(message, room));
-      await noted("meaning check (G2)", judged.record, judged.limits);
-      const read = readVerdicts(judged.value, sentences);
-      trace.g2.push({ sentences: sentences.map((x) => ({ id: x.id, text: x.text })), answer: judged.value });
+      const answer = await withShortWait(ctx, stepId, 8_000, () => judgeSentences(message, room));
+      await noted(`meaning check (G2, ${pass})`, answer.record, answer.limits);
+      const read = readVerdicts(answer.value, judged, source, all);
+      trace.g2.push({ pass, judged: judged.map((x) => ({ id: x.id, text: x.text })), answer: answer.value, read });
       if ("bad" in read) {
-        console.error(`[learning] the meaning check's answer was not used (${read.bad}). Raw answer:`, judged.raw);
+        console.error(`[learning] the meaning check's answer was not used (${read.bad}). Raw answer:`, answer.raw);
         return fail("ai_error", `The AI's meaning check could not be used: ${read.bad}. The explanation was not saved. Try again.`);
       }
-      return read.problems;
+      return read;
     } catch (err) {
-      await notedError("meaning check (G2)", err);
+      await notedError(`meaning check (G2, ${pass})`, err);
       const f = callFailure(err, "meaning check");
       return fail(f.code, `${f.message.replace(/ Try again\.$/, "")} The explanation was not saved. Try again.`);
     }
   };
-  /** G1, then G2 on the sentences G1 did not already reject. */
-  const checkSentences = async (which: Sentence[]): Promise<Problem[] | AdvanceResult> => {
-    const g1 = checkCodeRule(which, source);
-    const flaggedByG1 = new Set(g1.map((p) => p.sentence));
-    const g2 = await meaningCheck(which.filter((s) => !flaggedByG1.has(s.id)));
-    if (!Array.isArray(g2)) return g2;
-    return [...g1, ...g2];
-  };
+  const isReading = (r: JudgeReading | AdvanceResult): r is JudgeReading => "problems" in r;
 
-  const first = await checkSentences(sentencesOf(explanation));
-  if (!Array.isArray(first)) return first;
-  const firstProblems = describe(first);
+  // First pass: G1 and G2 on every sentence; G2 also lists the words it
+  // finds unexplained.
+  const firstSentences = sentencesOf(explanation);
+  const g1 = checkCodeRule(firstSentences, source);
+  const firstRead = await meaningCheck(firstSentences, firstSentences, "first");
+  if (!isReading(firstRead)) return firstRead;
+  const first = [...g1, ...firstRead.problems];
+  const firstProblems = [...describe(first), ...firstRead.words.map((w) => `unexplained word: ${w.word}`)];
   trace.stages.firstProblems = firstProblems;
+  trace.stages.unexplainedWords = { words: firstRead.words, dropped: firstRead.dropped };
 
-  // ── 5. At most one fix: only the flagged sentences go back.
+  // ── 5. At most one fix: only the flagged sentences go back, with the words to explain.
   let attempts = 1;
-  if (first.length > 0) {
-    const flaggedIds = Array.from(new Set(first.map((p) => p.sentence as number)));
-    const flagged = sentencesOf(explanation).filter((s) => flaggedIds.includes(s.id));
+  if (first.length > 0 || firstRead.words.length > 0) {
+    const flaggedIds = Array.from(new Set(first.map((p) => p.sentence).filter((id): id is number => id !== null)));
+    const flagged = firstSentences.filter((s) => flaggedIds.includes(s.id));
     if (Date.now() - ctx.startedAt > ADVANCE_DEADLINE_MS - 15_000) {
-      return fail("ungrounded", `The checks rejected sentences of the explanation and there was no time left for its one fix, so it was not saved: ${firstProblems.join("; ")}. Try again.`, firstProblems);
+      return fail("ungrounded", `The checks found problems in the explanation and there was no time left for its one fix, so it was not saved: ${firstProblems.join("; ")}. Try again.`, firstProblems);
     }
-    const fixMessage = writerFixMessage(flagged, first, source);
+    const fixMessage = writerFixMessage(flagged, first, firstRead.words, source, firstSentences);
     const fixRoom = spend.room(LEARNING_WRITE_MODEL, promptTokens(WRITER_SYSTEM_PROMPT, userMessage, fixMessage), FIX_MAX_TOKENS);
     if (fixRoom === null) {
-      return fail("ungrounded", `The checks rejected sentences of the explanation and ${spend.overMessage(LEARNING_WRITE_MODEL)}, so it was not saved: ${firstProblems.join("; ")}. Try again.`, firstProblems);
+      return fail("ungrounded", `The checks found problems in the explanation and ${spend.overMessage(LEARNING_WRITE_MODEL)}, so it was not saved: ${firstProblems.join("; ")}. Try again.`, firstProblems);
     }
-    let replacements: Map<number, string>;
+    let changes: Changes;
     try {
       const fix = await withShortWait(ctx, stepId, 12_000, () => writeFix(userMessage, fixMessage, fixRoom));
       await noted("fix", fix.record, fix.limits);
       trace.stages.fix = { asked: fixMessage, answer: fix.raw };
-      const read = readReplacements(fix.value, flaggedIds);
+      const read = readFix(fix.value, flaggedIds, firstRead.words);
       if ("bad" in read) {
         console.error(`[learning] the fix's answer was not used (${read.bad}). Raw answer:`, fix.raw);
         return fail("ai_error", `The AI's fix could not be used: ${read.bad}. The explanation was not saved. Try again.`, firstProblems);
       }
-      replacements = read.replacements;
+      changes = read.changes;
+      trace.stages.changes = {
+        replaced: Array.from(read.changes.replace?.entries() ?? []).map(([id, sentence]) => ({ id, was: firstSentences.find((s) => s.id === id)?.text, now: sentence })),
+        explained: read.explanations,
+      };
     } catch (err) {
       await notedError("fix", err);
       // Releasing here would make the next request search and write the
@@ -536,22 +551,33 @@ export async function advanceTopic(
       return fail(f.code, `${f.message.replace(/ Try again\.$/, "")} The explanation was not saved. Try again.`, firstProblems);
     }
 
-    const fixed = withReplacements(explanation, replacements);
-    explanation = fixed.explanation;
-    const shapeAfter = checkShape(explanation, source);
+    const fixed = withChanges(explanation, changes);
+    const shapeAfter = checkShape(fixed.explanation, source);
     if (shapeAfter.length > 0) {
       return fail("ai_error", `After its one fix the explanation did not have the lesson's shape, so it was not saved: ${describe(shapeAfter).join("; ")}. Try again.`, describe(shapeAfter));
     }
-    const after = await checkSentences(sentencesOf(explanation).filter((s) => fixed.changed.includes(s.id)));
-    if (!Array.isArray(after)) return after;
-    if (after.length > 0) {
-      trace.stages.afterFix = describe(after);
-      return fail(
-        "ungrounded",
-        `After its one fix the explanation still had sentences the checks rejected, so it was not saved: ${describe(after).join("; ")}. Try again.`,
-        describe(after)
-      );
+    const fixedSentences = sentencesOf(fixed.explanation);
+    const changed = fixedSentences.filter((s) => fixed.changed.includes(s.id));
+    // G1 is unchanged (Udit, 2026-10-10): a code-rule or link problem left
+    // after the fix fails the step.
+    const g1After = checkCodeRule(changed, source);
+    if (g1After.length > 0) {
+      trace.stages.afterFix = describe(g1After);
+      return fail("ungrounded", `After its one fix the explanation still broke the code rule, so it was not saved: ${describe(g1After).join("; ")}. Try again.`, describe(g1After));
     }
+    const afterRead = changed.length > 0 ? await meaningCheck(fixedSentences, changed, "after fix") : null;
+    if (afterRead !== null && !isReading(afterRead)) return afterRead;
+    const still = afterRead?.problems ?? [];
+    trace.stages.afterFix = describe(still);
+    // Still contradicting: the step fails. Still unsupported or filler: the
+    // sentence is removed, and the lesson is saved if its shape still holds.
+    const settled = settleAfterFix(fixed.explanation, still, source);
+    if (settled.kind === "fail") {
+      const code = still.some((p) => p.verdict === "contradicts") ? "ungrounded" : "ai_error";
+      return fail(code, `After its one fix the explanation could not be saved: ${settled.reasons.join("; ")}. Try again.`, settled.reasons);
+    }
+    trace.stages.removed = settled.removed.map((r) => ({ id: r.sentence.id, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
+    explanation = settled.explanation;
     attempts = 2;
   }
 

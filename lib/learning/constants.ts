@@ -21,11 +21,12 @@ export const LEARNING_SEARCH_MODEL = "openai/gpt-oss-20b";
 
 /**
  * G2, the meaning check (judge.ts): reads each sentence of the explanation
- * next to the source shown above it. On 20b, so it spends 20b's own daily
- * budget, not the 120b one the rest of the app shares.
+ * next to the source shown above it. On 120b (Udit, 2026-10-10): on 20b it
+ * rejected true walk-through sentences and passed pep talk, and its tokens
+ * now come out of the same per-lesson 120b budget as the writer's.
  */
-export const LEARNING_JUDGE_MODEL = "openai/gpt-oss-20b";
-export const JUDGE_TIMEOUT_MS = 20_000;
+export const LEARNING_JUDGE_MODEL = "openai/gpt-oss-120b";
+export const JUDGE_TIMEOUT_MS = 25_000;
 
 /**
  * Chooses what the lesson quotes (passages.ts): sentence and code-example
@@ -52,9 +53,10 @@ export const JUDGE_MAX_TOKENS = 2_500;
 export const PLAN_MAX_TOKENS = 6_000;
 
 /**
- * What ONE lesson may spend, per model (Udit, 2026-10-10). job.ts adds up
- * each call's real usage and gives the next call only what is left, so a
- * lesson that would go over stops with that reason instead.
+ * What ONE lesson may spend, per model (Udit, 2026-10-10): on 120b the
+ * writer, G2, the fix and G2 again; on 20b the searches and the copier.
+ * job.ts adds up each call's real usage and gives the next call only what is
+ * left, so a lesson that would go over stops with that reason instead.
  */
 export const LESSON_BUDGET: Record<string, number> = {
   [LEARNING_WRITE_MODEL]: 8_000,
@@ -65,11 +67,9 @@ export const MIN_ANSWER_TOKENS = 600;
 
 /**
  * The source block (Udit, 2026-10-10): 1-3 passages from ONE page, at most
- * about 120 quoted words, plus one code example from the same page. The
- * copier is asked for 120; 130 is where the server stops adding sentences.
+ * 130 quoted words, plus one code example from the same page.
  */
 export const MAX_SOURCE_PASSAGES = 3;
-export const SOURCE_TARGET_WORDS = 120;
 export const SOURCE_MAX_WORDS = 130;
 /** Fewer quoted words than this is not enough to teach from: try the next page. */
 export const MIN_SOURCE_WORDS = 40;
@@ -110,8 +110,12 @@ export const MAX_CANDIDATE_PAGES = 5;
 /** The part of a page the copier numbers and chooses from. */
 export const MAIN_SOURCE_EXCERPT_CHARS = 7_000;
 
-/** The AI explanation's length: every sentence, the closing line included. */
-export const LESSON_MIN_WORDS = 300;
+/**
+ * The AI explanation's length: every sentence, the closing line included.
+ * 150, not 300 (Udit, 2026-10-10): a usable 219-word explanation was thrown
+ * away by the old floor, and the next one was padded to reach it.
+ */
+export const LESSON_MIN_WORDS = 150;
 export const LESSON_MAX_WORDS = 500;
 
 /** Shown under a source that is not on the topic's official documentation site. */

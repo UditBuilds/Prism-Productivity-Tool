@@ -389,7 +389,7 @@ export function writeFix(userMessage: string, fixMessage: string, maxTokens: num
   );
 }
 
-/** G2, the meaning check (judge.ts), on gpt-oss-20b. */
+/** G2, the meaning check (judge.ts), on gpt-oss-120b; `model` lets the judge eval run it on 20b too. */
 export function judgeSentences(userMessage: string, maxTokens: number, model: string = LEARNING_JUDGE_MODEL): Promise<JsonCall<JudgeAnswer>> {
   return jsonCall<JudgeAnswer>(
     "judge",

@@ -42,37 +42,62 @@ export function sentencesOf(e: Explanation): Sentence[] {
   return out;
 }
 
-/**
- * The explanation with sentences replaced by id (sentencesOf numbering). An
- * empty replacement removes the sentence, and a paragraph left empty goes
- * with it; a walk-through item left empty stays, so the shape check reports
- * the code line it no longer explains. Returns the new explanation and the
- * ids, in ITS numbering, of the sentences that are new.
- */
-export function withReplacements(e: Explanation, replacements: Map<number, string>): { explanation: Explanation; changed: number[] } {
-  let id = 0;
-  let newId = 0;
-  const changed: number[] = [];
-  const swap = (sentences: string[]) =>
-    sentences.flatMap((text) => {
-      id += 1;
-      const r = replacements.get(id);
-      if (r === undefined) {
-        newId += 1;
-        return [text];
-      }
-      if (!r.trim()) return [];
-      newId += 1;
-      changed.push(newId);
-      return [r.trim()];
-    });
-  const meaning = e.meaning.map((p) => ({ sentences: swap(p.sentences) })).filter((p) => p.sentences.length > 0);
-  const walkthrough = e.walkthrough.map((w) => ({ line: w.line, sentences: swap(w.sentences) }));
-  const [closing] = swap([e.closing]);
-  return { explanation: { meaning, walkthrough, closing: closing ?? "" }, changed };
+/** What the one fix (or the removals after it) does to the explanation. */
+export interface Changes {
+  /** By sentence id (sentencesOf numbering): the new sentence, or "" to remove it. */
+  replace?: Map<number, string>;
+  /** By sentence id: new sentences that go just before it (before the closing line: at the end of the part before it). */
+  before?: Map<number, string[]>;
+  /** New sentences that open the meaning. */
+  atStart?: string[];
 }
 
-/** Words that count toward 300-500: every sentence, the closing line included. */
+/**
+ * The explanation with the changes made. A paragraph left empty goes; a
+ * walk-through item left empty stays, so the shape check reports the code
+ * line it no longer explains; a removed closing line leaves "", which the
+ * shape check reports. Returns the new explanation and the ids, in ITS
+ * numbering, of the sentences that are new.
+ */
+export function withChanges(e: Explanation, changes: Changes): { explanation: Explanation; changed: number[] } {
+  const replace = changes.replace ?? new Map<number, string>();
+  const before = changes.before ?? new Map<number, string[]>();
+  type Slot = { text: string; isNew: boolean };
+  const meaning: Slot[][] = e.meaning.map(() => []);
+  const walkthrough: Slot[][] = e.walkthrough.map(() => []);
+  if (changes.atStart?.length) {
+    if (meaning.length === 0) meaning.push([]);
+    meaning[0].push(...changes.atStart.map((text) => ({ text, isNew: true })));
+  }
+  let id = 0;
+  const visit = (into: Slot[], text: string) => {
+    id += 1;
+    for (const t of before.get(id) ?? []) into.push({ text: t, isNew: true });
+    const r = replace.get(id);
+    if (r === undefined) into.push({ text, isNew: false });
+    else if (r.trim()) into.push({ text: r.trim(), isNew: true });
+  };
+  e.meaning.forEach((p, g) => p.sentences.forEach((text) => visit(meaning[g], text)));
+  e.walkthrough.forEach((w, g) => w.sentences.forEach((text) => visit(walkthrough[g], text)));
+  id += 1;
+  const lastPart = walkthrough.length > 0 ? walkthrough[walkthrough.length - 1] : meaning[meaning.length - 1];
+  for (const t of before.get(id) ?? []) lastPart?.push({ text: t, isNew: true });
+  const r = replace.get(id);
+  const closing: Slot = r === undefined ? { text: e.closing, isNew: false } : { text: r.trim(), isNew: Boolean(r.trim()) };
+
+  const kept = meaning.filter((p) => p.length > 0);
+  const ordered = [...kept.flat(), ...walkthrough.flat(), closing];
+  return {
+    explanation: {
+      meaning: kept.map((p) => ({ sentences: p.map((s) => s.text) })),
+      walkthrough: e.walkthrough.map((w, g) => ({ line: w.line, sentences: walkthrough[g].map((s) => s.text) })),
+      closing: closing.text,
+    },
+    changed: ordered.flatMap((s, i) => (s.isNew ? [i + 1] : [])),
+  };
+}
+
+/** Words that count toward 150-500: every sentence, the closing line included. */
 export function explanationWords(e: Explanation): number {
   return sentencesOf(e).reduce((n, s) => n + wordCount(s.text), 0);
 }
@@ -86,6 +111,8 @@ export interface Problem {
   sentence: number | null;
   /** "G1": the code rule (code-rule.ts). "G2": the meaning check (judge.ts). "links": a web address. "shape": these rules. */
   check: "G1" | "G2" | "links" | "shape";
+  /** G2 only: its verdict. After the fix, "contradicts" fails the step; "unsupported" and "filler" are removed. */
+  verdict?: "contradicts" | "unsupported" | "filler";
   text: string;
   reason: string;
 }
@@ -97,8 +124,9 @@ export function linesToWalk(code: string | null): number[] {
 }
 
 /**
- * The shape rules, all checked in code: what it means, then every non-blank
- * code line in order, then one closing sentence; 300-500 words.
+ * The shape rules, all checked in code: at least one paragraph saying what it
+ * means, then one walk-through item for every non-blank code line in order,
+ * then one closing sentence; 150-500 words.
  */
 export function checkShape(e: Explanation, source: SourceBlock): Problem[] {
   const problems: Problem[] = [];
@@ -135,6 +163,60 @@ export function checkShape(e: Explanation, source: SourceBlock): Problem[] {
   const words = explanationWords(e);
   if (words < LESSON_MIN_WORDS || words > LESSON_MAX_WORDS) shape(`it is ${words} words; it must be ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS}`);
   return problems;
+}
+
+// ─── unexplained words ────────────────────────────────────────────────────
+
+/** Does the text use the word? Case does not matter, and "argument", "arguments" and "argument(s)" are one word. */
+export function mentionsWord(text: string, word: string): boolean {
+  const w = word.toLowerCase().trim();
+  if (!w) return false;
+  const stem = w.endsWith("ies") && w.length > 4 ? w.slice(0, -3) : w.endsWith("es") && /(?:s|x|z|ch|sh)es$/.test(w) ? w.slice(0, -2) : w.endsWith("s") && !w.endsWith("ss") && w.length > 3 ? w.slice(0, -1) : w;
+  const tail = w.endsWith("ies") || w.endsWith("y") ? "(?:y|ies)" : "(?:s|es|\\(s\\))?";
+  const base = w.endsWith("y") ? stem.slice(0, -1) : stem;
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9_])${escaped}${tail}($|[^a-z0-9_])`, "i").test(text);
+}
+
+/**
+ * Where the one short sentence explaining a word goes (Udit, 2026-10-10:
+ * explained the first time it appears). A word the source block uses — the
+ * reader meets it there first, and the source is shown word for word — is
+ * explained at the start of the meaning; any other word just before the
+ * first sentence that uses it. Null when the lesson does not use the word at
+ * all (the judge named a word that is not there).
+ */
+export function wordPlace(word: string, source: SourceBlock, sentences: Sentence[]): "start" | number | null {
+  if ([...source.passages, source.code ?? ""].some((t) => mentionsWord(t, word))) return "start";
+  return sentences.find((s) => mentionsWord(s.text, word))?.id ?? null;
+}
+
+// ─── after the one fix ────────────────────────────────────────────────────
+
+/**
+ * What happens after the one fix (Udit, 2026-10-10), given the problems the
+ * checks still find in the new sentences:
+ *   - a sentence G2 still finds contradicting the source fails the step;
+ *   - a G1 or link problem still fails the step (G1 is unchanged);
+ *   - a sentence still unsupported or filler is REMOVED;
+ * then the lesson is saved only if its shape still holds.
+ */
+export function settleAfterFix(
+  e: Explanation,
+  problems: Problem[],
+  source: SourceBlock
+): { kind: "fail"; reasons: string[] } | { kind: "save"; explanation: Explanation; removed: { sentence: Sentence; problem: Problem }[] } {
+  const describe = (p: Problem) => (p.sentence === null ? p.reason : `sentence ${p.sentence} (${p.check}${p.verdict ? `, ${p.verdict}` : ""}): ${p.reason}`);
+  const hard = problems.filter((p) => p.check !== "G2" || p.verdict === "contradicts");
+  if (hard.length > 0) return { kind: "fail", reasons: hard.map(describe) };
+  const all = sentencesOf(e);
+  const removed = problems.map((problem) => ({ sentence: all.find((s) => s.id === problem.sentence) as Sentence, problem }));
+  const after = withChanges(e, { replace: new Map(removed.map((r) => [r.sentence.id, ""])) }).explanation;
+  const shape = checkShape(after, source);
+  if (shape.length > 0) {
+    return { kind: "fail", reasons: [...removed.map((r) => `removed ${describe(r.problem)}`), ...shape.map((p) => `then ${p.reason}`)] };
+  }
+  return { kind: "save", explanation: after, removed };
 }
 
 // ─── the stored body ──────────────────────────────────────────────────────
