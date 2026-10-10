@@ -1,4 +1,4 @@
-import { MAX_EXAMPLE_CODE_LINES, MAX_PASSAGES, MIN_PASSAGE_WORDS } from "@/lib/learning/constants";
+import { MAX_DEFINE_LINES, MAX_EXAMPLE_CODE_LINES, MAX_PASSAGES, MIN_PASSAGE_WORDS } from "@/lib/learning/constants";
 import { decodeEntities } from "@/lib/learning/html-text";
 
 /**
@@ -113,8 +113,11 @@ export function parseCopiedPassages(content: string): { terms: string[]; copied:
     if (!line.trim()) continue;
     const termsLine = TERMS_LINE.exec(line);
     if (termsLine) {
-      // At most 5, as asked: each one the lesson uses must then be defined.
-      for (const t of termsLine[1].split(/[,;]/).map(cleanTerm)) if (t && !terms.includes(t) && terms.length < 5) terms.push(t);
+      // No more terms than [define] lines: every key term the lesson uses must
+      // be defined, and when no passage defines any of them, MAX_DEFINE_LINES
+      // [define] lines must still be enough. More would make the lesson
+      // impossible to pass.
+      for (const t of termsLine[1].split(/[,;]/).map(cleanTerm)) if (t && !terms.includes(t) && terms.length < MAX_DEFINE_LINES) terms.push(t);
       continue;
     }
     const define = DEFINE_LINE.exec(line);
@@ -589,7 +592,7 @@ export const COPIER_SYSTEM_PROMPT = `You copy passages from ONE web page for a l
 
 You get a STEP (what one short lesson must teach a smart adult who has never written code) and the SOURCE page. Answer in this order:
 
-1. One line naming the 2 to 5 technical words a beginner must understand for this STEP:
+1. One line naming the 1 to ${MAX_DEFINE_LINES} technical words a beginner most needs to understand for this STEP:
 TERMS: word, word, word
 2. For each of those words that the SOURCE defines or explains, the sentence that does it, copied word for word:
 DEFINE word [source 1] «exact words»

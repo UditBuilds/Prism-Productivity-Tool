@@ -422,6 +422,12 @@ console.log("\npassages: copied word for word by 20b, checked here (quotes first
   ].join("\n");
   const { terms, copied, unparsed } = passages.parseCopiedPassages(answer);
   eq("the TERMS line is read, lower case", terms, ["variable", "expression", "interpreter"]);
+  eq(
+    "no more key terms than [define] lines, so every used term can always be defined",
+    passages.parseCopiedPassages("TERMS: program, code, interpreter, statement, value").terms.length,
+    constants.MAX_DEFINE_LINES
+  );
+  ok("…and the copier is asked for that many at most", passages.COPIER_SYSTEM_PROMPT.includes(`1 to ${constants.MAX_DEFINE_LINES} technical words`));
   eq("DEFINE, prose and code passages are read; chatter is counted, not kept", [copied.length, unparsed], [9, 1]);
   eq("a DEFINE line carries its term", copied[0].defines, "variable");
   const { passages: ps, rejected } = passages.verifyPassages(copied, srcs);
