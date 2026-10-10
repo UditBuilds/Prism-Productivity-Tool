@@ -40,12 +40,13 @@ export const LEARNING_COPY_MODEL = "openai/gpt-oss-20b";
 export const COPY_TIMEOUT_MS = 20_000;
 
 /**
- * max_tokens per call. Groq's per-minute counter was seen to take
- * prompt + max_tokens up front (2026-10-10: a 78-token prompt with
- * max_tokens 200 dropped "remaining" by exactly 278), so these are sized to
- * what each call returns, with room for reasoning, not "large to be safe".
- * One observation — the debug dump records the headers on every call so the
- * question can be settled.
+ * max_tokens per call, sized to what each call returns plus room for
+ * reasoning. Whether Groq's per-minute counter holds max_tokens up front is
+ * NOT settled: a 78-token probe with max_tokens 200 dropped "remaining" by
+ * exactly 278, but in the first live lesson (2026-10-10) a 120b write with a
+ * 1,321-token prompt and max_tokens 3,000 left 6,315 remaining, more than the
+ * 3,679 a full hold would leave. The dev debug dump records the headers after
+ * every call.
  */
 export const SEARCH_MAX_TOKENS = 800;
 export const COPY_MAX_TOKENS = 2_500;
