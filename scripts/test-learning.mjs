@@ -147,7 +147,26 @@ console.log("\nplanner parsing");
   for (const t of ["What a Python list is", "Reading one item by its position", "Handling errors"]) {
     ok(`one-idea title: ${t}`, !plan.isMultiIdea(t));
   }
-  ok("the split re-ask names the broad steps", plan.planRetryMessage([{ title: "Lists and tuples", goal: "", search_query: "q" }, { title: "Loops", goal: "", search_query: "q" }]).includes("- Lists and tuples\n"));
+  const retry = plan.planRetryMessage([
+    { title: "Lists and tuples", goal: "Use both.", search_query: "q" },
+    { title: "Loops", goal: "Repeat things.", search_query: "q" },
+    { title: "Working with Data Types", goal: "Identify and manipulate strings, numbers, lists, and dictionaries.", search_query: "q" },
+  ]);
+  ok("the split re-ask names the broad steps, by title or by goal", retry.includes("- Lists and tuples (goal: Use both.)") && retry.includes("- Working with Data Types") && !retry.includes("- Loops"));
+  // The first re-plan under the title-only rule moved the extra ideas into the goals (2026-10-10).
+  ok("a goal that lists 3+ things is multi-idea (real: 'strings, numbers, lists, and dictionaries')", plan.isListGoal("Identify and manipulate strings, numbers, lists, and dictionaries."));
+  ok("…'Load, clean, and explore tabular data' is too", plan.isListGoal("Load, clean, and explore tabular data for AI models."));
+  ok("…and 'X, Y and Z' with one comma", plan.isListGoal("Use if, elif and else."));
+  ok("a plain 'and' in a goal is one activity, not a list", !plan.isListGoal("Train and evaluate a basic machine learning model."));
+  ok(
+    "a step is multi-idea by its title or its goal",
+    plan.isMultiIdeaStep({ title: "Working with Data Types", goal: "Use strings, numbers, and lists.", search_query: "q" }) &&
+      !plan.isMultiIdeaStep({ title: "Text values", goal: "Write a piece of text in Python.", search_query: "q" })
+  );
+  ok(
+    "the planner is told: concepts, not categories; a goal with no list; the official docs page",
+    /never a category/.test(plan.PLAN_SYSTEM_PROMPT) && /No list in it/.test(plan.PLAN_SYSTEM_PROMPT) && /OFFICIAL DOCUMENTATION/.test(plan.PLAN_SYSTEM_PROMPT)
+  );
 
   eq(
     "the topic is fenced as data, and cannot close its own fence",

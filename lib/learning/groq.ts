@@ -18,7 +18,7 @@ import {
 } from "@/lib/learning/constants";
 import { classifyGroqFailure, type GroqFailure } from "@/lib/learning/groq-errors";
 import {
-  isMultiIdea,
+  isMultiIdeaStep,
   PLAN_SYSTEM_PROMPT,
   parsePlan,
   planRetryMessage,
@@ -160,8 +160,9 @@ async function planCall(messages: { role: "system" | "user" | "assistant"; conte
 }
 
 /**
- * Plan a topic. One idea per step (Udit, 2026-10-10): if ANY step title holds
- * more than one idea (isMultiIdea), ask once more to split them. A plan that
+ * Plan a topic. One idea per step (Udit, 2026-10-10): if ANY step holds more
+ * than one idea (isMultiIdeaStep: its title, or a list in its goal), ask once
+ * more to split them. A plan that
  * still has such a step after that is refused, not saved — the old rule kept
  * a "broad" plan, and a three-idea step title produced a lesson that was an
  * overview of everything (2026-10-10).
@@ -187,7 +188,7 @@ export async function planTopic(topic: string): Promise<PlanResult> {
   }
   records.push(record("plan", LEARNING_WRITE_MODEL, "ok", first.completion.usage, first.startedAt));
 
-  if (steps.some((s) => isMultiIdea(s.title))) {
+  if (steps.some(isMultiIdeaStep)) {
     try {
       const second = await planCall([
         ...messages,
@@ -206,7 +207,7 @@ export async function planTopic(topic: string): Promise<PlanResult> {
       if (err instanceof LearningAiError) records.push(err.record);
       return { steps: null, problem: "The AI could not split the plan's steps into one idea each.", records };
     }
-    const still = steps.filter((s) => isMultiIdea(s.title));
+    const still = steps.filter(isMultiIdeaStep);
     if (still.length > 0) {
       const names = still.map((s) => `"${s.title}"`).join(", ");
       return { steps: null, problem: `The plan still had steps with more than one idea: ${names}.`, records };
