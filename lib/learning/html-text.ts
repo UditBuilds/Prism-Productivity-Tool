@@ -84,6 +84,10 @@ export function extractPage(body: string, contentType: string, url: string): Pag
       `\n\n\`\`\`\n${code.replace(/<[^>]+>/g, "").replace(/^\n+|\s+$/g, "")}\n\`\`\`\n\n`
     )
     .replace(/<(br|hr)\b[^>]*>/gi, "\n")
+    // Table cells get a separator: without one a row read "int42, -7,
+    // 10**100Whole numbers of any size" (onlinepython.dev, 2026-10-10), and
+    // the lesson quoted it that way.
+    .replace(/<\/(td|th)\s*>/gi, " | ")
     .replace(/<\/(p|div|section|li|h[1-6]|tr|table|blockquote|dd|dt|figure|ul|ol)\s*>/gi, "\n\n")
     .replace(/<li\b[^>]*>/gi, "\n- ")
     .replace(/<h[1-6]\b[^>]*>/gi, "\n\n## ")

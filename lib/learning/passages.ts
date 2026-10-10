@@ -104,6 +104,18 @@ export function parseCopiedPassages(content: string): { copied: CopiedPassage[];
       continue;
     }
     const prose = PROSE_LINE.exec(line);
+    if (prose && prose[2].trim().startsWith("```")) {
+      // "[source 1] ```" opening a code block: the form the copier actually
+      // used on 2026-10-10 instead of "CODE [source 1]". Read as CODE —
+      // treating the fence as prose lost all 9 code blocks of that run.
+      const body: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim().startsWith("```")) body.push(lines[j++]);
+      i = j;
+      const text = body.join("\n").replace(/^\n+|\s+$/g, "");
+      if (text) copied.push({ source: Number(prose[1]), kind: "code", text });
+      continue;
+    }
     if (prose) {
       const text = unquote(prose[2]);
       if (text) copied.push({ source: Number(prose[1]), kind: "prose", text });

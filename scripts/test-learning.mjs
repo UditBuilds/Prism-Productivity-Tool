@@ -318,6 +318,8 @@ console.log("\npage text: code blocks, menus and excerpt choice (measured 2026-1
   ok("code after a '<' survives the tag strip (real loss on docs.python.org)", page.text.includes(">>> while a < 10:"));
   ok("output that looks like a tag survives (real loss on realpython.com)", page.text.includes("<class 'str'>"));
   ok("code keeps its indentation", page.text.includes("...     print(a)"));
+  const table = htmlText.extractPage("<main><table><tr><th>Type</th><th>Example</th></tr><tr><td>int</td><td>42, -7</td></tr></table></main>", "text/html", "https://www.onlinepython.dev/x");
+  ok("table cells are kept apart (real: 'int42, -7, 10**100Whole numbers' on onlinepython.dev)", table.text.includes("int | 42, -7"));
   const units = htmlText.textUnits(page.text);
   ok(
     "a code block with a blank line inside stays one unit, both fences kept",
@@ -428,6 +430,14 @@ console.log("\npassages: copied word for word by 20b, checked here (quotes first
     ps.some((p) => p.kind === "code" && p.text === ">>> width = 20\n>>> height = 5 * 9")
   );
   eq("a code passage knows which code block of its page it is", ps.find((p) => p.kind === "code").block, 1);
+  // The form the copier really used on 2026-10-10 (trailing spaces included):
+  // a tagged fence instead of CODE [source n]. Read as prose, it lost all 9
+  // code blocks of that run and the lesson had no example.
+  const real = passages.parseCopiedPassages(
+    "[source 1] The equal sign (=) is used to assign a value to a variable.  \n[source 1] ```  \n>>> width = 20  \n>>> height = 5 * 9  \n```  \n[source 1] For example:  "
+  );
+  eq("'[source 1] ```' opens a code passage, as CODE [source 1] does", real.copied.map((c) => [c.kind, c.source]), [["prose", 1], ["code", 1], ["prose", 1]]);
+  ok("…and that code verifies against the page, exactly as the page wrote it", passages.verifyPassages(real.copied, srcs).passages.some((p) => p.kind === "code" && p.text === ">>> width = 20\n>>> height = 5 * 9"));
   ok("code no page shows is rejected (decision 2)", rejected.some((r) => r.text === "width = 30" && r.reason.includes("not in any source")));
   eq("a short quote inside a sentence already kept is a duplicate, not a second passage", ps.filter((p) => p.text.startsWith("The integer numbers")).length, 1);
   eq("passages are numbered 1..n", ps.map((p) => p.id), ps.map((_, i) => i + 1));
