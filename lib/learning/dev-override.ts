@@ -1,7 +1,7 @@
 /**
  * Dev-only test hooks for Learning (LEARNING_TEST_DAILY_CAP,
- * LEARNING_TEST_WRITE_MAX_TOKENS, LEARNING_DEBUG_DIR), so failure paths and
- * single test lessons can be run for real on a local machine.
+ * LEARNING_DEBUG_DIR), so single test lessons can be run for real, and read
+ * line by line, on a local machine.
  *
  * How it is kept out of production — two independent gates, either one
  * enough:
