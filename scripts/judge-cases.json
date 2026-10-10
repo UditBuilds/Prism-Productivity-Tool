@@ -1,0 +1,124 @@
+{
+  "about": "The meaning check's test set (lib/learning/judge.ts). Each case is one lesson line with the passages it rests on and the verdict a careful reader gives. scripts/eval-judge.mjs sends them to the real judge (it costs 20b tokens; it is not part of npm test). 'layer' says which check is meant to catch a NO: 'judge' (the AI call) or 'code' (a free rule in lib/learning, unit-tested in scripts/test-learning.mjs). A 'code' case is still sent to the judge, to show whether the judge would also catch it.",
+  "groups": [
+    {
+      "name": "lines",
+      "lessonSoFar": [],
+      "passages": [
+        { "id": 1, "kind": "prose", "text": "The interpreter acts as a simple calculator: you can type an expression into it and it will write the value." },
+        { "id": 2, "kind": "prose", "text": "Expression syntax is straightforward: the operators +, -, * and / can be used to perform arithmetic; parentheses (()) can be used for grouping." },
+        { "id": 3, "kind": "prose", "text": "In interactive mode, the last printed expression is assigned to the variable _. This means that when you are using Python as a desk calculator, it is somewhat easier to continue calculations, for example:" },
+        { "id": 4, "kind": "prose", "text": "A variable can later point at a different value — even one of a different type." },
+        { "id": 5, "kind": "code", "text": ">>> width = 20\n>>> height = 5 * 9\n>>> width * height\n900" }
+      ],
+      "cases": [
+        {
+          "id": "2026-10-10-parentheses-calculate-first",
+          "found": "first live lesson, 2026-10-10: the judge said YES",
+          "kind": "teach",
+          "sentence": "Parentheses (()) tell Python which parts to calculate first.",
+          "expect": "NO",
+          "layer": "judge",
+          "why": "the passage only says parentheses are for grouping; the order of calculation is a new claim"
+        },
+        {
+          "id": "2026-10-10-dangling-for-example",
+          "found": "first live lesson, 2026-10-10: the judge said YES, and no example followed the line",
+          "kind": "cited",
+          "cites": [3],
+          "sentence": "This makes it simple to keep calculating, for example:",
+          "expect": "NO",
+          "layer": "code",
+          "why": "it promises an example the lesson does not show; since 2026-10-10 the code rule 'a line ending in : must be followed by an example block' rejects it"
+        },
+        {
+          "id": "2026-10-10-interpreter-runs-line-by-line",
+          "found": "first live lesson, 2026-10-10: the judge said NO (correct)",
+          "kind": "teach",
+          "sentence": "An interpreter is a program that reads and runs your code line by line.",
+          "expect": "NO",
+          "layer": "judge",
+          "why": "a definition no passage gives; a teach line may add nothing"
+        },
+        {
+          "id": "2026-10-10-types-are-kinds-of-data",
+          "found": "first live lesson, 2026-10-10: the judge said NO (correct)",
+          "kind": "teach",
+          "sentence": "Types are the kinds of data, like numbers or text.",
+          "expect": "NO",
+          "layer": "judge",
+          "why": "a new claim about types"
+        },
+        {
+          "id": "control-grouping-supported",
+          "kind": "cited",
+          "cites": [2],
+          "sentence": "You can use +, -, * and / to do arithmetic, and parentheses to group parts of it.",
+          "expect": "YES",
+          "layer": "judge"
+        },
+        {
+          "id": "define-interpreter-general",
+          "kind": "define",
+          "term": "interpreter",
+          "sentence": "An interpreter is a program that runs the code you type.",
+          "expect": "YES",
+          "layer": "judge",
+          "why": "a correct general definition that contradicts no passage"
+        },
+        {
+          "id": "define-variable-contradicts",
+          "kind": "define",
+          "term": "variable",
+          "sentence": "A variable is a value that can never change once it is set.",
+          "expect": "NO",
+          "layer": "judge",
+          "why": "contradicts passage 4"
+        },
+        {
+          "id": "walk-width-supported",
+          "kind": "walk",
+          "code": ">>> width = 20",
+          "sentence": "The equal sign gives the name width the value 20.",
+          "expect": "YES",
+          "layer": "judge"
+        },
+        {
+          "id": "walk-stores-result-unsupported",
+          "kind": "walk",
+          "code": ">>> width * height\n900",
+          "sentence": "Python multiplies width by height and stores the result in a new variable.",
+          "expect": "NO",
+          "layer": "judge",
+          "why": "the code shows the result; nothing stores it"
+        }
+      ]
+    },
+    {
+      "name": "close",
+      "lessonSoFar": [
+        "The equal sign gives a value to a variable.",
+        "A variable can later point at a different value."
+      ],
+      "passages": [
+        { "id": 1, "kind": "prose", "text": "The equal sign (=) is used to assign a value to a variable." }
+      ],
+      "cases": [
+        {
+          "id": "close-restates",
+          "kind": "close",
+          "sentence": "So a variable is a name the equal sign gives a value to, and that value can change.",
+          "expect": "YES",
+          "layer": "judge"
+        },
+        {
+          "id": "close-adds-a-claim",
+          "kind": "close",
+          "sentence": "Variables also make your programs run faster.",
+          "expect": "NO",
+          "layer": "judge"
+        }
+      ]
+    }
+  ]
+}

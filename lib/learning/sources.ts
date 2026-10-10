@@ -67,14 +67,16 @@ export function harvestSearchResults(executedTools: unknown): SearchHarvest {
 
 const SKIP_HOSTS = ["youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com"];
 
-const DOCS_HOST = /^(?:docs?|documentation|developers?|learn|wiki|manual|reference|api)\./i;
-const DOCS_PATH = /\/(?:docs?|documentation|reference|tutorials?|library|guides?|manual|api|learn|handbook|howto)(?:[/._-]|$)/i;
-
 /**
- * Decision 3 (2026-10-10): documentation and reference pages first. A URL
- * reads as documentation when its host or path says so (docs.python.org,
- * developer.mozilla.org, …/docs/…, …/tutorial/…).
+ * What counts as documentation (Udit's rule, 2026-10-10): a docs.* host, or a
+ * /docs/ path segment. Nothing else. The first version also took /tutorials/,
+ * /learn-, /handbook and learn.* hosts, and on the first live lesson all five
+ * candidates read as "documentation" — a tutorial site's mistakes ("the
+ * keyword print") reached the lesson that way.
  */
+const DOCS_HOST = /^docs\./i;
+const DOCS_PATH = /\/docs(?:\/|$)/i;
+
 export function isDocsUrl(url: string): boolean {
   try {
     const u = new URL(url);
@@ -83,7 +85,6 @@ export function isDocsUrl(url: string): boolean {
     return false;
   }
 }
-
 /**
  * Which search hits to try fetching: fetchable https links only, no PDFs or
  * video pages (this PR reads web pages), one per site so a lesson is not

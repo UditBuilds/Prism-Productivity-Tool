@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { checkAiRateLimit } from "@/lib/ai/rateLimit";
+import { TUTORIAL_LABEL } from "@/lib/learning/constants";
 import { LearningAiError, planTopic } from "@/lib/learning/groq";
 import { budgetState, logCall } from "@/lib/learning/ledger";
 import { minutesToRead } from "@/lib/learning/lesson-format";
+import { isDocsUrl } from "@/lib/learning/sources";
 import type {
   LessonView,
   StepSummary,
@@ -187,7 +189,14 @@ export async function getLessonView(supabase: Client, userId: string, stepId: st
           minutes: minutesToRead(lesson.body),
         }
       : null,
-    sources: sources.map((s) => ({ url: s.url, title: s.title, site_name: s.site_name })),
+    // The tutorial label is read from the URL by the same rule that chose the
+    // source (isDocsUrl), so nothing extra is stored for it.
+    sources: sources.map((s) => ({
+      url: s.url,
+      title: s.title,
+      site_name: s.site_name,
+      label: isDocsUrl(s.url) ? null : TUTORIAL_LABEL,
+    })),
   };
 }
 
@@ -276,4 +285,88 @@ export async function runPlan(supabase: Client, userId: string, topic: LearningT
   }
   await setTopic({ status: "active", error_message: null });
   return { kind: "planned" };
+}
+
+export type ReplanOutcome =
+  | { kind: "replanned"; removed: number; added: number }
+  | { kind: "waiting"; retryAfterSeconds: number; message: string }
+  | { kind: "failed"; message: string };
+
+/**
+ * Plan an ACTIVE topic again, one idea per step (Udit, 2026-10-10). The new
+ * steps go after the old ones (a position is unique within a topic), and
+ * only once they are saved are the old steps marked removed — never deleted,
+ * so a written lesson stays readable and "Restore" still works. If the plan
+ * cannot be made or saved, the old steps are left exactly as they were.
+ */
+export async function replanTopic(supabase: Client, userId: string, topicId: string): Promise<ReplanOutcome> {
+  const { data: topic } = await supabase
+    .from("learning_topics")
+    .select("*")
+    .eq("id", topicId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!topic) return { kind: "failed", message: "That topic could not be found." };
+  if (topic.status !== "active" || topic.archived_at) return { kind: "failed", message: "Only an active topic can be planned again." };
+
+  const rate = checkAiRateLimit(userId);
+  if (!rate.allowed) return { kind: "waiting", retryAfterSeconds: rate.retryAfterSeconds, message: "Too many AI requests in a short time." };
+  const budget = await budgetState(supabase, userId);
+  if (budget.retryAfterSeconds > 0) {
+    return { kind: "waiting", retryAfterSeconds: budget.retryAfterSeconds, message: "Today's learning budget is used up." };
+  }
+
+  let plan;
+  try {
+    plan = await planTopic(topic.title);
+  } catch (err) {
+    if (err instanceof LearningAiError) {
+      await logCall(supabase, userId, { topicId, stepId: null }, err.record);
+      if (err.failure.kind === "minute") {
+        return { kind: "waiting", retryAfterSeconds: err.failure.retryAfterSeconds, message: "The AI is busy right now." };
+      }
+      if (err.failure.kind === "day") return { kind: "failed", message: "The AI's daily limit is reached. Try again tomorrow." };
+    }
+    return { kind: "failed", message: "The AI could not plan this topic." };
+  }
+  for (const rec of plan.records) {
+    await logCall(supabase, userId, { topicId, stepId: null }, rec);
+  }
+  if (!plan.steps) return { kind: "failed", message: plan.problem ?? "The plan could not be read." };
+
+  const { data: old, error: readError } = await supabase
+    .from("learning_steps")
+    .select("id, position, removed_at")
+    .eq("topic_id", topicId)
+    .eq("user_id", userId);
+  if (readError || !old) return { kind: "failed", message: "Could not read the old steps." };
+  const start = old.reduce((n, s) => Math.max(n, s.position + 1), 0);
+  const { error: insertError } = await supabase.from("learning_steps").insert(
+    plan.steps.map((s, i) => ({
+      user_id: userId,
+      topic_id: topicId,
+      position: start + i,
+      title: s.title.slice(0, 200),
+      goal: s.goal.slice(0, 500),
+      search_query: s.search_query.slice(0, 300),
+    }))
+  );
+  if (insertError) {
+    console.error("[learning] replan insert failed:", insertError.message);
+    return { kind: "failed", message: "The new plan could not be saved." };
+  }
+  const stillShown = old.filter((s) => s.removed_at === null).map((s) => s.id);
+  if (stillShown.length > 0) {
+    const { error: removeError } = await supabase
+      .from("learning_steps")
+      .update({ removed_at: new Date().toISOString() })
+      .eq("topic_id", topicId)
+      .eq("user_id", userId)
+      .in("id", stillShown);
+    if (removeError) {
+      console.error("[learning] replan remove failed:", removeError.message);
+      return { kind: "failed", message: "The new steps were saved, but the old ones could not be marked removed." };
+    }
+  }
+  return { kind: "replanned", removed: stillShown.length, added: plan.steps.length };
 }

@@ -26,14 +26,8 @@ import {
   type PlannedStep,
 } from "@/lib/learning/plan";
 import { harvestSearchResults, type SearchHarvest } from "@/lib/learning/sources";
-import {
-  JUDGE_SYSTEM_PROMPT,
-  judgeUserMessage,
-  parseVerdicts,
-  type JudgeItem,
-  type Verdict,
-} from "@/lib/learning/judge";
-import { COPIER_SYSTEM_PROMPT, type Passage } from "@/lib/learning/passages";
+import { JUDGE_SYSTEM_PROMPT, parseVerdicts, type Verdict } from "@/lib/learning/judge";
+import { COPIER_SYSTEM_PROMPT } from "@/lib/learning/passages";
 import { WRITER_SYSTEM_PROMPT } from "@/lib/learning/writer-prompt";
 
 /**
@@ -166,9 +160,11 @@ async function planCall(messages: { role: "system" | "user" | "assistant"; conte
 }
 
 /**
- * Plan a topic. If two or more steps still hold more than one idea, ask once
- * more to split them; if that second answer is unusable, the first plan
- * stands — a plan with a broad step is better than no plan.
+ * Plan a topic. One idea per step (Udit, 2026-10-10): if ANY step title holds
+ * more than one idea (isMultiIdea), ask once more to split them. A plan that
+ * still has such a step after that is refused, not saved — the old rule kept
+ * a "broad" plan, and a three-idea step title produced a lesson that was an
+ * overview of everything (2026-10-10).
  */
 export async function planTopic(topic: string): Promise<PlanResult> {
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
@@ -191,7 +187,7 @@ export async function planTopic(topic: string): Promise<PlanResult> {
   }
   records.push(record("plan", LEARNING_WRITE_MODEL, "ok", first.completion.usage, first.startedAt));
 
-  if (steps.filter((s) => isMultiIdea(s.title)).length >= 2) {
+  if (steps.some((s) => isMultiIdea(s.title))) {
     try {
       const second = await planCall([
         ...messages,
@@ -207,8 +203,13 @@ export async function planTopic(topic: string): Promise<PlanResult> {
         records.push(record("plan", LEARNING_WRITE_MODEL, "invalid", second.completion.usage, second.startedAt));
       }
     } catch (err) {
-      // The first plan is good enough to keep; only log what the re-ask cost.
       if (err instanceof LearningAiError) records.push(err.record);
+      return { steps: null, problem: "The AI could not split the plan's steps into one idea each.", records };
+    }
+    const still = steps.filter((s) => isMultiIdea(s.title));
+    if (still.length > 0) {
+      const names = still.map((s) => `"${s.title}"`).join(", ");
+      return { steps: null, problem: `The plan still had steps with more than one idea: ${names}.`, records };
     }
   }
   return { steps, problem: null, records };
@@ -361,14 +362,14 @@ export interface JudgeResult {
 }
 
 /**
- * The meaning check (judge.ts): one call on gpt-oss-20b with the cited
- * passages once and the lines to check. A cut-off or empty answer leaves
- * lines without a verdict, and parseVerdicts counts those as NOT supported —
- * the check fails closed.
+ * The meaning check (judge.ts): one call on gpt-oss-20b with the message
+ * judgeUserMessage built (passages once, then the lines to check). A cut-off
+ * or empty answer leaves lines without a verdict, and parseVerdicts counts
+ * those as NOT supported — the check fails closed.
  */
 export async function judgeClaims(
-  passages: Passage[],
-  items: JudgeItem[],
+  userMessage: string,
+  ids: number[],
   model: string = LEARNING_JUDGE_MODEL
 ): Promise<JudgeResult> {
   const call = await textCall(
@@ -376,12 +377,12 @@ export async function judgeClaims(
     model,
     [
       { role: "system", content: JUDGE_SYSTEM_PROMPT },
-      { role: "user", content: judgeUserMessage(passages, items) },
+      { role: "user", content: userMessage },
     ],
     { temperature: 0, maxTokens: JUDGE_MAX_TOKENS, timeoutMs: JUDGE_TIMEOUT_MS }
   );
   return {
-    verdicts: parseVerdicts(call.content, items.map((i) => i.id)),
+    verdicts: parseVerdicts(call.content, ids),
     record: call.record,
     limits: call.limits,
   };

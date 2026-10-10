@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 
+import { NOT_FROM_SOURCE } from "@/lib/learning/constants";
 import { parseMarkdownBlocks, type Block, type InlineNode } from "@/lib/markdown-blocks";
 import { EYEBROW } from "./ui";
 
@@ -32,6 +33,18 @@ function inline(nodes: InlineNode[]): ReactNode {
           </strong>
         );
       case "italic":
+        // A [define] sentence is stored with "*(not from a source)*" after it
+        // (lib/learning/lesson-format.ts): drawn as a small mark, not as prose.
+        if (plainText(n.children) === NOT_FROM_SOURCE) {
+          return (
+            <span
+              key={i}
+              className="ml-1 inline-block rounded border border-border px-1 align-middle font-sans text-[11px] not-italic leading-4 text-muted-foreground"
+            >
+              not from a source
+            </span>
+          );
+        }
         return <em key={i}>{inline(n.children)}</em>;
       case "link":
         return <Fragment key={i}>{inline(n.children)}</Fragment>;

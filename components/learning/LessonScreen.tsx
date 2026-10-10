@@ -241,7 +241,10 @@ export function LessonScreen({ topicId, stepId }: { topicId: string; stepId: str
                         >
                           {i + 1}. {s.title}
                         </a>
-                        <span className={cn(META, "block")}>{s.site_name}</span>
+                        <span className={cn(META, "block")}>
+                          {s.site_name}
+                          {s.label ? ` · ${s.label}` : ""}
+                        </span>
                       </li>
                     ))}
                   </ol>

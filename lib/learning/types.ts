@@ -41,6 +41,8 @@ export interface LessonSource {
   url: string;
   title: string;
   site_name: string;
+  /** "tutorial site, not official docs" when the source is not documentation; otherwise null. */
+  label: string | null;
 }
 
 export interface LessonView {

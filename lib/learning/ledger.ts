@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { LEARNING_DAILY_TOKEN_CAP } from "@/lib/learning/constants";
+import { devOverride } from "@/lib/learning/dev-override";
 import type { CallRecord } from "@/lib/learning/groq";
 import type { Database } from "@/types/database";
 
@@ -19,15 +20,10 @@ type Client = SupabaseClient<Database>;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Dev-only test hooks, so the failure paths can be run for real on a local
- * server (truncated output, the daily cap). Ignored in production builds.
+ * The per-user cap. LEARNING_TEST_DAILY_CAP can raise it on a LOCAL
+ * development run only (dev-override.ts: refused in any production build and
+ * anywhere on Vercel).
  */
-export function devOverride(name: string): number | null {
-  if (process.env.NODE_ENV === "production") return null;
-  const n = Number(process.env[name]);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
 export function dailyTokenCap(): number {
   return devOverride("LEARNING_TEST_DAILY_CAP") ?? LEARNING_DAILY_TOKEN_CAP;
 }

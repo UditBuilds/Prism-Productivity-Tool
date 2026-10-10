@@ -3,15 +3,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ADVANCE_DEADLINE_MS,
   LESSON_MIN_WORDS,
+  MAIN_SOURCE_EXCERPT_CHARS,
   MAX_CANDIDATE_PAGES,
-  MAX_LESSON_SOURCES,
   MIN_SOURCE_CHARS,
-  SOURCE_EXCERPT_CHARS,
   STALE_CLAIM_MS,
   LEARNING_WRITE_MODEL,
 } from "@/lib/learning/constants";
+import { devOverride, isLocalDevRuntime } from "@/lib/learning/dev-override";
 import { checkGrounding } from "@/lib/learning/grounding";
-import { judgeItems, judgePassages } from "@/lib/learning/judge";
+import { judgeItems, judgePassages, judgeUserMessage } from "@/lib/learning/judge";
 import {
   copyPassages,
   judgeClaims,
@@ -24,28 +24,33 @@ import {
   type TextCall,
 } from "@/lib/learning/groq";
 import { excerptFor, extractPage } from "@/lib/learning/html-text";
-import { budgetState, devOverride, logCall } from "@/lib/learning/ledger";
+import { budgetState, logCall } from "@/lib/learning/ledger";
 import {
   applyFix,
   checkLessonRules,
-  claimsOf,
+  exampleOf,
+  linesOf,
   LessonFormatError,
   parseDraftLesson,
   parseFixAnswer,
   proseWordCount,
   renderLessonMarkdown,
   settleExample,
-  dropHeadings,
-  type Claim,
   type DraftLesson,
+  type Line,
   type LessonProblem,
 } from "@/lib/learning/lesson-format";
 import { pickStepToWrite, type StepState } from "@/lib/learning/next-step";
 import {
   copierUserMessage,
+  definedBy,
   enoughToWrite,
+  findGlossaryUrl,
+  glossaryPassages,
   parseCopiedPassages,
+  parseGlossary,
   passageWords,
+  undefinedTerms,
   verifyPassages,
   type Passage,
 } from "@/lib/learning/passages";
@@ -65,16 +70,19 @@ import type { Database } from "@/types/database";
  * step "writing" with an old claimed_at, which STALE_CLAIM_MS (90s, longer
  * than the 60s function limit) lets the next call reclaim.
  *
- * The stages, quotes first (Udit's decision, 2026-10-10):
+ * The stages (Udit's decisions, 2026-10-10):
  *   1. search (20b + browser_search) for pages;
- *   2. fetch them here — documentation first, a vendor's landing page only
- *      when no documentation page loaded (decision 3);
- *   3. copy (20b): passages copied word for word, each checked against its
- *      page here and numbered (passages.ts);
- *   4. write (120b) only from those passages, then the free rules
- *      (grounding.ts) and the meaning check (20b, judge.ts);
- *   5. at most ONE fix turn that resends only the failed lines; then the
- *      lesson is saved or the step fails and waits for "Try again".
+ *   2. fetch them here and pick ONE main source: a documentation page (a
+ *      docs.* host or a /docs/ path), or — only when no documentation page
+ *      loaded — a tutorial site, which the source list then labels;
+ *   3. copy (20b): the step's key terms, the main source's definitions of
+ *      them and its passages, each checked against the page here; terms it
+ *      does not define are looked up in its documentation's glossary;
+ *   4. write (120b) only from those passages: EXPLAIN, EXAMPLE, a line-by-
+ *      line WALK-THROUGH, CLOSE; then the free rules (grounding.ts) and the
+ *      meaning check (20b, judge.ts);
+ *   5. at most ONE fix turn that resends only what failed; then the lesson
+ *      is saved or the step fails and waits for "Try again".
  */
 
 type Client = SupabaseClient<Database>;
@@ -168,17 +176,18 @@ interface SkippedPage {
 }
 
 /**
- * Fetch the candidates, keep up to MAX_LESSON_SOURCES. Decision 3: pages
- * whose URL reads as documentation come first (pickCandidates), and a
- * vendor's landing page is dropped whenever a documentation page loaded.
+ * Fetch the candidates and pick the ONE main source (Udit, 2026-10-10): the
+ * first documentation page that loaded, preferring one whose excerpt shows
+ * code (the lesson walks through an example from it). A tutorial site is
+ * used only when no documentation page loaded, and a vendor's landing page
+ * never.
  */
-async function fetchSources(
+async function chooseMainSource(
   stepQuery: string,
-  urls: string[],
-  provenance: SourceProvenance
-): Promise<{ sources: FetchedSource[]; skipped: SkippedPage[] }> {
+  urls: string[]
+): Promise<{ main: (FetchedSource & { docs: boolean }) | null; skipped: SkippedPage[] }> {
   const settled = await Promise.allSettled(urls.map((u) => safeFetchPage(u)));
-  const loaded: (Omit<FetchedSource, "n"> & { landing: boolean })[] = [];
+  const loaded: (FetchedSource & { docs: boolean; landing: boolean; code: boolean })[] = [];
   const skipped: SkippedPage[] = [];
   settled.forEach((r, i) => {
     if (r.status !== "fulfilled") {
@@ -187,32 +196,46 @@ async function fetchSources(
     }
     const page = r.value;
     const { title, siteName, text } = extractPage(page.body, page.contentType, page.url);
-    const excerpt = excerptFor(text, stepQuery, SOURCE_EXCERPT_CHARS);
+    const excerpt = excerptFor(text, stepQuery, MAIN_SOURCE_EXCERPT_CHARS);
     if (excerpt.length < MIN_SOURCE_CHARS) {
       skipped.push({ url: page.url, why: "too little text about the step" });
       return;
     }
-    loaded.push({ page, title, siteName, excerpt, landing: isLandingPage(page.url, text) });
+    loaded.push({
+      n: 1,
+      page,
+      title,
+      siteName,
+      excerpt,
+      docs: isDocsUrl(page.url),
+      landing: isLandingPage(page.url, text),
+      code: /```/.test(excerpt),
+    });
   });
-  const docsLoaded = loaded.some((p) => !p.landing && isDocsUrl(p.page.url));
-  const ordered = [...loaded.filter((p) => !p.landing), ...(docsLoaded ? [] : loaded.filter((p) => p.landing))];
-  for (const p of loaded) if (p.landing && docsLoaded) skipped.push({ url: p.page.url, why: "a landing page, and documentation loaded" });
-  const sources = ordered.slice(0, MAX_LESSON_SOURCES).map((p, i) => {
-    provenance.addFetchedUrl(p.page.url);
-    return { n: i + 1, page: p.page, title: p.title, siteName: p.siteName, excerpt: p.excerpt };
-  });
-  return { sources, skipped };
+  const docs = loaded.filter((p) => p.docs && !p.landing);
+  const tutorials = loaded.filter((p) => !p.docs && !p.landing);
+  const pool = docs.length > 0 ? docs : tutorials;
+  const main = pool.find((p) => p.code) ?? pool[0] ?? null;
+  for (const p of loaded) {
+    if (p === main) continue;
+    skipped.push({
+      url: p.page.url,
+      why: p.landing ? "a landing page" : main?.docs && !p.docs ? "not documentation, and documentation loaded" : "not the main source",
+    });
+  }
+  return { main, skipped };
 }
 
 /**
  * Dev-only: write everything one advance did — pages, the copier's answer,
  * the passages it kept and lost, each draft, every check and verdict, and
  * the rate-limit headers after each call — to LEARNING_DEBUG_DIR, so a run
- * can be read line by line at no extra AI cost. Never runs in production.
+ * can be read line by line at no extra AI cost. Local development only
+ * (dev-override.ts).
  */
 async function debugDump(stepId: string, data: unknown): Promise<void> {
   const dir = process.env.LEARNING_DEBUG_DIR;
-  if (process.env.NODE_ENV === "production" || !dir) return;
+  if (!isLocalDevRuntime() || !dir) return;
   try {
     const { mkdir, writeFile } = await import("node:fs/promises");
     await mkdir(dir, { recursive: true });
@@ -224,11 +247,6 @@ async function debugDump(stepId: string, data: unknown): Promise<void> {
 
 function describe(problems: LessonProblem[]): string[] {
   return problems.map((p) => `${p.where} ("${p.text.slice(0, 90)}"): ${p.reason}`);
-}
-
-/** A problem the one fix turn can mend: a line, the title or summary, or a short lesson. */
-function fixable(p: LessonProblem): boolean {
-  return p.line !== null || p.where === "title" || p.where === "summary" || (p.where === "length" && Number(p.text) < LESSON_MIN_WORDS);
 }
 
 export async function advanceTopic(
@@ -307,25 +325,23 @@ export async function advanceTopic(
     return fail("sources_unreachable", "the search did not answer");
   }
 
-  // 2. Fetch the pages ourselves. Only tool-returned URLs are tried, and only
-  //    pages that loaded can become sources.
+  // 2. Fetch the pages ourselves and pick the one main source. Only
+  //    tool-returned URLs are tried, and only pages that loaded can be used.
   const provenance = new SourceProvenance();
   hits.forEach((h) => provenance.addToolUrl(h.url));
   const candidates = pickCandidates(hits, MAX_CANDIDATE_PAGES);
-  const { sources, skipped } = await fetchSources(
-    `${claimed.title} ${claimed.goal} ${claimed.search_query}`,
-    candidates.map((c) => c.url),
-    provenance
-  );
+  const { main, skipped } = await chooseMainSource(`${claimed.title} ${claimed.goal} ${claimed.search_query}`, candidates.map((c) => c.url));
   trace.search = { hits: hits.map((h) => h.url), candidates: candidates.map((c) => c.url), skipped };
-  trace.sources = sources.map((s) => ({ n: s.n, url: s.page.url, site: s.siteName, excerpt: s.excerpt }));
-  if (sources.length === 0) return fail("sources_unreachable");
+  if (!main) return fail("sources_unreachable");
+  provenance.addFetchedUrl(main.page.url);
+  trace.main = { url: main.page.url, site: main.siteName, docs: main.docs, excerpt: main.excerpt };
 
-  // 3. Copy passages word for word (gpt-oss-20b), then check each one here.
+  // 3. Copy passages word for word (gpt-oss-20b) from the main source only,
+  //    then check each one here.
   const copierMessage = copierUserMessage({
     stepTitle: claimed.title,
     goal: claimed.goal,
-    sources: sources.map((s) => ({ n: s.n, siteName: s.siteName, text: s.excerpt })),
+    sources: [{ n: 1, siteName: main.siteName, text: main.excerpt }],
   });
   let copy: TextCall;
   try {
@@ -342,16 +358,42 @@ export async function advanceTopic(
   }
   // A cut-off copier answer still holds the passages before the cut; the
   // last, partial line simply fails verification.
-  const { copied } = parseCopiedPassages(copy.content);
-  const { passages, rejected } = verifyPassages(
-    copied,
-    sources.map((s) => ({ n: s.n, text: s.excerpt }))
-  );
+  const { terms, copied } = parseCopiedPassages(copy.content);
+  const verified = verifyPassages(copied, [{ n: 1, text: main.excerpt }]);
+  let passages: Passage[] = verified.passages;
   await log(ctx, stepId, { ...copy.record, outcome: passages.length > 0 ? copy.record.outcome : "invalid" });
   note(copy.record, copy.limits);
-  trace.copier = { content: copy.content, passages, rejected, proseWords: passageWords(passages) };
+
+  // Terms the main source does not define: its documentation's glossary.
+  let glossary: FetchedSource | null = null;
+  const lacking = undefinedTerms(terms, passages);
+  const glossaryUrl = main.docs && lacking.length > 0 ? findGlossaryUrl(main.page.body, main.page.url) : null;
+  if (glossaryUrl) {
+    try {
+      const page = await safeFetchPage(glossaryUrl);
+      const found = glossaryPassages(parseGlossary(page.body), lacking, 2, passages.length + 1);
+      if (found.length > 0) {
+        const { title, siteName } = extractPage(page.body, page.contentType, page.url);
+        glossary = { n: 2, page, title, siteName, excerpt: found.map((p) => p.text).join("\n\n") };
+        provenance.addFetchedUrl(page.url);
+        passages = [...passages, ...found];
+      }
+    } catch (err) {
+      console.warn("[learning] glossary fetch failed:", err instanceof Error ? err.message : err);
+    }
+  }
+  const stillUndefined = undefinedTerms(terms, passages);
+  trace.copier = {
+    content: copy.content,
+    terms,
+    passages,
+    rejected: verified.rejected,
+    glossary: glossaryUrl,
+    undefinedTerms: stillUndefined,
+    proseWords: passageWords(passages),
+  };
   if (!enoughToWrite(passages)) {
-    return fail("sources_unreachable", `the pages had too little to quote: ${passageWords(passages)} words in ${passages.length} passages`);
+    return fail("sources_unreachable", `the page had too little to quote: ${passageWords(passages)} words in ${passages.length} passages`);
   }
 
   // 4. Write (gpt-oss-120b) from the passages only.
@@ -360,13 +402,17 @@ export async function advanceTopic(
     stepTitle: claimed.title,
     goal: claimed.goal,
     passages,
+    undefinedTerms: stillUndefined,
     learnerNote: claimed.rewrite_note,
     rewriteReason: claimed.rewrite_reason as "wrong" | "redo" | null,
   });
+  const codePassages = passages.filter((p) => p.kind === "code" && p.source === 1).map((p) => p.id);
   const groundingCtx = {
     topicTitle: topic.title,
     stepTitle: claimed.title,
-    sourceTexts: sources.map((s) => s.excerpt),
+    sourceTexts: [main.excerpt, ...(glossary ? [glossary.excerpt] : [])],
+    mainSource: 1,
+    terms,
   };
   const maxTokens = devOverride("LEARNING_TEST_WRITE_MAX_TOKENS") ?? undefined;
 
@@ -391,18 +437,11 @@ export async function advanceTopic(
   }
 
   const check = (l: DraftLesson): LessonProblem[] => [...checkLessonRules(l), ...checkGrounding(l, passages, groundingCtx)];
-  /** Headings make no claim: one that fails a check is dropped, then the lesson is checked again. */
-  const settle = (l: DraftLesson): { lesson: DraftLesson; problems: LessonProblem[] } => {
-    const first = check(l);
-    const headings = first.filter((p) => /^heading \d+$/.test(p.where)).map((p) => Number(p.where.slice(8)));
-    if (headings.length === 0) return { lesson: l, problems: first };
-    const without = dropHeadings(l, headings);
-    return { lesson: without, problems: check(without) };
-  };
   let lesson: DraftLesson;
   let problems: LessonProblem[];
   try {
-    ({ lesson, problems } = settle(settleExample(parseDraftLesson(draft.content), passages)));
+    lesson = settleExample(parseDraftLesson(draft.content), passages, 1);
+    problems = check(lesson);
   } catch (err) {
     await log(ctx, stepId, { ...draft.record, outcome: "invalid" });
     return fail("ai_error", err instanceof LessonFormatError ? "it was not in the lesson format" : undefined);
@@ -411,30 +450,30 @@ export async function advanceTopic(
   trace.dropped = lesson.dropped;
 
   /** Lines the meaning check has already accepted, by identity: a fix keeps the others as they are. */
-  const accepted = new Set<Claim>();
+  const accepted = new Set<Line>();
   const judgeLog: unknown[] = [];
   trace.judge = judgeLog;
   /** Run the meaning check on every line not yet accepted. Returns the lines it rejected. */
   const meaningCheck = async (l: DraftLesson): Promise<LessonProblem[] | AdvanceResult> => {
-    const claims = claimsOf(l);
-    const only = claims.map((c, i) => (accepted.has(c) ? 0 : i + 1)).filter((n) => n > 0);
-    if (only.length === 0) return [];
-    const items = judgeItems(l, only);
+    const all = linesOf(l);
+    const items = judgeItems(l, passages, (x) => !accepted.has(x));
+    if (items.length === 0) return [];
+    const message = judgeUserMessage(l, judgePassages(l, passages, items), items);
     try {
-      const judged = await withShortWait(ctx, stepId, 8_000, () => judgeClaims(judgePassages(l, passages), items));
+      const judged = await withShortWait(ctx, stepId, 8_000, () => judgeClaims(message, items.map((i) => i.id)));
       await log(ctx, stepId, judged.record);
       note(judged.record, judged.limits);
       const out: LessonProblem[] = [];
       for (const it of items) {
         const v = judged.verdicts.get(it.id) ?? { ok: false, why: "" };
-        judgeLog.push({ line: it.line, cites: it.cites, sentence: it.sentence, ...v });
-        if (v.ok) accepted.add(claims[it.line - 1]);
+        judgeLog.push({ line: it.line, kind: it.kind, cites: it.cites, term: it.term, sentence: it.sentence, ...v });
+        if (v.ok) accepted.add(all[it.line - 1]);
         else {
           out.push({
             line: it.line,
             where: `line ${it.line}`,
             text: it.sentence,
-            reason: `its passages do not support it (${v.why || "no reason given"})`,
+            reason: `the meaning check said no (${v.why || "no reason given"})`,
           });
         }
       }
@@ -457,10 +496,15 @@ export async function advanceTopic(
   trace.firstProblems = describe(problems);
   const firstProblems = describe(problems);
 
-  // 5. At most one fix turn (Udit, condition 3): only the failed lines go back.
+  // 5. At most one fix turn (Udit, condition 3): only what failed goes back.
   let fixed = false;
   if (problems.length > 0) {
-    const ungrounded = problems.some((p) => p.line !== null);
+    const ungrounded = problems.some((p) => p.line !== null || p.where === "terms");
+    const fixable = (p: LessonProblem) =>
+      p.line !== null ||
+      ["title", "summary", "close", "walk", "terms"].includes(p.where) ||
+      (p.where === "example" && codePassages.length > 0) ||
+      (p.where === "length" && Number(p.text) < LESSON_MIN_WORDS);
     if (!problems.every(fixable)) {
       return fail(ungrounded ? "ungrounded" : "ai_error", "its problems cannot be fixed one line at a time", firstProblems);
     }
@@ -469,7 +513,7 @@ export async function advanceTopic(
     }
     const short = problems.find((p) => p.where === "length");
     const asked = problems.filter((p) => p.line !== null).map((p) => p.line as number);
-    const fixMessage = writerFixMessage(problems, short ? proseWordCount(lesson) : null);
+    const fixMessage = writerFixMessage(problems, short ? proseWordCount(lesson) : null, codePassages);
     let fix: TextCall;
     try {
       fix = await withShortWait(ctx, stepId, 12_000, () => writeFix(userMessage, fixMessage));
@@ -483,12 +527,15 @@ export async function advanceTopic(
     }
     note(fix.record, fix.limits);
     trace.fix = { asked: fixMessage, content: fix.content };
-    const applied = applyFix(lesson, parseFixAnswer(fix.content), asked);
-    const settled = settle(applied.lesson);
-    lesson = settled.lesson;
+    // An added line that cites a defining passage is a definition: it goes
+    // just before the first line that uses its term.
+    const termOf = (l: Line): string | null =>
+      l.kind === "define" ? l.term : l.kind === "cited" ? terms.find((t) => l.cites.some((id) => definedBy(t, passages.filter((p) => p.id === id)))) ?? null : null;
+    const applied = applyFix(lesson, parseFixAnswer(fix.content), asked, termOf);
+    lesson = settleExample(applied.lesson, passages, 1);
     problems = [
       ...applied.missing.map((line) => ({ line, where: `line ${line}`, text: "", reason: "the fix gave no replacement for it" })),
-      ...settled.problems,
+      ...check(lesson),
     ];
     await log(ctx, stepId, { ...fix.record, outcome: fix.truncated ? "truncated" : problems.length ? "invalid" : "ok" });
     if (problems.length === 0) {
@@ -499,25 +546,23 @@ export async function advanceTopic(
     if (problems.length > 0) {
       const after = describe(problems);
       console.warn("[learning] lesson rejected after its fix:", JSON.stringify(after.slice(0, 10)));
-      return fail(problems.some((p) => p.line !== null) ? "ungrounded" : "ai_error", undefined, after);
+      return fail(problems.some((p) => p.line !== null || p.where === "terms") ? "ungrounded" : "ai_error", undefined, after);
     }
     fixed = true;
   }
-  // 6. Save: the lesson once, with the sources its cited passages came from.
+
+  // 6. Save: the lesson once, with its main source first and the glossary
+  //    after it if a definition was cited from there.
   const byId = new Map(passages.map((p) => [p.id, p] as [number, Passage]));
-  const citedPassages = [
-    ...claimsOf(lesson).flatMap((c) => c.cites),
-    ...(lesson.example ? [lesson.example.passage, ...(lesson.example.output !== null ? [lesson.example.output] : [])] : []),
-  ];
-  const cited: number[] = [];
-  for (const id of citedPassages) {
-    const src = byId.get(id)?.source;
-    if (src !== undefined && !cited.includes(src)) cited.push(src);
-  }
-  const used = cited
-    .map((n) => sources.find((s) => s.n === n))
-    .filter((s): s is FetchedSource => s !== undefined && provenance.isStorable(s.page.url));
-  if (used.length === 0) return fail("ungrounded");
+  const ex = exampleOf(lesson);
+  const citedSources = new Set([
+    ...linesOf(lesson).flatMap((l) => l.cites.map((id) => byId.get(id)?.source)),
+    ...(ex ? [byId.get(ex.passage)?.source] : []),
+  ]);
+  const used = [main, ...(glossary && citedSources.has(2) ? [glossary] : [])].filter(
+    (s) => (s.n === 1 || citedSources.has(s.n)) && provenance.isStorable(s.page.url)
+  );
+  if (!citedSources.has(1) || used.length === 0) return fail("ungrounded", "it cited nothing from its main source");
 
   const body = renderLessonMarkdown(lesson, passages);
   trace.lesson = { title: lesson.title, summary: lesson.summary, body, words: proseWordCount(lesson) };

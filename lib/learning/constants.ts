@@ -93,24 +93,31 @@ export const PLAN_TIMEOUT_MS = 20_000;
 
 /** Search result pages fetched in parallel; the first good ones are kept. */
 export const MAX_CANDIDATE_PAGES = 5;
-/** Sources one lesson is written from. */
-export const MAX_LESSON_SOURCES = 3;
-/** Characters of each source the writer sees (≈ 900 tokens). */
-export const SOURCE_EXCERPT_CHARS = 3_800;
+/**
+ * ONE main source per lesson (Udit, 2026-10-10): every cited passage and the
+ * example come from it; a second source (the documentation's glossary) may
+ * only define a term. So the copier reads one page, and reads more of it.
+ */
+export const MAIN_SOURCE_EXCERPT_CHARS = 7_000;
 /** A page with less relevant text than this is not worth a lesson. */
 export const MIN_SOURCE_CHARS = 500;
 
-/** Lesson length, decision 11. Prose words only; the code example is extra. */
+/** Lesson length, decision 11: words in the sentence lines only, not the title, summary or code. */
 export const LESSON_MIN_WORDS = 300;
 export const LESSON_MAX_WORDS = 500;
 
 /**
- * Decision 1 (2026-10-10): a lesson may hold [teach] lines — plain-word
- * definitions, links between points, and walking through the example — that
- * cite no passage because they add nothing new. At most one for every this
- * many cited lines, so the lesson stays tied to its sources.
+ * [define: term] lines (Udit, 2026-10-10): a plain definition of a term that
+ * no passage and no glossary entry defines, shown marked "not from a source".
+ * [teach] lines have no count limit; this one does.
  */
-export const CITED_LINES_PER_TEACH_LINE = 2;
+export const MAX_DEFINE_LINES = 3;
+
+/** The mark a [define] line carries in the lesson body; LessonBody draws it small. */
+export const NOT_FROM_SOURCE = "(not from a source)";
+
+/** Shown under a source that is not documentation (sources.ts isDocsUrl). */
+export const TUTORIAL_LABEL = "tutorial site, not official docs";
 
 export const TOPIC_TITLE_MAX = 200;
 export const WRONG_NOTE_MAX = 1_000;

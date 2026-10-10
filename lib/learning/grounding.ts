@@ -1,5 +1,5 @@
-import { claimsOf, type Claim, type DraftLesson, type LessonProblem } from "@/lib/learning/lesson-format";
-import type { Passage } from "@/lib/learning/passages";
+import { exampleOf, linesOf, partsOf, type DraftLesson, type Line, type LessonProblem } from "@/lib/learning/lesson-format";
+import { definedBy, type Passage } from "@/lib/learning/passages";
 
 /**
  * The free rules of the "tied to its sources" check. Pure and deterministic:
@@ -8,33 +8,38 @@ import type { Passage } from "@/lib/learning/passages";
  *
  * Every passage the writer can cite was already found word for word in its
  * page (passages.ts), so this file does not look for quotes. It checks what
- * each line may SAY:
+ * each line may SAY — numbers, `code spans`, API tokens (print(), np.array,
+ * my_var) and capitalised names:
  *
- *   [Pn] lines — every number, `code span`, API token (print(), np.array,
- *   my_var) and capitalised name in the sentence must be in the passages it
- *   cites (or the lesson's example). A name may also come from the topic and
- *   step titles or any of the pages the lesson was given (Udit's decision,
- *   2026-10-09: all 14 names the stricter rule flagged were in the sources).
+ *   [Pn]       in the passages it cites (or the example's code). A name may
+ *              also come from the topic and step titles or the lesson's
+ *              source pages (Udit, 2026-10-09). Every cited passage comes
+ *              from the main source, unless it is a definition (Udit,
+ *              2026-10-10: a second source only for a definition).
+ *   [teach]    adds NOTHING: only what the passages this lesson cites, or its
+ *              example, already hold. No count limit (Udit, 2026-10-10).
+ *   [define]   only for a term no passage defines; names its term; no
+ *              numbers, and no code, API or other names beyond the term.
+ *   [line n]   only what those lines of the example show: its numbers, code
+ *              and API tokens must be in the code lines it explains.
+ *   [close]    only what the lesson already said: its specifics must appear
+ *              in the lines before it.
  *
- *   [teach] lines (decision 1, 2026-10-10) — cite nothing, so they may add
- *   NOTHING: every number, code span, API token and name in them must already
- *   be in a passage this lesson cites, or its example. Not "any page": a
- *   teach line that names something no cited passage mentions is adding a
- *   name. Whether a teach line slips in a new CLAIM in plain words is a
- *   question of meaning, which the judge answers.
- *
- *   The example — must be a code passage (so it is code a source shows), and
- *   its output, if any, another code passage (decision 2).
- *
- *   Title, summary and headings — their numbers must be in a cited passage;
- *   the summary's names in the passages, titles or pages.
+ * And the lesson's shape against its passages: an EXAMPLE when the main
+ * source shows code, every line of that code walked through in order, and
+ * every key term the lesson uses defined (by a cited passage or a [define]
+ * line). Whether a line's MEANING is supported is the judge's question.
  */
 
 export interface GroundingContext {
   topicTitle: string;
   stepTitle: string;
-  /** The page excerpts the lesson was made from: where a [Pn] line's names may also come from. */
+  /** The page texts the lesson was made from: where a [Pn] line's names may also come from. */
   sourceTexts: string[];
+  /** The page every cited passage and the example must come from. */
+  mainSource: number;
+  /** The key terms the copier named for this step (lower case). */
+  terms: string[];
 }
 
 /** Lower-case, one space, no quote marks, plain dashes, no Markdown emphasis. */
@@ -112,16 +117,12 @@ interface Evidence {
 }
 
 function evidenceOf(texts: string[]): Evidence {
-  const text = normalize(texts.join("\n"));
-  return { text, numbers: new Set(numbersIn(texts.join("\n"))), tokens: new Set(tokens(texts.join("\n"))) };
+  const joined = texts.join("\n");
+  return { text: normalize(joined), numbers: new Set(numbersIn(joined)), tokens: new Set(tokens(joined)) };
 }
 
 /** What a line says that its evidence does not contain. */
-function unsupported(
-  text: string,
-  evidence: Evidence,
-  extraNames: Set<string>
-): string[] {
+function unsupported(text: string, evidence: Evidence, extraNames: Set<string>): string[] {
   const out: string[] = [];
   const { numbers, code, api, names } = specificsOf(text);
   for (const n of numbers) if (!evidence.numbers.has(n)) out.push(`the number ${n}`);
@@ -144,90 +145,166 @@ function list(items: string[]): string {
   return items.length === 1 ? items[0] : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/** Does the text use the term? Singular and plural are one term ("variable", "variables"). */
+export function mentions(text: string, term: string): boolean {
+  const t = term.toLowerCase().trim();
+  if (!t) return false;
+  const stem = t.endsWith("ies") ? t.slice(0, -3) : t.endsWith("y") ? t.slice(0, -1) : t.endsWith("s") && !t.endsWith("ss") ? t.slice(0, -1) : t;
+  const tail = t.endsWith("y") || t.endsWith("ies") ? "(?:y|ies)" : "(?:s|es)?";
+  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${esc}${tail}($|[^a-z0-9])`, "i").test(text);
+}
+
 /** Run every free rule. An empty list means the lesson may go to the meaning check. */
 export function checkGrounding(lesson: DraftLesson, passages: Passage[], ctx: GroundingContext): LessonProblem[] {
   const problems: LessonProblem[] = [];
   const byId = new Map(passages.map((p) => [p.id, p]));
-  const claims = claimsOf(lesson);
+  const all = linesOf(lesson);
+  const at = (l: Line) => all.indexOf(l) + 1;
+  const lineProblem = (l: Line, reason: string) => problems.push({ line: at(l), where: `line ${at(l)}`, text: l.text, reason });
+  const parts = partsOf(lesson);
 
-  // The example: a code passage, and its output another code passage.
+  // The example: a code passage from the main source, when the source has one.
+  const ex = exampleOf(lesson);
+  const codePassages = passages.filter((p) => p.kind === "code" && p.source === ctx.mainSource);
+  const example = ex ? byId.get(ex.passage) : undefined;
   const exampleTexts: string[] = [];
-  if (lesson.example) {
-    const ex = byId.get(lesson.example.passage);
-    if (!ex || ex.kind !== "code") {
-      problems.push({
-        line: null,
-        where: "example",
-        text: `EXAMPLE [P${lesson.example.passage}]`,
-        reason: ex ? `P${ex.id} is not a code passage` : `there is no passage P${lesson.example.passage}`,
-      });
-    } else exampleTexts.push(ex.text);
-    if (lesson.example.output !== null) {
-      const out = byId.get(lesson.example.output);
-      if (!out || out.kind !== "code") {
-        problems.push({
-          line: null,
-          where: "example",
-          text: `OUTPUT [P${lesson.example.output}]`,
-          reason: out ? `P${out.id} is not a code passage, so it does not show output` : `there is no passage P${lesson.example.output}`,
-        });
-      } else exampleTexts.push(out.text);
-    }
+  if (!ex && codePassages.length > 0) {
+    problems.push({
+      line: null,
+      where: "example",
+      text: "",
+      reason: `the lesson has no EXAMPLE; the source shows code (${codePassages.map((p) => `P${p.id}`).join(", ")})`,
+    });
+  } else if (ex && (!example || example.kind !== "code" || example.source !== ctx.mainSource)) {
+    problems.push({ line: null, where: "example", text: `EXAMPLE [P${ex.passage}]`, reason: "the EXAMPLE must be a code passage from the main source" });
+  } else if (example) {
+    exampleTexts.push(example.text);
+    const output = ex && ex.output !== null ? byId.get(ex.output) : undefined;
+    if (output) exampleTexts.push(output.text);
   }
+  const codeLines = example?.text.split("\n") ?? [];
 
-  const citedIds = new Set(claims.flatMap((c) => (c.teach || c.untagged ? [] : c.cites)));
+  const cited = all.filter((l) => l.kind === "cited");
   const lessonEvidence = evidenceOf([
-    ...Array.from(citedIds).flatMap((id) => (byId.has(id) ? [byId.get(id)!.text] : [])),
+    ...Array.from(new Set(cited.flatMap((l) => l.cites))).flatMap((id) => (byId.has(id) ? [byId.get(id)!.text] : [])),
     ...exampleTexts,
   ]);
   const titleNames = new Set(tokens(`${ctx.topicTitle} ${ctx.stepTitle}`));
   const pageNames = new Set([...Array.from(titleNames), ...tokens(ctx.sourceTexts.join("\n"))]);
 
-  claims.forEach((c: Claim, i) => {
-    const line = i + 1;
-    const where = `line ${line}`;
-    if (c.untagged) return; // already reported by checkLessonRules
-    if (c.teach) {
-      const extra = unsupported(c.text, lessonEvidence, titleNames);
-      if (extra.length > 0) {
-        problems.push({
-          line,
-          where,
-          text: c.text,
-          reason: `a [teach] line may add nothing, but it adds ${list(extra)}, which no passage this lesson cites contains`,
-        });
+  all.forEach((l, i) => {
+    switch (l.kind) {
+      case "cited": {
+        const missing = l.cites.filter((id) => !byId.has(id));
+        if (missing.length > 0) {
+          lineProblem(l, `it cites ${missing.map((m) => `P${m}`).join(", ")}, which it was not given`);
+          return;
+        }
+        const second = l.cites.filter((id) => byId.get(id)!.source !== ctx.mainSource && !byId.get(id)!.defines);
+        if (second.length > 0) {
+          lineProblem(l, `it cites ${second.map((m) => `P${m}`).join(", ")} from a second source, which may only be used for a definition`);
+          return;
+        }
+        const extra = unsupported(l.text, evidenceOf([...l.cites.map((id) => byId.get(id)!.text), ...exampleTexts]), pageNames);
+        if (extra.length > 0) lineProblem(l, `${list(extra)} ${extra.length === 1 ? "is" : "are"} not in the passages it cites`);
+        return;
       }
-      return;
-    }
-    const missing = c.cites.filter((id) => !byId.has(id));
-    if (missing.length > 0) {
-      problems.push({ line, where, text: c.text, reason: `it cites ${missing.map((m) => `P${m}`).join(", ")}, which it was not given` });
-      return;
-    }
-    const evidence = evidenceOf([...c.cites.map((id) => byId.get(id)!.text), ...exampleTexts]);
-    const extra = unsupported(c.text, evidence, pageNames);
-    if (extra.length > 0) {
-      problems.push({ line, where, text: c.text, reason: `${list(extra)} ${extra.length === 1 ? "is" : "are"} not in the passages it cites` });
+      case "teach": {
+        const extra = unsupported(l.text, lessonEvidence, titleNames);
+        if (extra.length > 0) {
+          lineProblem(l, `a [teach] line may add nothing, but it adds ${list(extra)}, which no passage this lesson cites contains`);
+        }
+        return;
+      }
+      case "define": {
+        const term = l.term ?? "";
+        const source = term ? definedBy(term, passages) : undefined;
+        if (!term) lineProblem(l, "a [define] line must name its term: [define: term]");
+        else if (source) lineProblem(l, `P${source.id} defines "${term}"; cite it instead of a [define] line`);
+        else if (!mentions(l.text, term)) lineProblem(l, `it does not use the term "${term}" it defines`);
+        else {
+          const { numbers, code, api, names } = specificsOf(l.text);
+          const own = new Set(tokens(term));
+          const extra = [
+            ...numbers.map((n) => `the number ${n}`),
+            ...code.filter((c) => normalize(c) !== normalize(term)).map((c) => `\`${c}\``),
+            ...api.filter((a) => normalize(a) !== normalize(term)),
+            ...names.filter((n) => !titleNames.has(n.toLowerCase()) && !own.has(n.toLowerCase())).map((n) => `the name "${n}"`),
+          ];
+          if (extra.length > 0) lineProblem(l, `a [define] line holds no numbers, code or names beyond its term, but it has ${list(extra)}`);
+        }
+        return;
+      }
+      case "walk": {
+        if (!example || !l.codeLines) return; // a walk-through without an example is reported by checkLessonRules
+        const [a, b] = l.codeLines;
+        if (a < 1 || b > codeLines.length) {
+          lineProblem(l, `the example has lines 1 to ${codeLines.length}; there is no line ${a < 1 ? a : b}`);
+          return;
+        }
+        const shown = codeLines.slice(a - 1, b);
+        const extra = unsupported(l.text, evidenceOf(shown), new Set([...Array.from(lessonEvidence.tokens), ...Array.from(titleNames)]));
+        if (extra.length > 0) lineProblem(l, `${list(extra)} ${extra.length === 1 ? "is" : "are"} not in the code line${a === b ? "" : "s"} it explains`);
+        return;
+      }
+      case "close": {
+        const earlier = all.slice(0, i).map((x) => x.text);
+        const extra = unsupported(l.text, evidenceOf(earlier), titleNames);
+        if (extra.length > 0) lineProblem(l, `the closing line may only restate the lesson, but ${list(extra)} ${extra.length === 1 ? "is" : "are"} new`);
+        return;
+      }
+      default:
+        return; // untagged: checkLessonRules reports it
     }
   });
 
-  // Title, summary and headings cite nothing of their own.
-  const framing: [string, string][] = [
-    ["title", lesson.title],
-    ["summary", lesson.summary],
-    ...lesson.blocks
-      .filter((b): b is { type: "heading"; text: string } => b.type === "heading")
-      .map((b, i): [string, string] => [`heading ${i + 1}`, b.text]),
-  ];
-  for (const [where, text] of framing) {
+  // Walk-through: every line of the example's code, in order.
+  if (example) {
+    const walk = parts.walk.filter((w) => w.codeLines && w.codeLines[0] >= 1 && w.codeLines[1] <= codeLines.length);
+    let lastStart = 0;
+    for (const w of walk) {
+      if (w.codeLines![0] < lastStart) lineProblem(w, "the walk-through must follow the code from top to bottom");
+      lastStart = Math.max(lastStart, w.codeLines![0]);
+    }
+    const covered = new Set(walk.flatMap((w) => Array.from({ length: w.codeLines![1] - w.codeLines![0] + 1 }, (_, k) => w.codeLines![0] + k)));
+    const missing = codeLines.map((c, k) => (c.trim() && !covered.has(k + 1) ? k + 1 : 0)).filter((n) => n > 0);
+    if (missing.length > 0) {
+      problems.push({ line: null, where: "walk", text: missing.join(","), reason: `the walk-through skips line${missing.length === 1 ? "" : "s"} ${missing.join(", ")} of the example` });
+    }
+  }
+
+  // Every key term the lesson uses is defined: by a cited passage that
+  // defines it, or by a [define] line when no passage does.
+  for (const term of ctx.terms) {
+    const used = all.some((l) => !(l.kind === "define" && l.term === term) && mentions(l.text, term));
+    if (!used) continue;
+    const viaPassage = cited.some((l) =>
+      l.cites.some((id) => {
+        const p = byId.get(id);
+        return p !== undefined && definedBy(term, [p]) !== undefined;
+      })
+    );
+    const viaLine = all.some((l) => l.kind === "define" && l.term !== null && mentions(l.term, term));
+    if (viaPassage || viaLine) continue;
+    const source = definedBy(term, passages);
+    problems.push({
+      line: null,
+      where: "terms",
+      text: term,
+      reason: source
+        ? `the lesson uses "${term}" but never defines it; P${source.id} defines it`
+        : `the lesson uses "${term}" but never defines it; no passage does, so add a [define: ${term}] line`,
+    });
+  }
+
+  // Title and summary cite nothing of their own.
+  for (const [where, text] of [["title", lesson.title], ["summary", lesson.summary]] as const) {
     const { numbers, names } = specificsOf(text);
     for (const n of numbers) {
-      if (!lessonEvidence.numbers.has(n)) {
-        problems.push({ line: null, where, text, reason: `the number ${n} is in no passage this lesson cites` });
-      }
+      if (!lessonEvidence.numbers.has(n)) problems.push({ line: null, where, text, reason: `the number ${n} is in no passage this lesson cites` });
     }
-    // Titles and headings are written in Title Case, so a capital there is
-    // not a name. Only the summary, a plain sentence, has its names checked.
+    // Titles are written in Title Case, so a capital there is not a name.
     if (where !== "summary") continue;
     for (const name of names) {
       const lower = name.toLowerCase();

@@ -28,7 +28,7 @@ Return ONLY a JSON object: {"steps":[{"title": string, "goal": string, "search_q
 
 Rules:
 - ${PLAN_MIN_STEPS} to ${PLAN_MAX_STEPS} steps, in the order they should be learned. Each step builds only on the steps before it.
-- ONE idea per step. Each step must fit a 300 to 500 word lesson. If a title needs "and", a comma or a list, it is two steps: split it.
+- ONE idea per step. Each step must fit a 300 to 500 word lesson. A title never contains "and", "or", "vs", a comma, a semicolon, a slash or a list: if it needs one, it is two steps, so split it.
 - If the topic says "from zero", the first step assumes nothing at all.
 - title: under 70 characters, plain words, no numbering.
 - goal: one sentence, under 160 characters, saying what the learner can do after the step.
@@ -83,13 +83,14 @@ export function parsePlan(content: string): PlannedStep[] {
 
 /**
  * A title that names more than one idea: "Lists, tuples and sets",
- * "Conditionals and loops", "Install Python; run a script". Measured
- * 2026-10-09: told plainly to split such steps, the planner still returned
- * 4 of 10 like this, and the lessons for them drifted (a "what is
- * programming and why Python" step got sources about strings and loops).
+ * "Conditionals and loops", "Install Python; run a script", "Lists vs
+ * tuples", "Files or folders". Measured 2026-10-09: told plainly to split
+ * such steps, the planner still returned 4 of 10 like this, and the lessons
+ * for them drifted; on 2026-10-10 "Basic syntax: variables, data types, and
+ * simple operations" produced a lesson that was an overview, not a lesson.
  */
 export function isMultiIdea(title: string): boolean {
-  return /,|;|\s&\s|\s\/\s|\band\b/i.test(title);
+  return /,|;|\s&\s|\s\/\s|\s\+\s|\band\b|\bor\b|\bvs\.?(?=\s|$)|\bversus\b/i.test(title);
 }
 
 export function planRetryMessage(steps: PlannedStep[]): string {
