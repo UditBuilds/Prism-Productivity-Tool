@@ -23,9 +23,11 @@ import type { Passage } from "@/lib/learning/passages";
  *   WALK   — the code lines it explains, shown with it.
  *   CLOSE  — the lesson's own earlier lines: it may only restate them.
  *
- * Measured misses kept as test cases (scripts/judge-cases.json): a line that
- * said parentheses "tell Python which parts to calculate first" when the
- * passage only says they are for grouping (2026-10-10).
+ * Measured misses kept as test cases (scripts/judge-cases.json): a TEACH line
+ * that said parentheses "tell Python which parts to calculate first" when
+ * the passage only says they are for grouping. scripts/eval-judge.mjs on
+ * 2026-10-10: still passed by this prompt (9 of 11 cases as expected; the
+ * other miss, a dangling "for example:", is caught by a code rule).
  */
 
 export interface JudgeItem {
