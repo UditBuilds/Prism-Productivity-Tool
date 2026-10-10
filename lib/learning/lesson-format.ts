@@ -1,53 +1,47 @@
 import {
+  CITED_LINES_PER_TEACH_LINE,
   LESSON_MAX_WORDS,
   LESSON_MIN_WORDS,
 } from "@/lib/learning/constants";
+import type { Passage } from "@/lib/learning/passages";
 import { URL_IN_TEXT } from "@/lib/learning/sources";
 
 /**
  * The lesson as the writer returns it, and the rules checked in CODE rather
  * than trusted to the prompt. Pure.
  *
- * The writer does not return Markdown and does not return JSON. It returns a
- * line format in which every sentence carries the number of a source and the
- * exact words it rests on:
+ * The writer is given numbered passages that the server has already found
+ * word for word in the source pages (passages.ts), and returns one line per
+ * sentence or list item:
  *
- *   TITLE: What a list is
- *   SUMMARY: A list keeps many values in order, in one variable.
- *   ## Making a list
- *   [1] «A list holds many values in order» → A list keeps many values, in order.
- *   - [2] «indexes start at 0» → The first item is at position 0.
- *   EXAMPLE [2] «fruits = ["apple", "pear"]»
- *   ```python
- *   ...
- *   ```
- *   OUTPUT
- *   ```text
- *   ...
- *   ```
+ *   TITLE: What a variable is
+ *   SUMMARY: A variable is a name that refers to a value.
+ *   ## Giving a value a name
+ *   [P3] → The equal sign gives a value to a variable.
+ *   [teach] → Think of a variable as a label you stick on a value.
+ *   - [P4, P5] → A list item backed by two passages.
+ *   EXAMPLE [P6]
+ *   OUTPUT [P7]
+ *
+ * A [Pn] line says what its passages say. A [teach] line (decision 1) cites
+ * nothing because it may add nothing: it defines a term in plain words,
+ * links two points, or walks through the example. The writer never types
+ * code: EXAMPLE names a code passage and the server shows that passage's own
+ * lines (decision 2), so an example can only be code a source shows, and an
+ * expected output only appears when a source shows one.
  *
  * Why not JSON: measured 2026-10-09, 3 of 9 nested-JSON drafts were refused
- * by Groq's JSON mode ("Failed to validate JSON", HTTP 400) — quotes copied
- * from web pages are full of double quotes, and one structural slip loses
- * the whole lesson. A line that does not parse here is reported and the rest
- * survives.
- *
- * The structure is what makes the grounding check (grounding.ts) possible,
- * and it also makes two of decision 11's rules hold by construction: only one
- * EXAMPLE is read, so a lesson cannot carry three code blocks (2 of 3 probe
- * lessons did when the rule lived only in the prompt), and an example cannot
- * be stored without its expected output. The stored `body` is Markdown
- * rendered from this structure.
+ * by Groq's JSON mode. A line that does not fit here is reported and the
+ * rest survives.
  */
-
-export interface Support {
-  source: number;
-  quote: string;
-}
 
 export interface Claim {
   text: string;
-  support: Support[];
+  /** Passage ids this line cites. Empty for a [teach] line. */
+  cites: number[];
+  teach: boolean;
+  /** The line had no [Pn] or [teach] tag. It is never shown: it must be replaced. */
+  untagged?: boolean;
 }
 
 export type LessonBlock =
@@ -58,9 +52,10 @@ export type LessonBlock =
 export interface LessonExample {
   /** Index into `blocks`: the example is shown after that block. */
   afterBlock: number;
-  code: string;
-  output: string;
-  support: Support[];
+  /** The code passage shown as the example. */
+  passage: number;
+  /** A code passage showing what it prints, only if a source shows one. */
+  output: number | null;
 }
 
 export interface DraftLesson {
@@ -68,8 +63,8 @@ export interface DraftLesson {
   summary: string;
   blocks: LessonBlock[];
   example: LessonExample | null;
-  /** Non-empty lines that were not in the format — reported, never shown. */
-  unparsed: string[];
+  /** What was left out and why: chatter before the title, code the writer typed. */
+  dropped: string[];
 }
 
 export class LessonFormatError extends Error {
@@ -83,49 +78,55 @@ function clean(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/**
- * `[source 2] «quote»` pairs. The word "source" is asked for because a bare
- * `[2]` was read by the model as a LINE number: measured 2026-10-09, a draft
- * with 21 one-line paragraphs cited "source 21" and "source 16" when it had
- * been given 3. `[S2]` and a bare `[2]` are still read. “quote” and "quote"
- * are accepted as delimiters as well as «quote».
- */
-const SOURCE_TAG = String.raw`\[\s*(?:source\s*|s\s*)?(\d{1,2})\s*\]`;
-const QUOTE = String.raw`(?:«([^»]+)»|“([^”]+)”|"([^"]+)")`;
-const SUPPORT_RE = new RegExp(`${SOURCE_TAG}\\s*${QUOTE}`, "gi");
-const CLAIM_RE = new RegExp(
-  String.raw`^(-\s+|\*\s+)?((?:\[\s*(?:source\s*|s\s*)?\d{1,2}\s*\]\s*(?:«[^»]+»|“[^”]+”|"[^"]+")\s*)+)(?:→|->|=>|—>)\s*(.+)$`,
-  "i"
-);
+const TAGS = String.raw`((?:\[[^\]\n]{1,40}\]\s*)+)`;
+const CLAIM_RE = new RegExp(String.raw`^(?:([-*•])\s+)?${TAGS}(?:→|->|=>|—>|:)?\s*(.+)$`);
+const TEACH_TAG = /\[\s*teach\s*\]/i;
+const P_TAG = /\[\s*(P\s*\d{1,2}(?:\s*(?:,|;|&|and)\s*P?\s*\d{1,2})*)\s*\]/gi;
+const PASSAGE_REF = String.raw`\[\s*P?\s*(\d{1,2})\s*\]`;
+const EXAMPLE_RE = new RegExp(String.raw`^EXAMPLE\s*:?\s*${PASSAGE_REF}`, "i");
+const OUTPUT_RE = new RegExp(String.raw`^OUTPUT\s*:?\s*${PASSAGE_REF}`, "i");
 
-function supportsIn(s: string): Support[] {
-  return Array.from(s.matchAll(SUPPORT_RE), (m) => ({
-    source: Number(m[1]),
-    quote: clean(m[2] ?? m[3] ?? m[4] ?? ""),
-  }))
-    .filter((x) => Number.isInteger(x.source) && x.quote)
-    .slice(0, 3);
+/** One sentence line, or null when the line is not a sentence at all. */
+export function parseClaimLine(line: string): { claim: Claim; item: boolean } | null {
+  const m = CLAIM_RE.exec(line.trim());
+  if (m) {
+    const tags = m[2];
+    const cites = Array.from(tags.matchAll(P_TAG)).flatMap((t) =>
+      Array.from(t[1].matchAll(/\d{1,2}/g), (d) => Number(d[0]))
+    );
+    const text = clean(m[3]);
+    if (!text) return null;
+    const unique = Array.from(new Set(cites)).slice(0, 3);
+    if (unique.length > 0) return { claim: { text, cites: unique, teach: false }, item: Boolean(m[1]) };
+    if (TEACH_TAG.test(tags)) return { claim: { text, cites: [], teach: true }, item: Boolean(m[1]) };
+    // A bracket that is neither [Pn] nor [teach], e.g. the old "[source 1]".
+    return { claim: { text: clean(line.replace(/^[-*•]\s+/, "")), cites: [], teach: false, untagged: true }, item: Boolean(m[1]) };
+  }
+  const item = /^[-*•]\s+(.+)$/.exec(line.trim());
+  const text = clean(item ? item[1] : line);
+  if (!text || /^[-*_=]{3,}$/.test(text)) return null;
+  return { claim: { text, cites: [], teach: false, untagged: true }, item: Boolean(item) };
 }
 
-function fence(lines: string[], from: number): { body: string; next: number } | null {
+function skipFence(lines: string[], from: number): number {
   let i = from;
   while (i < lines.length && !lines[i].trim()) i++;
-  if (i >= lines.length || !lines[i].trim().startsWith("```")) return null;
-  const body: string[] = [];
+  if (i >= lines.length || !lines[i].trim().startsWith("```")) return from - 1;
   i++;
-  while (i < lines.length && !lines[i].trim().startsWith("```")) body.push(lines[i++]);
-  return { body: body.join("\n").replace(/^\n+|\s+$/g, ""), next: i + 1 };
+  while (i < lines.length && !lines[i].trim().startsWith("```")) i++;
+  return i;
 }
 
 /** Parse the writer's answer. Throws only when nothing usable came back. */
 export function parseDraftLesson(content: string): DraftLesson {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
-  const lesson: DraftLesson = { title: "", summary: "", blocks: [], example: null, unparsed: [] };
+  const lesson: DraftLesson = { title: "", summary: "", blocks: [], example: null, dropped: [] };
   let open: { type: "paragraph"; sentences: Claim[] } | { type: "list"; items: Claim[] } | null = null;
   const close = () => {
     if (open) lesson.blocks.push(open);
     open = null;
   };
+  const started = () => Boolean(lesson.title) || lesson.blocks.length > 0 || open !== null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -149,63 +150,60 @@ export function parseDraftLesson(content: string): DraftLesson {
       lesson.blocks.push({ type: "heading", text: clean(heading[1]) });
       continue;
     }
-    if (/^EXAMPLE\b/i.test(line)) {
+    const example = EXAMPLE_RE.exec(line);
+    if (example || /^EXAMPLE\b/i.test(line)) {
       close();
-      const code = fence(lines, i + 1);
-      if (!code) {
-        lesson.unparsed.push(line);
+      const typed = skipFence(lines, i + 1);
+      if (typed >= i + 1) {
+        lesson.dropped.push("code the writer typed under EXAMPLE (only a source's code is shown)");
+        i = typed;
+      }
+      if (!example) {
+        lesson.dropped.push("an EXAMPLE line without a [Pn] passage");
         continue;
       }
-      i = code.next - 1;
-      let output = "";
-      let j = code.next;
-      while (j < lines.length && !lines[j].trim()) j++;
-      if (j < lines.length && /^OUTPUT\b/i.test(lines[j].trim())) {
-        const out = fence(lines, j + 1);
-        if (out) {
-          output = out.body;
-          i = out.next - 1;
-        }
-      }
       // Only the first example is kept: one example per lesson, by construction.
-      if (!lesson.example && code.body) {
-        lesson.example = {
-          code: code.body,
-          output,
-          afterBlock: lesson.blocks.length - 1,
-          support: supportsIn(line),
-        };
+      if (!lesson.example) lesson.example = { passage: Number(example[1]), output: null, afterBlock: lesson.blocks.length - 1 };
+      continue;
+    }
+    const output = OUTPUT_RE.exec(line);
+    if (output || /^OUTPUT\b/i.test(line)) {
+      close();
+      const typed = skipFence(lines, i + 1);
+      if (typed >= i + 1) {
+        lesson.dropped.push("output the writer typed (only a source's output is shown)");
+        i = typed;
       }
+      if (output && lesson.example && lesson.example.output === null) lesson.example.output = Number(output[1]);
+      else if (!output) lesson.dropped.push("an OUTPUT line without a [Pn] passage");
       continue;
     }
     if (line.startsWith("```")) {
-      // A stray code block outside EXAMPLE: skip it whole, and say so.
-      const stray = fence(lines, i);
-      lesson.unparsed.push("a code block outside EXAMPLE");
-      if (stray) i = stray.next - 1;
+      const end = skipFence(lines, i);
+      lesson.dropped.push("a code block outside EXAMPLE");
+      i = Math.max(i, end);
       continue;
     }
-    const claim = CLAIM_RE.exec(line);
-    if (claim) {
-      const isItem = Boolean(claim[1]);
-      const c: Claim = { text: clean(claim[3]), support: supportsIn(claim[2]) };
-      if (!c.text) continue;
-      if (isItem) {
-        if (!open || open.type !== "list") {
-          close();
-          open = { type: "list", items: [] };
-        }
-        open.items.push(c);
-      } else {
-        if (!open || open.type !== "paragraph") {
-          close();
-          open = { type: "paragraph", sentences: [] };
-        }
-        open.sentences.push(c);
+    const parsed = parseClaimLine(line);
+    if (!parsed) continue;
+    if (!started() && parsed.claim.untagged) {
+      // Chatter before the lesson ("Sure! Here is your lesson.").
+      lesson.dropped.push(line.slice(0, 120));
+      continue;
+    }
+    if (parsed.item) {
+      if (!open || open.type !== "list") {
+        close();
+        open = { type: "list", items: [] };
       }
-      continue;
+      open.items.push(parsed.claim);
+    } else {
+      if (!open || open.type !== "paragraph") {
+        close();
+        open = { type: "paragraph", sentences: [] };
+      }
+      open.sentences.push(parsed.claim);
     }
-    lesson.unparsed.push(line.slice(0, 120));
   }
   close();
 
@@ -215,7 +213,7 @@ export function parseDraftLesson(content: string): DraftLesson {
   return lesson;
 }
 
-/** Every claim in reading order. */
+/** Every claim in reading order. Line numbers in problems are 1-based indexes into this. */
 export function claimsOf(lesson: DraftLesson): Claim[] {
   return lesson.blocks.flatMap((b) =>
     b.type === "paragraph" ? b.sentences : b.type === "list" ? b.items : []
@@ -235,61 +233,200 @@ export function proseWordCount(lesson: DraftLesson): number {
   }, 0);
 }
 
-export const MAX_EXAMPLE_LINES = 12;
+/**
+ * One thing wrong with a draft. `line` (1-based, claimsOf order) marks a
+ * sentence the fix turn can replace; `where` names the rest: "title",
+ * "summary", "length", "example", or "lesson" for what no fix can mend.
+ */
+export interface LessonProblem {
+  line: number | null;
+  where: string;
+  text: string;
+  reason: string;
+}
 
 /**
- * Decision 11's mechanical rules. Returns human-readable problems; empty
- * means the lesson's form is acceptable (its grounding is checked separately).
+ * Decision 11's mechanical rules, and decision 1's share of [teach] lines.
+ * Grounding (what each line may say) is checked separately, in grounding.ts.
  */
-export function checkLessonRules(lesson: DraftLesson): string[] {
-  const problems: string[] = [];
-  if (lesson.unparsed.length > 0) {
-    problems.push(
-      `${lesson.unparsed.length} line${lesson.unparsed.length === 1 ? " was" : "s were"} not in the format; every sentence must be [source n] «exact quote» → sentence`
-    );
+export function checkLessonRules(lesson: DraftLesson): LessonProblem[] {
+  const problems: LessonProblem[] = [];
+  const claims = claimsOf(lesson);
+  if (!lesson.title || lesson.title.length > 90) {
+    problems.push({ line: null, where: "title", text: lesson.title, reason: "the title must be 1 to 90 characters" });
   }
-  if (!lesson.title || lesson.title.length > 90) problems.push("the title must be 1 to 90 characters");
-  if (!lesson.summary || lesson.summary.length > 200) problems.push("the summary must be one sentence under 200 characters");
-  // No "at least two paragraphs" rule: it rejected 4 of 7 drafts on
-  // 2026-10-09 for layout alone. Long paragraphs are split when rendered.
-  if (lesson.blocks.filter((b) => b.type !== "heading").length < 1) problems.push("the lesson has no sentences");
+  if (!lesson.summary || lesson.summary.length > 200) {
+    problems.push({ line: null, where: "summary", text: lesson.summary, reason: "the summary must be one sentence under 200 characters" });
+  }
+  if (claims.length === 0) {
+    problems.push({ line: null, where: "lesson", text: "", reason: "the lesson has no sentences" });
+    return problems;
+  }
+  for (const [where, text] of [["title", lesson.title], ["summary", lesson.summary]] as const) {
+    if (URL_IN_TEXT.test(text)) problems.push({ line: null, where, text, reason: "no links; refer to sources only through passages" });
+  }
+
+  claims.forEach((c, i) => {
+    const line = i + 1;
+    if (c.untagged) {
+      problems.push({ line, where: `line ${line}`, text: c.text, reason: "it has no [Pn] or [teach] tag; every sentence needs one" });
+      return;
+    }
+    if (URL_IN_TEXT.test(c.text)) problems.push({ line, where: `line ${line}`, text: c.text, reason: "it contains a link" });
+    if (c.text.includes("```")) problems.push({ line, where: `line ${line}`, text: c.text, reason: "code belongs in EXAMPLE, never in a sentence" });
+  });
+
+  // Decision 1: at most one [teach] line for every two cited lines. The
+  // surplus is asked to become cited lines — the LAST ones, since the
+  // definitions a beginner needs come first.
+  const cited = claims.filter((c) => !c.untagged && !c.teach).length;
+  const teachLines = claims.map((c, i) => ({ c, line: i + 1 })).filter((x) => x.c.teach);
+  const allowed = Math.floor(cited / CITED_LINES_PER_TEACH_LINE);
+  if (teachLines.length > allowed) {
+    for (const x of teachLines.slice(allowed)) {
+      problems.push({
+        line: x.line,
+        where: `line ${x.line}`,
+        text: x.c.text,
+        reason: `too many [teach] lines (${teachLines.length} for ${cited} cited); rewrite this as a [Pn] line that cites a passage`,
+      });
+    }
+  }
 
   const count = proseWordCount(lesson);
   if (count < LESSON_MIN_WORDS || count > LESSON_MAX_WORDS) {
-    problems.push(`the lesson is ${count} words; it must be ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS}`);
-  }
-
-  const texts = [
-    lesson.title,
-    lesson.summary,
-    ...lesson.blocks.map((b) => (b.type === "heading" ? b.text : "")),
-    ...claimsOf(lesson).map((c) => c.text),
-  ];
-  if (texts.some((t) => URL_IN_TEXT.test(t))) problems.push("the lesson must not contain links; refer to sources by number");
-  if (texts.some((t) => t.includes("```"))) problems.push("code belongs in the example field, not in sentences");
-
-  if (lesson.example) {
-    const lines = lesson.example.code.split("\n").length;
-    if (lines > MAX_EXAMPLE_LINES) problems.push(`the example is ${lines} lines; keep it to ${MAX_EXAMPLE_LINES}`);
-    if (!lesson.example.output) problems.push("the example must show its expected output");
-    if (lesson.example.code.includes("```") || lesson.example.output.includes("```")) {
-      problems.push("the example must not contain code fences");
-    }
+    problems.push({ line: null, where: "length", text: String(count), reason: `the lesson is ${count} words; it must be ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS}` });
   }
   return problems;
 }
 
+/**
+ * An EXAMPLE or OUTPUT line that does not name a code passage is dropped, not
+ * failed: it is not a sentence, so leaving it out changes no claim, and
+ * nothing unverified is shown in its place (decision 2). OUTPUT naming the
+ * example's own passage is dropped too — that passage already shows it.
+ */
+export function settleExample(lesson: DraftLesson, passages: Passage[]): DraftLesson {
+  if (!lesson.example) return lesson;
+  const isCode = (id: number | null) => id !== null && passages.some((p) => p.id === id && p.kind === "code");
+  const dropped = [...lesson.dropped];
+  if (!isCode(lesson.example.passage)) {
+    dropped.push(`EXAMPLE [P${lesson.example.passage}] (not a code passage)`);
+    return { ...lesson, example: null, dropped };
+  }
+  const output = lesson.example.output;
+  if (output !== null && (!isCode(output) || output === lesson.example.passage)) {
+    dropped.push(`OUTPUT [P${output}] (${output === lesson.example.passage ? "the example already shows it" : "not a code passage"})`);
+    return { ...lesson, example: { ...lesson.example, output: null }, dropped };
+  }
+  return lesson;
+}
+
+// ─── the fix turn ──────────────────────────────────────────────────────────
+
+export interface FixAnswer {
+  /** Replacement lines by the line number they replace. */
+  lines: Map<number, { claim: Claim; item: boolean }>;
+  title: string | null;
+  summary: string | null;
+  /** New lines to add at the end of the lesson. */
+  added: { claim: Claim; item: boolean }[];
+}
+
+/** Read the fix turn's answer: "L4: [P3] → …", "TITLE: …", "SUMMARY: …", "ADD: [P5] → …". */
+export function parseFixAnswer(content: string): FixAnswer {
+  const out: FixAnswer = { lines: new Map(), title: null, summary: null, added: [] };
+  for (const raw of content.replace(/\r\n/g, "\n").split("\n")) {
+    const line = raw.trim();
+    const l = /^L(\d{1,3})\s*[:.)-]\s*(.+)$/i.exec(line);
+    if (l) {
+      const parsed = parseClaimLine(l[2]);
+      if (parsed && !out.lines.has(Number(l[1]))) out.lines.set(Number(l[1]), parsed);
+      continue;
+    }
+    const add = /^ADD\s*[:.)-]\s*(.+)$/i.exec(line);
+    if (add) {
+      const parsed = parseClaimLine(add[1]);
+      if (parsed) out.added.push(parsed);
+      continue;
+    }
+    const title = /^TITLE\s*:\s*(.+)$/i.exec(line);
+    if (title) out.title = clean(title[1]);
+    const summary = /^SUMMARY\s*:\s*(.+)$/i.exec(line);
+    if (summary) out.summary = clean(summary[1]);
+  }
+  return out;
+}
+
+/**
+ * Splice a fix answer into the draft: each replaced line stays where it was,
+ * added lines go at the end. Returns the new lesson and the line numbers
+ * that are new or changed — the only lines the meaning check reads again —
+ * and the asked-for lines the answer did not replace.
+ */
+export function applyFix(
+  lesson: DraftLesson,
+  fix: FixAnswer,
+  asked: number[]
+): { lesson: DraftLesson; changed: number[]; missing: number[] } {
+  let n = 0;
+  const changedClaims = new Set<Claim>();
+  const replace = (c: Claim): Claim => {
+    n += 1;
+    const r = fix.lines.get(n);
+    if (!r || !asked.includes(n)) return c;
+    changedClaims.add(r.claim);
+    return r.claim;
+  };
+  const blocks: LessonBlock[] = lesson.blocks.map((b) =>
+    b.type === "paragraph"
+      ? { ...b, sentences: b.sentences.map(replace) }
+      : b.type === "list"
+        ? { ...b, items: b.items.map(replace) }
+        : b
+  );
+  if (fix.added.length > 0) {
+    const sentences = fix.added.map((a) => a.claim);
+    sentences.forEach((c) => changedClaims.add(c));
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === "paragraph") blocks[blocks.length - 1] = { ...last, sentences: [...last.sentences, ...sentences] };
+    else blocks.push({ type: "paragraph", sentences });
+  }
+  const next: DraftLesson = {
+    ...lesson,
+    title: fix.title ?? lesson.title,
+    summary: fix.summary ?? lesson.summary,
+    blocks,
+  };
+  const changed = claimsOf(next)
+    .map((c, i) => (changedClaims.has(c) ? i + 1 : 0))
+    .filter((x) => x > 0);
+  const missing = asked.filter((a) => !fix.lines.has(a));
+  return { lesson: next, changed, missing };
+}
+
+// ─── rendering ─────────────────────────────────────────────────────────────
+
 /** Sentences per displayed paragraph before a long one is split. */
 export const PARAGRAPH_SENTENCES = 5;
 
-/** The stored lesson body. One line per paragraph, as lib/markdown-blocks.ts reads it. */
-export function renderLessonMarkdown(lesson: DraftLesson): string {
+/**
+ * The stored lesson body. One line per paragraph, as lib/markdown-blocks.ts
+ * reads it. The example and its output are the passages' own lines.
+ */
+export function renderLessonMarkdown(lesson: DraftLesson, passages: Passage[]): string {
   const out: string[] = [];
+  const code = (id: number | null) => (id === null ? null : passages.find((p) => p.id === id && p.kind === "code") ?? null);
   const pushExample = () => {
     if (!lesson.example) return;
-    out.push("```python\n" + lesson.example.code + "\n```");
-    out.push("Expected output:");
-    out.push("```text\n" + lesson.example.output + "\n```");
+    const example = code(lesson.example.passage);
+    if (!example) return;
+    out.push("```python\n" + example.text + "\n```");
+    const output = code(lesson.example.output);
+    if (output) {
+      out.push("Expected output:");
+      out.push("```text\n" + output.text + "\n```");
+    }
   };
   const after = lesson.example
     ? Math.min(Math.max(lesson.example.afterBlock, 0), lesson.blocks.length - 1)
@@ -304,8 +441,7 @@ export function renderLessonMarkdown(lesson: DraftLesson): string {
       for (let k = 0; k < b.sentences.length; k += size) {
         out.push(b.sentences.slice(k, k + size).map((s) => s.text).join(" "));
       }
-    }
-    else out.push(b.items.map((it) => `- ${it.text}`).join("\n"));
+    } else out.push(b.items.map((it) => `- ${it.text}`).join("\n"));
     if (i === after) pushExample();
   });
   if (lesson.example && after === -1) pushExample();

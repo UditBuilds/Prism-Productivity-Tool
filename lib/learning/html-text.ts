@@ -74,9 +74,14 @@ export function extractPage(body: string, contentType: string, url: string): Pag
     /<body\b[\s\S]*?<\/body\s*>/i.exec(html)?.[0] ??
     html;
 
+  // Code keeps its entities ENCODED until the very end: decoding here turned
+  // `while a &lt; 10:` into `while a < 10:`, and the tag strip below then ate
+  // everything from that `<` to the next `>` (measured 2026-10-10 on
+  // docs.python.org: a whole loop and its output vanished, and `<class 'str'>`
+  // output disappeared from realpython.com).
   const text = main
     .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre\s*>/gi, (_m, code: string) =>
-      `\n\n\`\`\`\n${decodeEntities(code.replace(/<[^>]+>/g, ""))}\n\`\`\`\n\n`
+      `\n\n\`\`\`\n${code.replace(/<[^>]+>/g, "").replace(/^\n+|\s+$/g, "")}\n\`\`\`\n\n`
     )
     .replace(/<(br|hr)\b[^>]*>/gi, "\n")
     .replace(/<\/(p|div|section|li|h[1-6]|tr|table|blockquote|dd|dt|figure|ul|ol)\s*>/gi, "\n\n")
@@ -91,13 +96,65 @@ export function extractPage(body: string, contentType: string, url: string): Pag
   };
 }
 
+const FENCED = /```[^\n]*\n[\s\S]*?\n```/g;
+
+/**
+ * Whitespace clean-up for prose only. Code blocks keep their indentation and
+ * blank lines: an example is shown exactly as its source wrote it (decision
+ * 2), and Python's meaning depends on indentation.
+ */
 function tidy(s: string): string {
-  return s
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t ]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const prose = (p: string) =>
+    p
+      .replace(/[ \t ]+/g, " ")
+      .replace(/ *\n */g, "\n")
+      .replace(/\n{3,}/g, "\n\n");
+  const normalized = s.replace(/\r\n?/g, "\n");
+  let out = "";
+  let last = 0;
+  for (const m of Array.from(normalized.matchAll(FENCED))) {
+    out += prose(normalized.slice(last, m.index)) + m[0].replace(/ /g, " ").replace(/[ \t]+$/gm, "");
+    last = (m.index ?? 0) + m[0].length;
+  }
+  return (out + prose(normalized.slice(last))).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * A page's text as units: whole fenced code blocks (blank lines inside them
+ * included) and the prose paragraphs between them. Splitting on blank lines
+ * alone cut code blocks in half and left their fences unclosed (measured
+ * 2026-10-10 on docs.python.org and realpython.com).
+ */
+export function textUnits(text: string): string[] {
+  const units: string[] = [];
+  let last = 0;
+  const pushProse = (p: string) => p.split(/\n\n+/).forEach((x) => units.push(x));
+  for (const m of Array.from(text.matchAll(FENCED))) {
+    pushProse(text.slice(last, m.index));
+    units.push(m[0]);
+    last = (m.index ?? 0) + m[0].length;
+  }
+  pushProse(text.slice(last));
+  return units.map((u) => u.trim()).filter(Boolean);
+}
+
+/**
+ * A menu or link list: several short lines and almost no sentences
+ * ("Python HOME / Python Intro / ..."). Measured 2026-10-10: on w3schools.com
+ * the side menu filled the whole 3,800-character excerpt, because its items
+ * contain the query words, and the page's actual lesson never reached the
+ * writer.
+ */
+export function isMenuLike(unit: string): boolean {
+  if (unit.startsWith("```")) return false;
+  const lines = unit.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return false;
+  // Two or more short lines with no sentence among them: "Python PIP / Python Try...Except".
+  if (lines.every((l) => l.length < 30 && !/[.!?:]$/.test(l))) return true;
+  if (lines.length < 3) return false;
+  const avg = lines.reduce((n, l) => n + l.length, 0) / lines.length;
+  const sentences = lines.filter((l) => /[.!?:]$/.test(l) && l.split(/\s+/).length >= 6).length;
+  return avg < 30 && sentences <= lines.length / 5;
 }
 
 const QUERY_STOP = new Set([
@@ -106,26 +163,50 @@ const QUERY_STOP = new Set([
   "tutorial", "guide", "basics", "introduction", "simple", "first", "step",
 ]);
 
-function queryTerms(query: string): string[] {
+/**
+ * Query words as the stems a paragraph is searched for. Matching is by
+ * substring, so the singular stem finds both forms: "variables" in a step
+ * title never matched docs.python.org's "assign a value to a variable", and
+ * the one paragraph that defines the idea was left out of the excerpt
+ * (measured 2026-10-10).
+ */
+export function queryTerms(query: string): string[] {
+  return Array.from(new Set(queryStems(query)));
+}
+
+function queryStems(query: string): string[] {
   const words = query.toLowerCase().match(/[a-z][a-z0-9+#.]{2,}/g) ?? [];
-  return Array.from(new Set(words.filter((w) => !QUERY_STOP.has(w))));
+  return words
+    .filter((w) => !QUERY_STOP.has(w))
+    .map((w) => (w.length > 4 && w.endsWith("ies") ? w.slice(0, -3) : w.length > 4 && /[^s]s$/.test(w) ? w.slice(0, -1) : w));
 }
 
 /**
  * The parts of a page that talk about this step, in page order, within a
- * character budget. Paragraphs are scored by how many query terms they hold;
- * a page that never mentions the terms contributes its opening instead, and
- * a code block next to a chosen paragraph comes along with it.
+ * character budget. Paragraphs are scored by the query terms they hold, each
+ * term weighted by how RARE it is on this page: on a Python site every
+ * paragraph says "python", so plain counting picked generic paragraphs and
+ * left out the one that defines the step's idea (measured 2026-10-10 on
+ * docs.python.org). A term the query repeats (the step's title, goal and
+ * search all say "variables") is its subject and counts that many times. A
+ * page that never mentions the terms contributes its
+ * opening instead, and a code block next to a chosen paragraph comes along
+ * with it.
  */
 export function excerptFor(text: string, query: string, budget: number): string {
-  const terms = queryTerms(query);
-  const paras = text
-    .split(/\n\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length >= 30 || p.startsWith("```"));
+  const stems = queryStems(query);
+  const terms = Array.from(new Set(stems));
+  const paras = textUnits(text).filter((p) => (p.length >= 30 || p.startsWith("```")) && !isMenuLike(p));
+  const lowers = paras.map((p) => p.toLowerCase());
+  const weight = new Map(
+    terms.map((t) => {
+      const df = lowers.filter((l) => l.includes(t)).length;
+      const repeats = stems.filter((s) => s === t).length;
+      return [t, df === 0 ? 0 : repeats * Math.log(1 + paras.length / df)];
+    })
+  );
   const scored = paras.map((p, i) => {
-    const lower = p.toLowerCase();
-    const score = terms.reduce((n, t) => n + (lower.includes(t) ? 1 : 0), 0);
+    const score = terms.reduce((n, t) => n + (lowers[i].includes(t) ? weight.get(t) ?? 0 : 0), 0);
     return { p, i, score };
   });
   const order = [...scored].sort((a, b) => b.score - a.score || a.i - b.i);

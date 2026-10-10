@@ -67,15 +67,34 @@ export function harvestSearchResults(executedTools: unknown): SearchHarvest {
 
 const SKIP_HOSTS = ["youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com"];
 
+const DOCS_HOST = /^(?:docs?|documentation|developers?|learn|wiki|manual|reference|api)\./i;
+const DOCS_PATH = /\/(?:docs?|documentation|reference|tutorials?|library|guides?|manual|api|learn|handbook|howto)(?:[/._-]|$)/i;
+
+/**
+ * Decision 3 (2026-10-10): documentation and reference pages first. A URL
+ * reads as documentation when its host or path says so (docs.python.org,
+ * developer.mozilla.org, …/docs/…, …/tutorial/…).
+ */
+export function isDocsUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return DOCS_HOST.test(u.hostname.replace(/^www\./, "")) || DOCS_PATH.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Which search hits to try fetching: fetchable https links only, no PDFs or
  * video pages (this PR reads web pages), one per site so a lesson is not
- * three pages of the same tutorial, in the search tool's order.
+ * three pages of the same tutorial. Documentation pages go first; the rest
+ * keep the search tool's order.
  */
 export function pickCandidates(hits: SearchHit[], max: number): SearchHit[] {
   const out: SearchHit[] = [];
   const hosts = new Set<string>();
-  for (const hit of hits) {
+  const ranked = [...hits.filter((h) => isDocsUrl(h.url)), ...hits.filter((h) => !isDocsUrl(h.url))];
+  for (const hit of ranked) {
     const verdict = checkFetchUrl(hit.url);
     if (!verdict.ok) continue;
     const host = verdict.url.hostname.replace(/^www\./, "").toLowerCase();
@@ -87,6 +106,36 @@ export function pickCandidates(hits: SearchHit[], max: number): SearchHit[] {
     if (out.length >= max) break;
   }
   return out;
+}
+
+const MARKETING = [
+  /\btrusted by\b/i,
+  /\b(?:book|request|get|schedule) a demo\b/i,
+  /\b(?:contact|talk to) (?:sales|an expert)\b/i,
+  /\bfree trial\b/i,
+  /\bpricing\b/i,
+  /\b(?:customer stories|case studies)\b/i,
+  /^(?:start building|get started(?: for free)?|sign up(?: for free)?|try (?:it )?(?:for )?free|enroll for free)$/im,
+];
+
+/** A paragraph that is one quotation, followed by a short line naming a job: a testimonial. */
+const TESTIMONIAL = /\n\n[“"][^\n]{40,}[”"]\n\n[^\n]{2,60}\n\n[^\n]{0,60}\b(?:CEO|CTO|CIO|COO|VP|Head of|Director|Founder|Officer|Manager|Engineer|Lead|Architect|SWE|Principal)\b/;
+
+/**
+ * Decision 3: a vendor's landing page, not a page that teaches. Read from
+ * the page's own text: the site's front page, a customer testimonial, or two
+ * kinds of sales wording ("Trusted by", "Book a demo", a bare "Start
+ * building" button line). Measured 2026-10-10 on langchain.com/langgraph:
+ * "Trusted by", "Start building", "Enroll for free" and three testimonials.
+ */
+export function isLandingPage(url: string, text: string): boolean {
+  try {
+    if (new URL(url).pathname.replace(/\/+$/, "") === "" && !isDocsUrl(url)) return true;
+  } catch {
+    return false;
+  }
+  if (TESTIMONIAL.test(`\n\n${text}`)) return true;
+  return MARKETING.filter((re) => re.test(text)).length >= 2;
 }
 
 /**

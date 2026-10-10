@@ -1,12 +1,19 @@
 import Groq, { APIConnectionTimeoutError, APIError } from "groq-sdk";
 
 import {
+  COPY_MAX_TOKENS,
+  COPY_TIMEOUT_MS,
+  FIX_MAX_TOKENS,
+  JUDGE_MAX_TOKENS,
   JUDGE_TIMEOUT_MS,
+  LEARNING_COPY_MODEL,
   LEARNING_JUDGE_MODEL,
   LEARNING_SEARCH_MODEL,
   LEARNING_WRITE_MODEL,
   PLAN_TIMEOUT_MS,
+  SEARCH_MAX_TOKENS,
   SEARCH_TIMEOUT_MS,
+  WRITE_MAX_TOKENS,
   WRITE_TIMEOUT_MS,
 } from "@/lib/learning/constants";
 import { classifyGroqFailure, type GroqFailure } from "@/lib/learning/groq-errors";
@@ -23,13 +30,15 @@ import {
   JUDGE_SYSTEM_PROMPT,
   judgeUserMessage,
   parseVerdicts,
-  type JudgePair,
+  type JudgeItem,
   type Verdict,
 } from "@/lib/learning/judge";
-import { WRITER_SYSTEM_PROMPT, writerRetryMessage } from "@/lib/learning/writer-prompt";
+import { COPIER_SYSTEM_PROMPT, type Passage } from "@/lib/learning/passages";
+import { WRITER_SYSTEM_PROMPT } from "@/lib/learning/writer-prompt";
 
 /**
- * Learning's three Groq calls. SERVER-ONLY (GROQ_API_KEY).
+ * Learning's Groq calls: plan, search, copy, write, fix, judge. SERVER-ONLY
+ * (GROQ_API_KEY).
  *
  * Its own client with `maxRetries: 0`. groq-sdk retries a 429 twice by
  * default, sleeping between tries — inside a 60s function that silently
@@ -58,6 +67,27 @@ export class LearningAiError extends Error {
     super(failure.kind === "other" ? failure.message : `groq ${failure.kind}`);
     this.name = "LearningAiError";
   }
+}
+
+/**
+ * Groq's per-minute counter for the model just called, from the response
+ * headers. Kept OUT of CallRecord (which is inserted into learning_ai_calls
+ * as is): it only goes to the dev debug dump, to settle whether max_tokens is
+ * taken from the minute budget up front.
+ */
+export interface RateLimits {
+  remainingTokens: number | null;
+  limitTokens: number | null;
+  resetTokens: string | null;
+}
+
+function limitsOf(res: Response | undefined): RateLimits {
+  const num = (v: string | null | undefined) => (v && Number.isFinite(Number(v)) ? Number(v) : null);
+  return {
+    remainingTokens: num(res?.headers.get("x-ratelimit-remaining-tokens")),
+    limitTokens: num(res?.headers.get("x-ratelimit-limit-tokens")),
+    resetTokens: res?.headers.get("x-ratelimit-reset-tokens") ?? null,
+  };
 }
 
 interface Usage {
@@ -189,13 +219,15 @@ const SEARCH_SYSTEM = `You find web pages for a lesson writer. Run exactly ONE b
 export interface SearchResult {
   harvest: SearchHarvest;
   record: CallRecord;
+  limits: RateLimits;
 }
 
 export async function searchForStep(query: string): Promise<SearchResult> {
   const startedAt = Date.now();
   let completion;
+  let limits: RateLimits;
   try {
-    completion = await groq.chat.completions.create(
+    const res = await groq.chat.completions.create(
       {
         model: LEARNING_SEARCH_MODEL,
         messages: [
@@ -206,10 +238,12 @@ export async function searchForStep(query: string): Promise<SearchResult> {
         tool_choice: "required",
         reasoning_effort: "low",
         temperature: 0,
-        max_tokens: 1500,
+        max_tokens: SEARCH_MAX_TOKENS,
       },
       { timeout: SEARCH_TIMEOUT_MS }
-    );
+    ).withResponse();
+    completion = res.data;
+    limits = limitsOf(res.response);
   } catch (err) {
     throw failed("search", LEARNING_SEARCH_MODEL, err, startedAt);
   }
@@ -218,50 +252,46 @@ export async function searchForStep(query: string): Promise<SearchResult> {
   return {
     harvest,
     record: record("search", LEARNING_SEARCH_MODEL, outcome, completion.usage, startedAt, harvest.pagesOpened),
+    limits,
   };
 }
 
-export interface WriteAttempt {
+export interface TextCall {
   content: string;
   truncated: boolean;
   record: CallRecord;
+  limits: RateLimits;
 }
 
-/**
- * One draft, as plain text in the line format lesson-format.ts parses — not
- * JSON mode, which refused 3 of 9 quote-heavy drafts outright (HTTP 400
- * "Failed to validate JSON", measured 2026-10-09). `retry` turns this into
- * the corrective second turn: the first draft is sent back with the list of
- * checks it failed.
- */
-export async function writeDraft(
-  userMessage: string,
-  retry: { previous: string; problems: string[] } | null,
-  maxTokens = 6000
-): Promise<WriteAttempt> {
+type Message = { role: "system" | "user" | "assistant"; content: string };
+
+/** One plain-text completion: the copier, the writer and its fix turn. */
+async function textCall(
+  kind: CallRecord["kind"],
+  model: string,
+  messages: Message[],
+  opts: { temperature: number; maxTokens: number; timeoutMs: number }
+): Promise<TextCall> {
   const startedAt = Date.now();
-  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-    { role: "system", content: WRITER_SYSTEM_PROMPT },
-    { role: "user", content: userMessage },
-  ];
-  if (retry) {
-    messages.push({ role: "assistant", content: retry.previous });
-    messages.push({ role: "user", content: writerRetryMessage(retry.problems) });
-  }
   let completion;
+  let limits: RateLimits;
   try {
-    completion = await groq.chat.completions.create(
-      {
-        model: LEARNING_WRITE_MODEL,
-        messages,
-        reasoning_effort: "low",
-        temperature: 0.3,
-        max_tokens: maxTokens,
-      },
-      { timeout: WRITE_TIMEOUT_MS }
-    );
+    const res = await groq.chat.completions
+      .create(
+        {
+          model,
+          messages,
+          reasoning_effort: "low",
+          temperature: opts.temperature,
+          max_tokens: opts.maxTokens,
+        },
+        { timeout: opts.timeoutMs }
+      )
+      .withResponse();
+    completion = res.data;
+    limits = limitsOf(res.response);
   } catch (err) {
-    throw failed("write", LEARNING_WRITE_MODEL, err, startedAt);
+    throw failed(kind, model, err, startedAt);
   }
   const choice = completion.choices[0];
   const truncated = choice?.finish_reason === "length";
@@ -269,46 +299,91 @@ export async function writeDraft(
   return {
     content,
     truncated,
-    record: record("write", LEARNING_WRITE_MODEL, truncated ? "truncated" : content ? "ok" : "empty", completion.usage, startedAt),
+    record: record(kind, model, truncated ? "truncated" : content ? "ok" : "empty", completion.usage, startedAt),
+    limits,
   };
-}
-
-export interface JudgeResult {
-  verdicts: Map<number, Verdict>;
-  record: CallRecord;
 }
 
 /**
- * The meaning check (judge.ts): one call on gpt-oss-20b with only the
- * sentence/passage pairs. A cut-off or empty answer leaves sentences without a
- * verdict, and parseVerdicts counts those as NOT supported — the check fails
- * closed.
+ * The copier (passages.ts): gpt-oss-20b copies passages from the pages word
+ * for word. Logged as kind "write" on the 20b model — see LEARNING_COPY_MODEL.
  */
-export async function judgeClaims(pairs: JudgePair[], model: string = LEARNING_JUDGE_MODEL): Promise<JudgeResult> {
-  const startedAt = Date.now();
-  let completion;
-  try {
-    completion = await groq.chat.completions.create(
-      {
-        model,
-        messages: [
-          { role: "system", content: JUDGE_SYSTEM_PROMPT },
-          { role: "user", content: judgeUserMessage(pairs) },
-        ],
-        reasoning_effort: "low",
-        temperature: 0,
-        max_tokens: 3000,
-      },
-      { timeout: JUDGE_TIMEOUT_MS }
-    );
-  } catch (err) {
-    throw failed("judge", model, err, startedAt);
-  }
-  const choice = completion.choices[0];
-  const content = choice?.message?.content ?? "";
-  const truncated = choice?.finish_reason === "length";
+export function copyPassages(userMessage: string): Promise<TextCall> {
+  return textCall(
+    "write",
+    LEARNING_COPY_MODEL,
+    [
+      { role: "system", content: COPIER_SYSTEM_PROMPT },
+      { role: "user", content: userMessage },
+    ],
+    { temperature: 0, maxTokens: COPY_MAX_TOKENS, timeoutMs: COPY_TIMEOUT_MS }
+  );
+}
+
+/**
+ * One draft, as plain text in the line format lesson-format.ts parses — not
+ * JSON mode, which refused 3 of 9 quote-heavy drafts outright (HTTP 400
+ * "Failed to validate JSON", measured 2026-10-09).
+ */
+export function writeDraft(userMessage: string, maxTokens = WRITE_MAX_TOKENS): Promise<TextCall> {
+  return textCall(
+    "write",
+    LEARNING_WRITE_MODEL,
+    [
+      { role: "system", content: WRITER_SYSTEM_PROMPT },
+      { role: "user", content: userMessage },
+    ],
+    { temperature: 0.3, maxTokens, timeoutMs: WRITE_TIMEOUT_MS }
+  );
+}
+
+/**
+ * The fix turn: the passages again (the writer keeps no memory) and only the
+ * lines that failed, never the whole draft (Udit's decision, 2026-10-10).
+ */
+export function writeFix(userMessage: string, fixMessage: string): Promise<TextCall> {
+  return textCall(
+    "write",
+    LEARNING_WRITE_MODEL,
+    [
+      { role: "system", content: WRITER_SYSTEM_PROMPT },
+      { role: "user", content: `${userMessage}\n\n${fixMessage}` },
+    ],
+    { temperature: 0.3, maxTokens: FIX_MAX_TOKENS, timeoutMs: WRITE_TIMEOUT_MS }
+  );
+}
+
+export interface JudgeResult {
+  /** By judge item id. */
+  verdicts: Map<number, Verdict>;
+  record: CallRecord;
+  limits: RateLimits;
+}
+
+/**
+ * The meaning check (judge.ts): one call on gpt-oss-20b with the cited
+ * passages once and the lines to check. A cut-off or empty answer leaves
+ * lines without a verdict, and parseVerdicts counts those as NOT supported —
+ * the check fails closed.
+ */
+export async function judgeClaims(
+  passages: Passage[],
+  items: JudgeItem[],
+  model: string = LEARNING_JUDGE_MODEL
+): Promise<JudgeResult> {
+  const call = await textCall(
+    "judge",
+    model,
+    [
+      { role: "system", content: JUDGE_SYSTEM_PROMPT },
+      { role: "user", content: judgeUserMessage(passages, items) },
+    ],
+    { temperature: 0, maxTokens: JUDGE_MAX_TOKENS, timeoutMs: JUDGE_TIMEOUT_MS }
+  );
   return {
-    verdicts: parseVerdicts(content, pairs.map((p) => p.id)),
-    record: record("judge", model, truncated ? "truncated" : content ? "ok" : "empty", completion.usage, startedAt),
+    verdicts: parseVerdicts(call.content, items.map((i) => i.id)),
+    record: call.record,
+    limits: call.limits,
   };
 }
+

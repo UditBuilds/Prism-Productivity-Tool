@@ -30,6 +30,40 @@ export const LEARNING_JUDGE_MODEL = "openai/gpt-oss-20b";
 export const JUDGE_TIMEOUT_MS = 20_000;
 
 /**
+ * Copies passages from the source pages word for word before anything is
+ * written (passages.ts, Udit's decision 2026-10-10: quotes first). On 20b for
+ * the same reason as the judge. Logged in learning_ai_calls as kind "write"
+ * with this model — the kind column's CHECK allows only plan/search/write/
+ * judge, and no other 20b call is a "write", so model + kind name it.
+ */
+export const LEARNING_COPY_MODEL = "openai/gpt-oss-20b";
+export const COPY_TIMEOUT_MS = 20_000;
+
+/**
+ * max_tokens per call. Groq's per-minute counter was seen to take
+ * prompt + max_tokens up front (2026-10-10: a 78-token prompt with
+ * max_tokens 200 dropped "remaining" by exactly 278), so these are sized to
+ * what each call returns, with room for reasoning, not "large to be safe".
+ * One observation — the debug dump records the headers on every call so the
+ * question can be settled.
+ */
+export const SEARCH_MAX_TOKENS = 800;
+export const COPY_MAX_TOKENS = 2_500;
+export const WRITE_MAX_TOKENS = 3_000;
+export const FIX_MAX_TOKENS = 1_500;
+export const JUDGE_MAX_TOKENS = 2_000;
+
+/** Passages the writer may be given; the copier is asked for up to 20. */
+export const MAX_PASSAGES = 24;
+/**
+ * Below this many words of verified prose passages, a 300-word lesson could
+ * only be reached by padding, so the step fails before the 120b call.
+ */
+export const MIN_PASSAGE_WORDS = 250;
+/** An example longer than this is no longer "one short example" (decision 11). */
+export const MAX_EXAMPLE_CODE_LINES = 12;
+
+/**
  * The most tokens one user's learning may spend in any rolling 24 hours,
  * across both models, counted from learning_ai_calls (so it survives cold
  * starts, unlike the in-memory rate limiter).
@@ -68,6 +102,14 @@ export const MIN_SOURCE_CHARS = 500;
 /** Lesson length, decision 11. Prose words only; the code example is extra. */
 export const LESSON_MIN_WORDS = 300;
 export const LESSON_MAX_WORDS = 500;
+
+/**
+ * Decision 1 (2026-10-10): a lesson may hold [teach] lines — plain-word
+ * definitions, links between points, and walking through the example — that
+ * cite no passage because they add nothing new. At most one for every this
+ * many cited lines, so the lesson stays tied to its sources.
+ */
+export const CITED_LINES_PER_TEACH_LINE = 2;
 
 export const TOPIC_TITLE_MAX = 200;
 export const WRONG_NOTE_MAX = 1_000;
