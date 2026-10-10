@@ -301,25 +301,61 @@ export function checkLessonRules(lesson: DraftLesson): LessonProblem[] {
 }
 
 /**
- * An EXAMPLE or OUTPUT line that does not name a code passage is dropped, not
- * failed: it is not a sentence, so leaving it out changes no claim, and
- * nothing unverified is shown in its place (decision 2). OUTPUT naming the
- * example's own passage is dropped too — that passage already shows it.
+ * An EXAMPLE or OUTPUT line the source does not back is dropped, not failed:
+ * it is not a sentence, so leaving it out changes no claim, and nothing
+ * unverified is shown in its place (decision 2).
+ *
+ * EXAMPLE must name a code passage. OUTPUT must name the code block that
+ * comes RIGHT AFTER the example's block on the same page: any other code
+ * passage would show a beginner unrelated code as "Expected output". OUTPUT
+ * naming the example's own passage is dropped too, as it already shows it.
  */
 export function settleExample(lesson: DraftLesson, passages: Passage[]): DraftLesson {
   if (!lesson.example) return lesson;
-  const isCode = (id: number | null) => id !== null && passages.some((p) => p.id === id && p.kind === "code");
+  const code = (id: number | null) => (id === null ? undefined : passages.find((p) => p.id === id && p.kind === "code"));
   const dropped = [...lesson.dropped];
-  if (!isCode(lesson.example.passage)) {
+  const example = code(lesson.example.passage);
+  if (!example) {
     dropped.push(`EXAMPLE [P${lesson.example.passage}] (not a code passage)`);
     return { ...lesson, example: null, dropped };
   }
-  const output = lesson.example.output;
-  if (output !== null && (!isCode(output) || output === lesson.example.passage)) {
-    dropped.push(`OUTPUT [P${output}] (${output === lesson.example.passage ? "the example already shows it" : "not a code passage"})`);
-    return { ...lesson, example: { ...lesson.example, output: null }, dropped };
-  }
-  return lesson;
+  const id = lesson.example.output;
+  if (id === null) return lesson;
+  const output = code(id);
+  const why =
+    id === lesson.example.passage
+      ? "the example already shows it"
+      : !output
+        ? "not a code passage"
+        : output.source !== example.source || example.block === undefined || output.block !== example.block + 1
+          ? "not the code block right after the example on its page"
+          : null;
+  if (why === null) return lesson;
+  dropped.push(`OUTPUT [P${id}] (${why})`);
+  return { ...lesson, example: { ...lesson.example, output: null }, dropped };
+}
+
+/**
+ * Headings make no claim, so one that fails a check (a number no cited
+ * passage holds) is dropped rather than failing the lesson. `numbers` are
+ * the 1-based heading numbers, as checkGrounding's "heading n" names them.
+ */
+export function dropHeadings(lesson: DraftLesson, numbers: number[]): DraftLesson {
+  if (numbers.length === 0) return lesson;
+  let h = 0;
+  const removedAt: number[] = [];
+  const blocks = lesson.blocks.filter((b, i) => {
+    if (b.type !== "heading") return true;
+    h += 1;
+    if (!numbers.includes(h)) return true;
+    removedAt.push(i);
+    return false;
+  });
+  const example = lesson.example
+    ? { ...lesson.example, afterBlock: lesson.example.afterBlock - removedAt.filter((i) => i <= lesson.example!.afterBlock).length }
+    : null;
+  const dropped = [...lesson.dropped, ...numbers.map((n) => `heading ${n} (a number no cited passage holds)`)];
+  return { ...lesson, blocks, example, dropped };
 }
 
 // ─── the fix turn ──────────────────────────────────────────────────────────

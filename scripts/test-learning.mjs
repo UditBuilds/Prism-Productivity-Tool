@@ -427,6 +427,7 @@ console.log("\npassages: copied word for word by 20b, checked here (quotes first
     "code is matched without its >>> prompts and kept exactly as the page wrote it",
     ps.some((p) => p.kind === "code" && p.text === ">>> width = 20\n>>> height = 5 * 9")
   );
+  eq("a code passage knows which code block of its page it is", ps.find((p) => p.kind === "code").block, 1);
   ok("code no page shows is rejected (decision 2)", rejected.some((r) => r.text === "width = 30" && r.reason.includes("not in any source")));
   eq("a short quote inside a sentence already kept is a duplicate, not a second passage", ps.filter((p) => p.text.startsWith("The integer numbers")).length, 1);
   eq("passages are numbered 1..n", ps.map((p) => p.id), ps.map((_, i) => i + 1));
@@ -551,8 +552,8 @@ console.log("\nlesson format: [Pn] and [teach] lines, EXAMPLE by passage number 
   ok("a link is refused", lessonFormat.checkLessonRules(linky).some((p) => p.reason.includes("no links")));
 
   const ps = [
-    { id: 3, source: 1, kind: "code", text: ">>> width = 20\n>>> width * 2\n40" },
-    { id: 5, source: 1, kind: "code", text: "40" },
+    { id: 3, source: 1, kind: "code", text: ">>> width = 20\n>>> width * 2\n40", block: 0 },
+    { id: 5, source: 1, kind: "code", text: "40", block: 1 },
   ];
   const plain = { ...d, example: { ...d.example, output: null } };
   const blocks = markdownBlocks.parseMarkdownBlocks(lessonFormat.renderLessonMarkdown(plain, ps));
@@ -566,7 +567,18 @@ console.log("\nlesson format: [Pn] and [teach] lines, EXAMPLE by passage number 
   eq("EXAMPLE naming a prose passage is dropped, not failed: nothing unverified is shown", [settledProse.example, settledProse.dropped.at(-1)], [null, "EXAMPLE [P1] (not a code passage)"]);
   const settledSame = lessonFormat.settleExample({ ...d, example: { ...d.example, output: 3 } }, ps);
   eq("OUTPUT naming the example's own passage is dropped (it already shows its output)", [settledSame.example.passage, settledSame.example.output], [3, null]);
-  eq("a valid example and output are kept as they are", lessonFormat.settleExample(d, ps).example, d.example);
+  eq("an example and the output in the very next code block of its page are kept", lessonFormat.settleExample(d, ps).example, d.example);
+  const far = [ps[0], { ...ps[1], block: 4 }];
+  eq(
+    "OUTPUT from a code block further down the page is dropped: it would show unrelated code as output",
+    lessonFormat.settleExample(d, far).dropped.at(-1),
+    "OUTPUT [P5] (not the code block right after the example on its page)"
+  );
+  eq("OUTPUT from another page is dropped", lessonFormat.settleExample(d, [ps[0], { ...ps[1], source: 2 }]).example.output, null);
+  const headed = lessonFormat.parseDraftLesson(["TITLE: T", "SUMMARY: S.", "## Intro", "[P1] → One.", "", "## The 7 rules", "[P2] → Two.", "", "EXAMPLE [P3]"].join("\n"));
+  const noBad = lessonFormat.dropHeadings(headed, [2]);
+  eq("a heading that fails a check is dropped, the lines stay", [noBad.blocks.map((b) => b.type), lessonFormat.claimsOf(noBad).length], [["heading", "paragraph", "paragraph"], 2]);
+  eq("…and the example stays after the same lines", noBad.example.afterBlock, headed.example.afterBlock - 1);
   eq("reading time: 313 words is 2 minutes", lessonFormat.minutesToRead(lessonFormat.renderLessonMarkdown(d, ps)), 2);
 
   const twelve = { title: "T", summary: "S.", dropped: [], example: null, blocks: [{ type: "paragraph", sentences: Array.from({ length: 12 }, (_, i) => ({ text: `S${i}.`, cites: [1], teach: false })) }] };

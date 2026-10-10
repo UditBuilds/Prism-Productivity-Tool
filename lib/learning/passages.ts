@@ -40,6 +40,8 @@ export interface Passage {
   kind: "prose" | "code";
   /** The page's own text: whole sentences for prose, original lines for code. */
   text: string;
+  /** Code only: which code block of its page (0-based), so an OUTPUT can be checked to follow its example. */
+  block?: number;
 }
 
 export interface CopiedPassage {
@@ -217,6 +219,8 @@ export function sentenceSpan(src: string, a: number, b: number): [number, number
 }
 
 interface CodeBlock {
+  /** 0-based, in page order. */
+  index: number;
   /** Index in the source text of the first content character. */
   start: number;
   lines: { text: string; at: number }[];
@@ -232,7 +236,7 @@ function codeBlocks(src: string): CodeBlock[] {
       at += text.length + 1;
       return line;
     });
-    out.push({ start: contentStart, lines });
+    out.push({ index: out.length, start: contentStart, lines });
   }
   return out;
 }
@@ -253,7 +257,7 @@ const lineKey = (s: string) => normalizeMapped(s.replace(/^\s*(?:>>>|\.\.\.)(?:\
  * non-blank lines must be a contiguous run of the block's non-blank lines.
  * Returns the page's original lines (blank lines between them kept).
  */
-function matchCode(copied: string, blocks: CodeBlock[]): { text: string; at: number } | null {
+function matchCode(copied: string, blocks: CodeBlock[]): { text: string; at: number; block: number } | null {
   const want = copied.split("\n").map(lineKey).filter(Boolean);
   if (want.length === 0) return null;
   for (const b of blocks) {
@@ -262,7 +266,7 @@ function matchCode(copied: string, blocks: CodeBlock[]): { text: string; at: num
       if (want.every((w, k) => have[s + k].key === w)) {
         const first = have[s].i;
         const last = have[s + want.length - 1].i;
-        return { text: b.lines.slice(first, last + 1).map((l) => l.text).join("\n"), at: b.lines[first].at };
+        return { text: b.lines.slice(first, last + 1).map((l) => l.text).join("\n"), at: b.lines[first].at, block: b.index };
       }
     }
   }
@@ -270,9 +274,9 @@ function matchCode(copied: string, blocks: CodeBlock[]): { text: string; at: num
 }
 
 /** The lines of a code block that a span touches, as a code passage. */
-function codeLinesAt(block: CodeBlock, a: number, b: number): { text: string; at: number } {
+function codeLinesAt(block: CodeBlock, a: number, b: number): { text: string; at: number; block: number } {
   const touched = block.lines.filter((l) => l.at + l.text.length >= a && l.at <= b);
-  return { text: touched.map((l) => l.text).join("\n"), at: touched[0]?.at ?? block.start };
+  return { text: touched.map((l) => l.text).join("\n"), at: touched[0]?.at ?? block.start, block: block.index };
 }
 
 const JOB_TITLE =
@@ -314,6 +318,7 @@ interface Found {
   text: string;
   start: number;
   end: number;
+  block?: number;
 }
 
 function findProse(piece: string, src: PassageSource, blocks: CodeBlock[]): Found | { reason: string } | null {
@@ -327,7 +332,7 @@ function findProse(piece: string, src: PassageSource, blocks: CodeBlock[]): Foun
   const block = inCode(blocks, a);
   if (block) {
     const lines = codeLinesAt(block, a, b);
-    return { source: src.n, kind: "code", text: lines.text, start: lines.at, end: lines.at + lines.text.length };
+    return { source: src.n, kind: "code", text: lines.text, start: lines.at, end: lines.at + lines.text.length, block: lines.block };
   }
   if (isTestimonial(src.text, a, b)) return { reason: "a customer quote, never evidence" };
   const [s, e] = sentenceSpan(src.text, a, b);
@@ -359,7 +364,7 @@ export function verifyPassages(
       for (const src of ordered(c.source)) {
         const m = matchCode(c.text, blocksOf.get(src.n) ?? []);
         if (m) {
-          hit = { source: src.n, kind: "code", text: m.text, start: m.at, end: m.at + m.text.length };
+          hit = { source: src.n, kind: "code", text: m.text, start: m.at, end: m.at + m.text.length, block: m.block };
           break;
         }
       }
@@ -403,7 +408,9 @@ export function verifyPassages(
     const dup = kept.some((k) => k.source === f.source && f.start < k.end && k.start < f.end);
     if (!dup) kept.push(f);
   }
-  const passages = kept.slice(0, MAX_PASSAGES).map((f, i) => ({ id: i + 1, source: f.source, kind: f.kind, text: f.text }));
+  const passages: Passage[] = kept
+    .slice(0, MAX_PASSAGES)
+    .map((f, i) => ({ id: i + 1, source: f.source, kind: f.kind, text: f.text, ...(f.kind === "code" ? { block: f.block } : {}) }));
   return { passages, rejected };
 }
 

@@ -35,6 +35,7 @@ import {
   proseWordCount,
   renderLessonMarkdown,
   settleExample,
+  dropHeadings,
   type Claim,
   type DraftLesson,
   type LessonProblem,
@@ -390,11 +391,18 @@ export async function advanceTopic(
   }
 
   const check = (l: DraftLesson): LessonProblem[] => [...checkLessonRules(l), ...checkGrounding(l, passages, groundingCtx)];
+  /** Headings make no claim: one that fails a check is dropped, then the lesson is checked again. */
+  const settle = (l: DraftLesson): { lesson: DraftLesson; problems: LessonProblem[] } => {
+    const first = check(l);
+    const headings = first.filter((p) => /^heading \d+$/.test(p.where)).map((p) => Number(p.where.slice(8)));
+    if (headings.length === 0) return { lesson: l, problems: first };
+    const without = dropHeadings(l, headings);
+    return { lesson: without, problems: check(without) };
+  };
   let lesson: DraftLesson;
   let problems: LessonProblem[];
   try {
-    lesson = settleExample(parseDraftLesson(draft.content), passages);
-    problems = check(lesson);
+    ({ lesson, problems } = settle(settleExample(parseDraftLesson(draft.content), passages)));
   } catch (err) {
     await log(ctx, stepId, { ...draft.record, outcome: "invalid" });
     return fail("ai_error", err instanceof LessonFormatError ? "it was not in the lesson format" : undefined);
@@ -476,10 +484,11 @@ export async function advanceTopic(
     note(fix.record, fix.limits);
     trace.fix = { asked: fixMessage, content: fix.content };
     const applied = applyFix(lesson, parseFixAnswer(fix.content), asked);
-    lesson = applied.lesson;
+    const settled = settle(applied.lesson);
+    lesson = settled.lesson;
     problems = [
       ...applied.missing.map((line) => ({ line, where: `line ${line}`, text: "", reason: "the fix gave no replacement for it" })),
-      ...check(lesson),
+      ...settled.problems,
     ];
     await log(ctx, stepId, { ...fix.record, outcome: fix.truncated ? "truncated" : problems.length ? "invalid" : "ok" });
     if (problems.length === 0) {
