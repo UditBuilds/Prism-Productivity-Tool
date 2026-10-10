@@ -1,17 +1,23 @@
+import { TUTORIAL_LABEL } from "@/lib/learning/constants";
 import { checkFetchUrl } from "@/lib/learning/net-guard";
 
 /**
- * The source rule (decision 3), as code: a link is stored only if Groq's
- * search tool returned it or the server fetched it. Never a URL the model
- * typed.
+ * Where a lesson's source may come from, as code.
  *
- * Why this has to be mechanical: in the Part 1 probe the model's own answer
- * cited Real Python and W3Schools pages with the note "search result not
- * opened but typical" — pages the tool never returned. The model's prose is
- * not evidence of anything, so the pipeline never reads a URL out of it:
- * search URLs come from `executed_tools[].search_results`, lesson sources are
- * the pages safe-fetch actually loaded, and the writer refers to sources only
- * by number.
+ * The source rule (decision 3): a link is stored only if Groq's search tool
+ * returned it or the server fetched it. Never a URL the model typed. In the
+ * Part 1 probe the model's own answer cited Real Python and W3Schools pages
+ * with the note "search result not opened but typical" — pages the tool
+ * never returned. So search URLs come from `executed_tools[].search_results`,
+ * lesson sources are the pages safe-fetch actually loaded, and the writer
+ * never sees a URL at all.
+ *
+ * The documentation site first (Udit, 2026-10-10): the planner names the
+ * topic's official documentation site once (learning_topics.docs_site), every
+ * step searches inside it first ("site:docs.python.org …", which Groq's
+ * browser_search honours: 10 of 10 results on that host, measured
+ * 2026-10-10), and the open web is searched only when that finds nothing. A
+ * source on any other host is shown as a tutorial site.
  */
 
 export interface SearchHit {
@@ -65,42 +71,92 @@ export function harvestSearchResults(executedTools: unknown): SearchHarvest {
   return out;
 }
 
-const SKIP_HOSTS = ["youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com"];
+/** The query that searches inside the documentation site. */
+export function siteQuery(docsSite: string, query: string): string {
+  return `site:${docsSite} ${query}`;
+}
 
-/**
- * What counts as documentation (Udit's rule, 2026-10-10): a docs.* host, or a
- * /docs/ path segment. Nothing else. The first version also took /tutorials/,
- * /learn-, /handbook and learn.* hosts, and on the first live lesson all five
- * candidates read as "documentation" — a tutorial site's mistakes ("the
- * keyword print") reached the lesson that way.
- */
-const DOCS_HOST = /^docs\./i;
-const DOCS_PATH = /\/docs(?:\/|$)/i;
-
-export function isDocsUrl(url: string): boolean {
+function hostOf(url: string): string | null {
   try {
-    const u = new URL(url);
-    return DOCS_HOST.test(u.hostname.replace(/^www\./, "")) || DOCS_PATH.test(u.pathname);
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
   } catch {
-    return false;
+    return null;
   }
 }
+
+/** True when the page is on the topic's documentation site. */
+export function onDocsSite(url: string, docsSite: string | null): boolean {
+  return docsSite !== null && hostOf(url) === docsSite;
+}
+
+/** The label under a source: none on the official documentation site, the tutorial label anywhere else. */
+export function sourceLabel(url: string, docsSite: string | null): string | null {
+  return onDocsSite(url, docsSite) ? null : TUTORIAL_LABEL;
+}
+
+const SKIP_HOSTS = ["youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com"];
+
+/** A fetchable web page: https, a public host, not a video site, not a PDF. */
+function fetchable(url: string): URL | null {
+  const verdict = checkFetchUrl(url);
+  if (!verdict.ok) return null;
+  const host = verdict.url.hostname.replace(/^www\./, "").toLowerCase();
+  if (SKIP_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) return null;
+  if (/\.pdf$/i.test(verdict.url.pathname)) return null;
+  return verdict.url;
+}
+
+/** A path segment that names a version: "3", "3.11", "v2", "stable", "latest". */
+const VERSION_SEGMENT = /^(?:v?\d+(?:\.\d+)*|stable|latest|current|dev)$/i;
+
+function versionRank(segment: string | null): number {
+  if (segment === null || /^(?:stable|latest|current)$/i.test(segment)) return 0;
+  if (/^v?\d+$/i.test(segment)) return 1; // "3": the current major version
+  if (/^dev$/i.test(segment)) return 3;
+  return 2; // "3.11", "3.0": one release, maybe an old one
+}
+
 /**
- * Which search hits to try fetching: fetchable https links only, no PDFs or
- * video pages (this PR reads web pages), one per site so a lesson is not
- * three pages of the same tutorial. Documentation pages go first; the rest
- * keep the search tool's order.
+ * Pages to try on the documentation site, best first. NOT one per host — the
+ * whole list is one host (Udit, 2026-10-10). One per PAGE instead: the probe
+ * for "site:docs.python.org" returned the same tutorial page for Python 3,
+ * 3.0, 3.4, 3.6, 3.9, 3.10 and 3.11, and trying the next one would have
+ * meant a lesson from the Python 3.0 docs. So the copies of a page collapse
+ * into one, the current version ("3", "stable", or no version) preferred.
  */
-export function pickCandidates(hits: SearchHit[], max: number): SearchHit[] {
+export function pickDocsCandidates(hits: SearchHit[], docsSite: string, max: number): SearchHit[] {
+  const pages = new Map<string, { hit: SearchHit; rank: number; order: number }>();
+  hits.forEach((hit, order) => {
+    const url = fetchable(hit.url);
+    if (!url || hostOf(url.toString()) !== docsSite) return;
+    const segments = url.pathname.split("/").filter(Boolean);
+    const at = segments.findIndex((s) => VERSION_SEGMENT.test(s));
+    const version = at === -1 ? null : segments[at];
+    const key = (at === -1 ? segments : segments.filter((_, i) => i !== at)).join("/");
+    const rank = versionRank(version);
+    const prev = pages.get(key);
+    if (!prev) pages.set(key, { hit, rank, order });
+    else if (rank < prev.rank) pages.set(key, { hit, rank, order: prev.order });
+  });
+  return Array.from(pages.values())
+    .sort((a, b) => a.order - b.order)
+    .slice(0, max)
+    .map((p) => p.hit);
+}
+
+/**
+ * Pages to try from the open web: fetchable links only, one per site so a
+ * lesson is not three pages of the same tutorial, in the search tool's
+ * order, minus pages already tried.
+ */
+export function pickCandidates(hits: SearchHit[], max: number, skip: Set<string> = new Set()): SearchHit[] {
   const out: SearchHit[] = [];
   const hosts = new Set<string>();
-  const ranked = [...hits.filter((h) => isDocsUrl(h.url)), ...hits.filter((h) => !isDocsUrl(h.url))];
-  for (const hit of ranked) {
-    const verdict = checkFetchUrl(hit.url);
-    if (!verdict.ok) continue;
-    const host = verdict.url.hostname.replace(/^www\./, "").toLowerCase();
-    if (SKIP_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) continue;
-    if (/\.pdf$/i.test(verdict.url.pathname)) continue;
+  for (const hit of hits) {
+    if (skip.has(hit.url)) continue;
+    const url = fetchable(hit.url);
+    if (!url) continue;
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
     if (hosts.has(host)) continue;
     hosts.add(host);
     out.push(hit);
@@ -128,10 +184,12 @@ const TESTIMONIAL = /\n\n[“"][^\n]{40,}[”"]\n\n[^\n]{2,60}\n\n[^\n]{0,60}\b(
  * kinds of sales wording ("Trusted by", "Book a demo", a bare "Start
  * building" button line). Measured 2026-10-10 on langchain.com/langgraph:
  * "Trusted by", "Start building", "Enroll for free" and three testimonials.
+ * Only open-web pages are checked: the documentation site is the source the
+ * planner chose.
  */
 export function isLandingPage(url: string, text: string): boolean {
   try {
-    if (new URL(url).pathname.replace(/\/+$/, "") === "" && !isDocsUrl(url)) return true;
+    if (new URL(url).pathname.replace(/\/+$/, "") === "") return true;
   } catch {
     return false;
   }
@@ -162,5 +220,19 @@ export class SourceProvenance {
   }
 }
 
-/** Any link-like text. Lesson prose must contain none: sources are numbered. */
-export const URL_IN_TEXT = /\bhttps?:\/\/|\bwww\.[a-z0-9-]+\.[a-z]/i;
+/**
+ * A web address in text: a scheme, "www.", or a host with a common ending
+ * ("python.org/downloads" — measured 2026-10-10, a passage the old link rule
+ * missed). Module names such as np.array or os.path do not end that way.
+ * The lesson holds no links: sources are listed under it, from fetched rows.
+ */
+const WEB_ADDRESS_SOURCE = String.raw`\bhttps?:\/\/[^\s<>"'\`)\]]+|\bwww\.[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s<>"'\`)\]]*|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|dev|ai|edu|gov)\b(?:\/[^\s<>"'\`)\]]*)?`;
+
+export function hasWebAddress(s: string): boolean {
+  return new RegExp(WEB_ADDRESS_SOURCE, "i").test(s);
+}
+
+/** The text with every web address taken out: what the writer may see of the step. */
+export function stripWebAddresses(s: string): string {
+  return s.replace(new RegExp(WEB_ADDRESS_SOURCE, "gi"), " ").replace(/\s+/g, " ").trim();
+}

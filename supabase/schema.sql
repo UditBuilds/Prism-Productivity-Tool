@@ -1277,6 +1277,13 @@ create table if not exists public.learning_topics (
   status        text not null default 'planning'
                   check (status in ('planning', 'active', 'failed')),
   error_message text,
+  -- supabase/migrations/2026-10-10-learning-docs-site.sql
+  docs_site     text
+                  constraint learning_topics_docs_site_check
+                  check (
+                    char_length(docs_site) <= 253
+                    and docs_site ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'
+                  ),
   archived_at   timestamptz,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),

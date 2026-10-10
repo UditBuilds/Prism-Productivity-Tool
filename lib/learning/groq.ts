@@ -1,38 +1,46 @@
 import Groq, { APIConnectionTimeoutError, APIError } from "groq-sdk";
 
+import { AnswerError, readAnswer, type ObjectSchema } from "@/lib/learning/answers";
 import {
-  COPY_MAX_TOKENS,
   COPY_TIMEOUT_MS,
-  FIX_MAX_TOKENS,
-  JUDGE_MAX_TOKENS,
   JUDGE_TIMEOUT_MS,
   LEARNING_COPY_MODEL,
   LEARNING_JUDGE_MODEL,
   LEARNING_SEARCH_MODEL,
   LEARNING_WRITE_MODEL,
+  PLAN_MAX_TOKENS,
   PLAN_TIMEOUT_MS,
-  SEARCH_MAX_TOKENS,
   SEARCH_TIMEOUT_MS,
-  WRITE_MAX_TOKENS,
   WRITE_TIMEOUT_MS,
 } from "@/lib/learning/constants";
-import { classifyGroqFailure, type GroqFailure } from "@/lib/learning/groq-errors";
+import type { Explanation } from "@/lib/learning/explanation";
+import { classifyGroqFailure, jsonAnswerFailure, type GroqFailure } from "@/lib/learning/groq-errors";
+import { JUDGE_SCHEMA, JUDGE_SYSTEM_PROMPT, type JudgeAnswer } from "@/lib/learning/judge";
+import { COPIER_SCHEMA, COPIER_SYSTEM_PROMPT, type CopierAnswer } from "@/lib/learning/passages";
 import {
-  isMultiIdeaStep,
+  PLAN_SCHEMA,
   PLAN_SYSTEM_PROMPT,
+  PlanParseError,
   parsePlan,
   planRetryMessage,
   planUserMessage,
-  type PlannedStep,
+  stepProblem,
+  type Plan,
+  type PlanAnswer,
 } from "@/lib/learning/plan";
 import { harvestSearchResults, type SearchHarvest } from "@/lib/learning/sources";
-import { JUDGE_SYSTEM_PROMPT, parseVerdicts, type Verdict } from "@/lib/learning/judge";
-import { COPIER_SYSTEM_PROMPT } from "@/lib/learning/passages";
-import { WRITER_SYSTEM_PROMPT } from "@/lib/learning/writer-prompt";
+import { FIX_SCHEMA, WRITER_SCHEMA, WRITER_SYSTEM_PROMPT, type FixAnswer } from "@/lib/learning/writer-prompt";
 
 /**
  * Learning's Groq calls: plan, search, copy, write, fix, judge. SERVER-ONLY
  * (GROQ_API_KEY).
+ *
+ * Every answer except the search's is JSON in Groq's strict mode
+ * (response_format json_schema, strict: true), which both gpt-oss models
+ * support (probed 2026-10-10), and is checked against its schema again here
+ * (answers.ts). The search is the one exception: Groq does not allow
+ * structured outputs together with tools, and its text is never read — the
+ * URLs come from the tool's own results (sources.ts).
  *
  * Its own client with `maxRetries: 0`. groq-sdk retries a 429 twice by
  * default, sleeping between tries — inside a 60s function that silently
@@ -53,6 +61,7 @@ export interface CallRecord {
   duration_ms: number;
 }
 
+/** The call itself failed: rate limit, timeout, or another API error. */
 export class LearningAiError extends Error {
   constructor(
     readonly failure: GroqFailure,
@@ -64,10 +73,25 @@ export class LearningAiError extends Error {
 }
 
 /**
+ * The call answered, but the answer cannot be used: cut off, or not matching
+ * its schema. Never applied. Groq bills such a call, but a refused one (HTTP
+ * 400) reports no usage, so its record holds 0 tokens: the true cost is
+ * unknown.
+ */
+export class BadAnswerError extends Error {
+  constructor(
+    readonly answer: AnswerError,
+    readonly record: CallRecord
+  ) {
+    super(answer.message);
+    this.name = "BadAnswerError";
+  }
+}
+
+/**
  * Groq's per-minute counter for the model just called, from the response
  * headers. Kept OUT of CallRecord (which is inserted into learning_ai_calls
- * as is): it only goes to the dev debug dump, to settle whether max_tokens is
- * taken from the minute budget up front.
+ * as is): it only goes to the dev debug dump.
  */
 export interface RateLimits {
   remainingTokens: number | null;
@@ -131,89 +155,144 @@ function failed(kind: CallRecord["kind"], model: string, err: unknown, startedAt
   return new LearningAiError(failure, record(kind, model, outcome, undefined, startedAt));
 }
 
+/** Loud by design: an unusable answer is logged with its raw text, never dropped quietly. */
+function badAnswer(answer: AnswerError, rec: CallRecord): BadAnswerError {
+  console.error(`[learning] ${answer.what} was not used (${answer.kind}: ${answer.reason}). Raw answer:`, answer.raw.slice(0, 4000));
+  return new BadAnswerError(answer, rec);
+}
+
+export interface JsonCall<T> {
+  value: T;
+  /** The answer exactly as it came back. */
+  raw: string;
+  record: CallRecord;
+  limits: RateLimits;
+}
+
+type Message = { role: "system" | "user" | "assistant"; content: string };
+
+/**
+ * One strict-JSON call. Returns the checked answer, or throws:
+ * LearningAiError when the call failed, BadAnswerError when it answered with
+ * something that cannot be used — cut off (a 400 that says max_tokens was
+ * reached, or finish_reason "length") or not matching its schema.
+ */
+async function jsonCall<T>(
+  kind: CallRecord["kind"],
+  model: string,
+  what: string,
+  messages: Message[],
+  schema: ObjectSchema,
+  opts: { name: string; temperature: number; maxTokens: number; timeoutMs: number }
+): Promise<JsonCall<T>> {
+  const startedAt = Date.now();
+  let completion;
+  let limits: RateLimits;
+  try {
+    const res = await groq.chat.completions
+      .create(
+        {
+          model,
+          messages,
+          response_format: { type: "json_schema", json_schema: { name: opts.name, strict: true, schema } },
+          reasoning_effort: "low",
+          temperature: opts.temperature,
+          max_tokens: opts.maxTokens,
+        },
+        { timeout: opts.timeoutMs }
+      )
+      .withResponse();
+    completion = res.data;
+    limits = limitsOf(res.response);
+  } catch (err) {
+    const refused = err instanceof APIError && err.status === 400 ? jsonAnswerFailure(err.error) : null;
+    if (refused) {
+      const outcome = refused.kind === "cut_off" ? "truncated" : "invalid";
+      throw badAnswer(new AnswerError(refused.kind, what, refused.reason, refused.raw), record(kind, model, outcome, undefined, startedAt));
+    }
+    throw failed(kind, model, err, startedAt);
+  }
+  const choice = completion.choices[0];
+  const raw = choice?.message?.content ?? "";
+  if (choice?.finish_reason === "length") {
+    const rec = record(kind, model, "truncated", completion.usage, startedAt);
+    throw badAnswer(new AnswerError("cut_off", what, "it reached its token limit before it was complete", raw), rec);
+  }
+  try {
+    const value = readAnswer<T>(raw, schema, what);
+    return { value, raw, record: record(kind, model, "ok", completion.usage, startedAt), limits };
+  } catch (err) {
+    if (!(err instanceof AnswerError)) throw err;
+    throw badAnswer(err, record(kind, model, raw.trim() ? "invalid" : "empty", completion.usage, startedAt));
+  }
+}
+
 export interface PlanResult {
-  steps: PlannedStep[] | null;
+  plan: Plan | null;
   /** Set when the call worked but the answer was unusable. */
   problem: string | null;
-  /** One per Groq call made, in order: the plan, and the split re-ask if one ran. */
+  /** One per Groq call made, in order: the plan, and the re-ask if one ran. */
   records: CallRecord[];
 }
 
-async function planCall(messages: { role: "system" | "user" | "assistant"; content: string }[]) {
-  const startedAt = Date.now();
-  try {
-    const completion = await groq.chat.completions.create(
-      {
-        model: LEARNING_WRITE_MODEL,
-        messages,
-        response_format: { type: "json_object" },
-        reasoning_effort: "low",
-        temperature: 0.3,
-        max_tokens: 3000,
-      },
-      { timeout: PLAN_TIMEOUT_MS }
-    );
-    return { completion, startedAt };
-  } catch (err) {
-    throw failed("plan", LEARNING_WRITE_MODEL, err, startedAt);
-  }
+function planCall(messages: Message[]) {
+  return jsonCall<PlanAnswer>("plan", LEARNING_WRITE_MODEL, "the plan", messages, PLAN_SCHEMA, {
+    name: "course_plan",
+    temperature: 0.3,
+    maxTokens: PLAN_MAX_TOKENS,
+    timeoutMs: PLAN_TIMEOUT_MS,
+  });
 }
 
 /**
- * Plan a topic. One idea per step (Udit, 2026-10-10): if ANY step holds more
- * than one idea (isMultiIdeaStep: its title, or a list in its goal), ask once
- * more to split them. A plan that
- * still has such a step after that is refused, not saved — the old rule kept
- * a "broad" plan, and a three-idea step title produced a lesson that was an
- * overview of everything (2026-10-10).
+ * Plan a topic. If ANY step holds more than one idea or is about setting up
+ * (plan.ts stepProblem), ask once more; a plan that still has such a step is
+ * refused, not saved. Rate limits and failed calls are thrown
+ * (LearningAiError); an unusable answer comes back as `problem`.
  */
 export async function planTopic(topic: string): Promise<PlanResult> {
-  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+  const messages: Message[] = [
     { role: "system", content: PLAN_SYSTEM_PROMPT },
     { role: "user", content: planUserMessage(topic) },
   ];
-  const first = await planCall(messages);
-  const choice = first.completion.choices[0];
   const records: CallRecord[] = [];
-  if (choice?.finish_reason === "length") {
-    records.push(record("plan", LEARNING_WRITE_MODEL, "truncated", first.completion.usage, first.startedAt));
-    return { steps: null, problem: "The AI's plan was cut off.", records };
-  }
-  let steps: PlannedStep[];
-  try {
-    steps = parsePlan(choice?.message?.content ?? "");
-  } catch (err) {
-    records.push(record("plan", LEARNING_WRITE_MODEL, "invalid", first.completion.usage, first.startedAt));
-    return { steps: null, problem: err instanceof Error ? err.message : "The AI's plan could not be read.", records };
-  }
-  records.push(record("plan", LEARNING_WRITE_MODEL, "ok", first.completion.usage, first.startedAt));
-
-  if (steps.some(isMultiIdeaStep)) {
+  const attempt = async (msgs: Message[]): Promise<{ plan: Plan; raw: string } | { problem: string }> => {
     try {
-      const second = await planCall([
-        ...messages,
-        { role: "assistant", content: choice?.message?.content ?? "" },
-        { role: "user", content: planRetryMessage(steps) },
-      ]);
-      const c2 = second.completion.choices[0];
-      try {
-        if (c2?.finish_reason === "length") throw new Error("cut off");
-        steps = parsePlan(c2?.message?.content ?? "");
-        records.push(record("plan", LEARNING_WRITE_MODEL, "ok", second.completion.usage, second.startedAt));
-      } catch {
-        records.push(record("plan", LEARNING_WRITE_MODEL, "invalid", second.completion.usage, second.startedAt));
-      }
+      const call = await planCall(msgs);
+      records.push(call.record);
+      return { plan: parsePlan(call.value), raw: call.raw };
     } catch (err) {
-      if (err instanceof LearningAiError) records.push(err.record);
-      return { steps: null, problem: "The AI could not split the plan's steps into one idea each.", records };
+      if (err instanceof BadAnswerError) {
+        records.push(err.record);
+        return { problem: err.answer.kind === "cut_off" ? "The AI's plan was cut off." : `The AI's plan could not be used: ${err.answer.reason}.` };
+      }
+      if (err instanceof PlanParseError) return { problem: err.message };
+      throw err;
     }
-    const still = steps.filter(isMultiIdeaStep);
-    if (still.length > 0) {
-      const names = still.map((s) => `"${s.title}"`).join(", ");
-      return { steps: null, problem: `The plan still had steps with more than one idea: ${names}.`, records };
-    }
+  };
+
+  const first = await attempt(messages);
+  if ("problem" in first) return { plan: null, problem: first.problem, records };
+  if (!first.plan.steps.some((s) => stepProblem(s) !== null)) return { plan: first.plan, problem: null, records };
+
+  let second;
+  try {
+    second = await attempt([
+      ...messages,
+      { role: "assistant", content: first.raw },
+      { role: "user", content: planRetryMessage(first.plan.steps) },
+    ]);
+  } catch (err) {
+    if (err instanceof LearningAiError) records.push(err.record);
+    return { plan: null, problem: "The AI could not fix the plan's steps.", records };
   }
-  return { steps, problem: null, records };
+  if ("problem" in second) return { plan: null, problem: second.problem, records };
+  const still = second.plan.steps.filter((s) => stepProblem(s) !== null);
+  if (still.length > 0) {
+    const names = still.map((s) => `"${s.title}" (${stepProblem(s)})`).join(", ");
+    return { plan: null, problem: `The plan still had steps it cannot keep: ${names}.`, records };
+  }
+  return { plan: second.plan, problem: null, records };
 }
 
 const SEARCH_SYSTEM = `You find web pages for a lesson writer. Run exactly ONE browser search. Do NOT open any page. Then reply with the single word DONE.`;
@@ -224,26 +303,29 @@ export interface SearchResult {
   limits: RateLimits;
 }
 
-export async function searchForStep(query: string): Promise<SearchResult> {
+/** One browser_search. Its text answer is ignored: only the tool's results are used. */
+export async function searchForStep(query: string, maxTokens: number): Promise<SearchResult> {
   const startedAt = Date.now();
   let completion;
   let limits: RateLimits;
   try {
-    const res = await groq.chat.completions.create(
-      {
-        model: LEARNING_SEARCH_MODEL,
-        messages: [
-          { role: "system", content: SEARCH_SYSTEM },
-          { role: "user", content: `Find beginner-friendly, reliable pages that explain: ${query.slice(0, 300)}` },
-        ],
-        tools: [{ type: "browser_search" }],
-        tool_choice: "required",
-        reasoning_effort: "low",
-        temperature: 0,
-        max_tokens: SEARCH_MAX_TOKENS,
-      },
-      { timeout: SEARCH_TIMEOUT_MS }
-    ).withResponse();
+    const res = await groq.chat.completions
+      .create(
+        {
+          model: LEARNING_SEARCH_MODEL,
+          messages: [
+            { role: "system", content: SEARCH_SYSTEM },
+            { role: "user", content: `Find beginner-friendly, reliable pages that explain: ${query.slice(0, 320)}` },
+          ],
+          tools: [{ type: "browser_search" }],
+          tool_choice: "required",
+          reasoning_effort: "low",
+          temperature: 0,
+          max_tokens: maxTokens,
+        },
+        { timeout: SEARCH_TIMEOUT_MS }
+      )
+      .withResponse();
     completion = res.data;
     limits = limitsOf(res.response);
   } catch (err) {
@@ -258,134 +340,66 @@ export async function searchForStep(query: string): Promise<SearchResult> {
   };
 }
 
-export interface TextCall {
-  content: string;
-  truncated: boolean;
-  record: CallRecord;
-  limits: RateLimits;
-}
-
-type Message = { role: "system" | "user" | "assistant"; content: string };
-
-/** One plain-text completion: the copier, the writer and its fix turn. */
-async function textCall(
-  kind: CallRecord["kind"],
-  model: string,
-  messages: Message[],
-  opts: { temperature: number; maxTokens: number; timeoutMs: number }
-): Promise<TextCall> {
-  const startedAt = Date.now();
-  let completion;
-  let limits: RateLimits;
-  try {
-    const res = await groq.chat.completions
-      .create(
-        {
-          model,
-          messages,
-          reasoning_effort: "low",
-          temperature: opts.temperature,
-          max_tokens: opts.maxTokens,
-        },
-        { timeout: opts.timeoutMs }
-      )
-      .withResponse();
-    completion = res.data;
-    limits = limitsOf(res.response);
-  } catch (err) {
-    throw failed(kind, model, err, startedAt);
-  }
-  const choice = completion.choices[0];
-  const truncated = choice?.finish_reason === "length";
-  const content = (choice?.message?.content ?? "").trim();
-  return {
-    content,
-    truncated,
-    record: record(kind, model, truncated ? "truncated" : content ? "ok" : "empty", completion.usage, startedAt),
-    limits,
-  };
-}
-
 /**
- * The copier (passages.ts): gpt-oss-20b copies passages from the pages word
- * for word. Logged as kind "write" on the 20b model — see LEARNING_COPY_MODEL.
+ * The copier (passages.ts): gpt-oss-20b answers with sentence and code
+ * numbers only. Logged as kind "write" on the 20b model — see
+ * LEARNING_COPY_MODEL.
  */
-export function copyPassages(userMessage: string): Promise<TextCall> {
-  return textCall(
+export function copySource(userMessage: string, maxTokens: number): Promise<JsonCall<CopierAnswer>> {
+  return jsonCall<CopierAnswer>(
     "write",
     LEARNING_COPY_MODEL,
+    "the copier's answer",
     [
       { role: "system", content: COPIER_SYSTEM_PROMPT },
       { role: "user", content: userMessage },
     ],
-    { temperature: 0, maxTokens: COPY_MAX_TOKENS, timeoutMs: COPY_TIMEOUT_MS }
+    COPIER_SCHEMA,
+    { name: "source_choice", temperature: 0, maxTokens, timeoutMs: COPY_TIMEOUT_MS }
   );
 }
 
-/**
- * One draft, as plain text in the line format lesson-format.ts parses — not
- * JSON mode, which refused 3 of 9 quote-heavy drafts outright (HTTP 400
- * "Failed to validate JSON", measured 2026-10-09).
- */
-export function writeDraft(userMessage: string, maxTokens = WRITE_MAX_TOKENS): Promise<TextCall> {
-  return textCall(
+/** The AI explanation (gpt-oss-120b), from the shown source only. */
+export function writeExplanation(userMessage: string, maxTokens: number): Promise<JsonCall<Explanation>> {
+  return jsonCall<Explanation>(
     "write",
     LEARNING_WRITE_MODEL,
+    "the writer's answer",
     [
       { role: "system", content: WRITER_SYSTEM_PROMPT },
       { role: "user", content: userMessage },
     ],
-    { temperature: 0.3, maxTokens, timeoutMs: WRITE_TIMEOUT_MS }
+    WRITER_SCHEMA,
+    { name: "explanation", temperature: 0.3, maxTokens, timeoutMs: WRITE_TIMEOUT_MS }
   );
 }
 
-/**
- * The fix turn: the passages again (the writer keeps no memory) and only the
- * lines that failed, never the whole draft (Udit's decision, 2026-10-10).
- */
-export function writeFix(userMessage: string, fixMessage: string): Promise<TextCall> {
-  return textCall(
+/** The one fix: the source again (the writer keeps no memory) and only the flagged sentences. */
+export function writeFix(userMessage: string, fixMessage: string, maxTokens: number): Promise<JsonCall<FixAnswer>> {
+  return jsonCall<FixAnswer>(
     "write",
     LEARNING_WRITE_MODEL,
+    "the fix's answer",
     [
       { role: "system", content: WRITER_SYSTEM_PROMPT },
       { role: "user", content: `${userMessage}\n\n${fixMessage}` },
     ],
-    { temperature: 0.3, maxTokens: FIX_MAX_TOKENS, timeoutMs: WRITE_TIMEOUT_MS }
+    FIX_SCHEMA,
+    { name: "sentence_fixes", temperature: 0.3, maxTokens, timeoutMs: WRITE_TIMEOUT_MS }
   );
 }
 
-export interface JudgeResult {
-  /** By judge item id. */
-  verdicts: Map<number, Verdict>;
-  record: CallRecord;
-  limits: RateLimits;
-}
-
-/**
- * The meaning check (judge.ts): one call on gpt-oss-20b with the message
- * judgeUserMessage built (passages once, then the lines to check). A cut-off
- * or empty answer leaves lines without a verdict, and parseVerdicts counts
- * those as NOT supported — the check fails closed.
- */
-export async function judgeClaims(
-  userMessage: string,
-  ids: number[],
-  model: string = LEARNING_JUDGE_MODEL
-): Promise<JudgeResult> {
-  const call = await textCall(
+/** G2, the meaning check (judge.ts), on gpt-oss-20b. */
+export function judgeSentences(userMessage: string, maxTokens: number, model: string = LEARNING_JUDGE_MODEL): Promise<JsonCall<JudgeAnswer>> {
+  return jsonCall<JudgeAnswer>(
     "judge",
     model,
+    "the meaning check's answer",
     [
       { role: "system", content: JUDGE_SYSTEM_PROMPT },
       { role: "user", content: userMessage },
     ],
-    { temperature: 0, maxTokens: JUDGE_MAX_TOKENS, timeoutMs: JUDGE_TIMEOUT_MS }
+    JUDGE_SCHEMA,
+    { name: "verdicts", temperature: 0, maxTokens, timeoutMs: JUDGE_TIMEOUT_MS }
   );
-  return {
-    verdicts: parseVerdicts(call.content, ids),
-    record: call.record,
-    limits: call.limits,
-  };
 }
-

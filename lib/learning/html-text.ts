@@ -1,10 +1,10 @@
 /**
- * HTML → readable text for the lesson writer. Pure, dependency-free (decision
+ * HTML → readable text for a lesson's source. Pure, dependency-free (decision
  * 17: no new npm package), and deliberately modest: lesson sources are
  * documentation and tutorial pages, where dropping the chrome and keeping the
- * main column is enough. The text is used twice — as the writer's source
- * excerpt and as the haystack the grounding check (grounding.ts) searches for
- * quotes — so both see exactly the same characters.
+ * main column is enough. passages.ts numbers this text's sentences and code
+ * examples, and the lesson quotes them from it as they are, so what the
+ * reader sees is exactly these characters.
  */
 
 const NAMED_ENTITIES: Record<string, string> = {

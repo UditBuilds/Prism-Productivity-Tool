@@ -1,11 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { checkAiRateLimit } from "@/lib/ai/rateLimit";
-import { TUTORIAL_LABEL } from "@/lib/learning/constants";
+import { minutesToRead } from "@/lib/learning/explanation";
 import { LearningAiError, planTopic } from "@/lib/learning/groq";
 import { budgetState, logCall } from "@/lib/learning/ledger";
-import { minutesToRead } from "@/lib/learning/lesson-format";
-import { isDocsUrl } from "@/lib/learning/sources";
+import { sourceLabel } from "@/lib/learning/sources";
 import type {
   LessonView,
   StepSummary,
@@ -138,7 +137,7 @@ export async function getLessonView(supabase: Client, userId: string, stepId: st
     .maybeSingle();
   if (!step) return null;
   const [{ data: topic }, { data: siblings }, { data: lessons }] = await Promise.all([
-    supabase.from("learning_topics").select("id, title").eq("id", step.topic_id).eq("user_id", userId).maybeSingle(),
+    supabase.from("learning_topics").select("id, title, docs_site").eq("id", step.topic_id).eq("user_id", userId).maybeSingle(),
     supabase
       .from("learning_steps")
       .select("id, position, removed_at")
@@ -189,13 +188,14 @@ export async function getLessonView(supabase: Client, userId: string, stepId: st
           minutes: minutesToRead(lesson.body),
         }
       : null,
-    // The tutorial label is read from the URL by the same rule that chose the
-    // source (isDocsUrl), so nothing extra is stored for it.
+    // A source not on the topic's official documentation site is labelled a
+    // tutorial site (Udit, 2026-10-10): read from the URL and the topic's
+    // docs_site, so nothing extra is stored for it.
     sources: sources.map((s) => ({
       url: s.url,
       title: s.title,
       site_name: s.site_name,
-      label: isDocsUrl(s.url) ? null : TUTORIAL_LABEL,
+      label: sourceLabel(s.url, topic.docs_site),
     })),
   };
 }
@@ -254,11 +254,12 @@ export async function runPlan(supabase: Client, userId: string, topic: LearningT
   for (const rec of plan.records) {
     await logCall(supabase, userId, { topicId: topic.id, stepId: null }, rec);
   }
-  if (!plan.steps) {
+  if (!plan.plan) {
     const message = `${plan.problem ?? "The plan could not be read."} Try again.`;
     await setTopic({ status: "failed", error_message: message });
     return { kind: "failed", message };
   }
+  const { steps: planned, docsSite } = plan.plan;
 
   // A retry after a partial earlier attempt must not collide on position.
   const { count } = await supabase
@@ -268,7 +269,7 @@ export async function runPlan(supabase: Client, userId: string, topic: LearningT
     .eq("user_id", userId);
   if ((count ?? 0) === 0) {
     const { error } = await supabase.from("learning_steps").insert(
-      plan.steps.map((s, i) => ({
+      planned.map((s, i) => ({
         user_id: userId,
         topic_id: topic.id,
         position: i,
@@ -283,12 +284,12 @@ export async function runPlan(supabase: Client, userId: string, topic: LearningT
       return { kind: "failed", message: "The plan could not be saved. Try again." };
     }
   }
-  await setTopic({ status: "active", error_message: null });
+  await setTopic({ status: "active", error_message: null, docs_site: docsSite });
   return { kind: "planned" };
 }
 
 export type ReplanOutcome =
-  | { kind: "replanned"; removed: number; added: number }
+  | { kind: "replanned"; removed: number; added: number; docsSite: string | null }
   | { kind: "waiting"; retryAfterSeconds: number; message: string }
   | { kind: "failed"; message: string };
 
@@ -332,7 +333,8 @@ export async function replanTopic(supabase: Client, userId: string, topicId: str
   for (const rec of plan.records) {
     await logCall(supabase, userId, { topicId, stepId: null }, rec);
   }
-  if (!plan.steps) return { kind: "failed", message: plan.problem ?? "The plan could not be read." };
+  if (!plan.plan) return { kind: "failed", message: plan.problem ?? "The plan could not be read." };
+  const { steps: planned, docsSite } = plan.plan;
 
   const { data: old, error: readError } = await supabase
     .from("learning_steps")
@@ -342,7 +344,7 @@ export async function replanTopic(supabase: Client, userId: string, topicId: str
   if (readError || !old) return { kind: "failed", message: "Could not read the old steps." };
   const start = old.reduce((n, s) => Math.max(n, s.position + 1), 0);
   const { error: insertError } = await supabase.from("learning_steps").insert(
-    plan.steps.map((s, i) => ({
+    planned.map((s, i) => ({
       user_id: userId,
       topic_id: topicId,
       position: start + i,
@@ -354,6 +356,12 @@ export async function replanTopic(supabase: Client, userId: string, topicId: str
   if (insertError) {
     console.error("[learning] replan insert failed:", insertError.message);
     return { kind: "failed", message: "The new plan could not be saved." };
+  }
+  // The new plan's documentation site is what the new steps search first.
+  const { error: siteError } = await supabase.from("learning_topics").update({ docs_site: docsSite }).eq("id", topicId).eq("user_id", userId);
+  if (siteError) {
+    console.error("[learning] replan docs_site update failed:", siteError.message);
+    return { kind: "failed", message: "The new steps were saved, but the documentation site could not be." };
   }
   const stillShown = old.filter((s) => s.removed_at === null).map((s) => s.id);
   if (stillShown.length > 0) {
@@ -368,5 +376,5 @@ export async function replanTopic(supabase: Client, userId: string, topicId: str
       return { kind: "failed", message: "The new steps were saved, but the old ones could not be marked removed." };
     }
   }
-  return { kind: "replanned", removed: stillShown.length, added: plan.steps.length };
+  return { kind: "replanned", removed: stillShown.length, added: planned.length, docsSite };
 }

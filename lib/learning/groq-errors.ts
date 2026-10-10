@@ -31,6 +31,28 @@ export function parseRetryAfter(value: string | null | undefined): number | null
   return null;
 }
 
+/**
+ * A strict-JSON answer Groq refused (HTTP 400, code json_validate_failed).
+ * groq-sdk puts the parsed body on the error's `error` field (measured
+ * 2026-10-10). Two cases, told apart only by `failed_generation`:
+ *   - the answer hit max_tokens: failed_generation is Groq's own sentence
+ *     "max completion tokens reached before generating a valid document" —
+ *     a CUT-OFF answer, which must be reported as such, not as bad format;
+ *   - anything else: failed_generation is the model's raw answer.
+ * Returns null for every other error body.
+ */
+export function jsonAnswerFailure(body: unknown): { kind: "cut_off" | "format"; reason: string; raw: string } | null {
+  const err = typeof body === "object" && body !== null ? (body as { error?: unknown }).error : null;
+  if (typeof err !== "object" || err === null) return null;
+  const e = err as { code?: unknown; message?: unknown; failed_generation?: unknown };
+  if (e.code !== "json_validate_failed") return null;
+  const raw = typeof e.failed_generation === "string" ? e.failed_generation : "";
+  if (/max completion tokens reached/i.test(raw)) return { kind: "cut_off", reason: "it reached its token limit before it was complete", raw };
+  const message = typeof e.message === "string" ? e.message : "";
+  const detail = /Error:\s*(.+)$/.exec(message)?.[1] ?? "it did not match its schema";
+  return { kind: "format", reason: detail.slice(0, 200), raw };
+}
+
 export function classifyGroqFailure(input: {
   status?: number;
   message?: string;

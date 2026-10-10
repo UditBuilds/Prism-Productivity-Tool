@@ -1,63 +1,46 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { checkCodeRule } from "@/lib/learning/code-rule";
 import {
   ADVANCE_DEADLINE_MS,
-  LESSON_MIN_WORDS,
+  COPY_MAX_TOKENS,
+  FIX_MAX_TOKENS,
+  JUDGE_MAX_TOKENS,
+  LEARNING_COPY_MODEL,
+  LEARNING_JUDGE_MODEL,
+  LEARNING_SEARCH_MODEL,
+  LEARNING_WRITE_MODEL,
+  LESSON_BUDGET,
   MAIN_SOURCE_EXCERPT_CHARS,
   MAX_CANDIDATE_PAGES,
-  MIN_SOURCE_CHARS,
+  MAX_SOURCE_PAGES,
+  MIN_ANSWER_TOKENS,
+  SEARCH_MAX_TOKENS,
   STALE_CLAIM_MS,
-  LEARNING_WRITE_MODEL,
+  WRITE_MAX_TOKENS,
 } from "@/lib/learning/constants";
-import { devOverride, isLocalDevRuntime } from "@/lib/learning/dev-override";
-import { checkGrounding } from "@/lib/learning/grounding";
-import { judgeItems, judgePassages, judgeUserMessage } from "@/lib/learning/judge";
+import { isLocalDevRuntime } from "@/lib/learning/dev-override";
+import { checkShape, renderLessonBody, sentencesOf, withReplacements, type Explanation, type Problem, type Sentence } from "@/lib/learning/explanation";
 import {
-  copyPassages,
-  judgeClaims,
+  BadAnswerError,
+  copySource,
+  judgeSentences,
   LearningAiError,
   searchForStep,
-  writeDraft,
+  writeExplanation,
   writeFix,
   type CallRecord,
   type RateLimits,
-  type TextCall,
 } from "@/lib/learning/groq";
 import { excerptFor, extractPage } from "@/lib/learning/html-text";
+import { JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts } from "@/lib/learning/judge";
 import { budgetState, logCall } from "@/lib/learning/ledger";
-import {
-  applyFix,
-  checkLessonRules,
-  exampleOf,
-  linesOf,
-  LessonFormatError,
-  parseDraftLesson,
-  parseFixAnswer,
-  proseWordCount,
-  renderLessonMarkdown,
-  settleExample,
-  type DraftLesson,
-  type Line,
-  type LessonProblem,
-} from "@/lib/learning/lesson-format";
 import { pickStepToWrite, type StepState } from "@/lib/learning/next-step";
-import {
-  copierUserMessage,
-  definedBy,
-  enoughToWrite,
-  findGlossaryUrl,
-  glossaryPassages,
-  parseCopiedPassages,
-  parseGlossary,
-  passageWords,
-  undefinedTerms,
-  verifyPassages,
-  type Passage,
-} from "@/lib/learning/passages";
+import { chooseSource, copierUserMessage, COPIER_SYSTEM_PROMPT, numberPage, pageThinness, type SourceBlock } from "@/lib/learning/passages";
 import { safeFetchPage, type FetchedPage } from "@/lib/learning/safe-fetch";
-import { isDocsUrl, isLandingPage, pickCandidates, SourceProvenance } from "@/lib/learning/sources";
+import { isLandingPage, onDocsSite, pickCandidates, pickDocsCandidates, siteQuery, SourceProvenance, type SearchHit } from "@/lib/learning/sources";
 import type { AdvanceResult, StepErrorCode } from "@/lib/learning/types";
-import { writerFixMessage, writerUserMessage } from "@/lib/learning/writer-prompt";
+import { readReplacements, writerFixMessage, writerUserMessage, WRITER_SYSTEM_PROMPT } from "@/lib/learning/writer-prompt";
 import type { Database } from "@/types/database";
 
 /**
@@ -70,19 +53,21 @@ import type { Database } from "@/types/database";
  * step "writing" with an old claimed_at, which STALE_CLAIM_MS (90s, longer
  * than the 60s function limit) lets the next call reclaim.
  *
- * The stages (Udit's decisions, 2026-10-10):
- *   1. search (20b + browser_search) for pages;
- *   2. fetch them here and pick ONE main source: a documentation page (a
- *      docs.* host or a /docs/ path), or — only when no documentation page
- *      loaded — a tutorial site, which the source list then labels;
- *   3. copy (20b): the step's key terms, the main source's definitions of
- *      them and its passages, each checked against the page here; terms it
- *      does not define are looked up in its documentation's glossary;
- *   4. write (120b) only from those passages: EXPLAIN, EXAMPLE, a line-by-
- *      line WALK-THROUGH, CLOSE; then the free rules (grounding.ts) and the
- *      meaning check (20b, judge.ts);
- *   5. at most ONE fix turn that resends only what failed; then the lesson
- *      is saved or the step fails and waits for "Try again".
+ * The stages ("source shown + AI explains", Udit, 2026-10-10):
+ *   1. search inside the topic's documentation site (20b + browser_search,
+ *      "site:docs.python.org …"); the open web only when that finds nothing;
+ *   2. per page, best first: the free thin-page check, then the copier (20b)
+ *      chooses 1-3 passages and one code example BY NUMBER, then the rest of
+ *      the thin-page check — or the next page, at most MAX_SOURCE_PAGES; no
+ *      page good enough fails the step before any 120b token is spent;
+ *   3. the AI explanation (120b, JSON) from that source block only;
+ *   4. its shape (explanation.ts), G1 the code rule (code-rule.ts, no AI),
+ *      G2 the meaning check (judge.ts, 20b);
+ *   5. at most ONE fix that resends only the flagged sentences; a cut-off
+ *      answer is never applied; then the lesson is saved or the step fails
+ *      with the real reason and waits for "Try again".
+ * Each model has a per-lesson token budget (LESSON_BUDGET); every call is
+ * given only what is left of it.
  */
 
 type Client = SupabaseClient<Database>;
@@ -94,20 +79,13 @@ interface Ctx {
   startedAt: number;
 }
 
-interface FetchedSource {
-  n: number;
+/** The chosen source page and what the lesson shows from it. */
+interface Found {
   page: FetchedPage;
   title: string;
   siteName: string;
-  excerpt: string;
+  source: SourceBlock;
 }
-
-const MESSAGES: Record<StepErrorCode, string> = {
-  sources_unreachable: "Could not reach sources for this step. Try again.",
-  ungrounded: "The AI's lesson was not tied to its sources, so it was not saved. Try again.",
-  truncated: "The AI's lesson was cut off before the end, so it was not saved. Try again.",
-  ai_error: "The AI could not write this lesson. Try again.",
-};
 
 async function log(ctx: Ctx, stepId: string, rec: CallRecord) {
   await logCall(ctx.supabase, ctx.userId, { topicId: ctx.topicId, stepId }, rec);
@@ -123,15 +101,20 @@ async function release(ctx: Ctx, stepId: string, claimedAt: string) {
   if (error) console.error("[learning] release failed:", error.message);
 }
 
-async function markFailed(ctx: Ctx, stepId: string, claimedAt: string, code: StepErrorCode, detail?: string) {
+const MAX_MESSAGE = 500;
+
+/** A long message keeps its start and its closing "Try again.", cut between words. */
+export function fitMessage(message: string): string {
+  if (message.length <= MAX_MESSAGE) return message;
+  const tail = message.endsWith(" Try again.") ? " Try again." : "";
+  return `${message.slice(0, MAX_MESSAGE - tail.length - 1).replace(/\s+\S*$/, "")}…${tail}`;
+}
+
+/** The stored message names the real cause (Udit, 2026-10-10): it is what the reader sees under a failed step. */
+async function markFailed(ctx: Ctx, stepId: string, claimedAt: string, code: StepErrorCode, message: string) {
   const { error } = await ctx.supabase
     .from("learning_steps")
-    .update({
-      status: "failed",
-      claimed_at: null,
-      error_code: code,
-      error_message: detail ? `${MESSAGES[code]} (${detail})`.slice(0, 500) : MESSAGES[code],
-    })
+    .update({ status: "failed", claimed_at: null, error_code: code, error_message: fitMessage(message) })
     .eq("id", stepId)
     .eq("user_id", ctx.userId)
     .eq("claimed_at", claimedAt);
@@ -163,75 +146,50 @@ async function withShortWait<T>(ctx: Ctx, stepId: string, reserveMs: number, cal
   }
 }
 
-function onAiError(err: unknown): AdvanceResult | null {
+function waitResult(err: unknown): AdvanceResult | null {
   if (!(err instanceof LearningAiError)) return null;
   if (err.failure.kind === "minute") return { kind: "waiting", retryAfterSeconds: err.failure.retryAfterSeconds };
   if (err.failure.kind === "day") return { kind: "groq_daily" };
   return null;
 }
 
-interface SkippedPage {
-  url: string;
-  why: string;
+/** Tokens a prompt will cost: about 3.5 characters each, plus the chat wrapping. Rounded up on purpose. */
+function promptTokens(...texts: string[]): number {
+  return Math.ceil(texts.reduce((n, t) => n + t.length, 0) / 3.5) + 50;
 }
+/** browser_search adds its own tool description to every search prompt: measured 1,511 prompt tokens. */
+const SEARCH_PROMPT_TOKENS = 1_600;
 
-/**
- * Fetch the candidates and pick the ONE main source (Udit, 2026-10-10): the
- * first documentation page that loaded, preferring one whose excerpt shows
- * code (the lesson walks through an example from it). A tutorial site is
- * used only when no documentation page loaded, and a vendor's landing page
- * never.
- */
-async function chooseMainSource(
-  stepQuery: string,
-  urls: string[]
-): Promise<{ main: (FetchedSource & { docs: boolean }) | null; skipped: SkippedPage[] }> {
-  const settled = await Promise.allSettled(urls.map((u) => safeFetchPage(u)));
-  const loaded: (FetchedSource & { docs: boolean; landing: boolean; code: boolean })[] = [];
-  const skipped: SkippedPage[] = [];
-  settled.forEach((r, i) => {
-    if (r.status !== "fulfilled") {
-      skipped.push({ url: urls[i], why: "did not load" });
-      return;
-    }
-    const page = r.value;
-    const { title, siteName, text } = extractPage(page.body, page.contentType, page.url);
-    const excerpt = excerptFor(text, stepQuery, MAIN_SOURCE_EXCERPT_CHARS);
-    if (excerpt.length < MIN_SOURCE_CHARS) {
-      skipped.push({ url: page.url, why: "too little text about the step" });
-      return;
-    }
-    loaded.push({
-      n: 1,
-      page,
-      title,
-      siteName,
-      excerpt,
-      docs: isDocsUrl(page.url),
-      landing: isLandingPage(page.url, text),
-      code: /```/.test(excerpt),
-    });
-  });
-  const docs = loaded.filter((p) => p.docs && !p.landing);
-  const tutorials = loaded.filter((p) => !p.docs && !p.landing);
-  const pool = docs.length > 0 ? docs : tutorials;
-  const main = pool.find((p) => p.code) ?? pool[0] ?? null;
-  for (const p of loaded) {
-    if (p === main) continue;
-    skipped.push({
-      url: p.page.url,
-      why: p.landing ? "a landing page" : main?.docs && !p.docs ? "not documentation, and documentation loaded" : "not the main source",
-    });
+/** What this lesson has spent per model, and what the next call may still use. */
+class LessonSpend {
+  private readonly used = new Map<string, number>();
+
+  add(rec: CallRecord) {
+    this.used.set(rec.model, this.spent(rec.model) + rec.total_tokens);
   }
-  return { main, skipped };
+
+  spent(model: string): number {
+    return this.used.get(model) ?? 0;
+  }
+
+  /** max_tokens for the next call on `model`, or null when its answer would not fit in the lesson's budget. */
+  room(model: string, prompt: number, wanted: number): number | null {
+    const left = (LESSON_BUDGET[model] ?? Number.POSITIVE_INFINITY) - this.spent(model) - prompt;
+    const n = Math.min(wanted, left);
+    return n >= MIN_ANSWER_TOKENS ? n : null;
+  }
+
+  overMessage(model: string): string {
+    return `the next AI call would take this lesson over its ${(LESSON_BUDGET[model] ?? 0).toLocaleString("en-US")}-token budget on ${model.replace(/^openai\//, "")} (${this.spent(model).toLocaleString("en-US")} spent)`;
+  }
 }
 
 /**
- * Dev-only: write everything one advance did — pages, the copier's answer,
- * the passages it kept and lost, each draft, every check and verdict, and
- * the rate-limit headers after each call — to LEARNING_DEBUG_DIR, so a run
- * can be read line by line at no extra AI cost. Local development only
- * (dev-override.ts).
+ * Dev-only: write everything one advance did — the searches, every page
+ * tried and why it was left, the copier's numbers, the source block, each
+ * answer as it came back, every problem and verdict, and the rate-limit
+ * headers after each call — to LEARNING_DEBUG_DIR, so a run can be read line
+ * by line at no extra AI cost. Local development only (dev-override.ts).
  */
 async function debugDump(stepId: string, data: unknown): Promise<void> {
   const dir = process.env.LEARNING_DEBUG_DIR;
@@ -245,8 +203,22 @@ async function debugDump(stepId: string, data: unknown): Promise<void> {
   }
 }
 
-function describe(problems: LessonProblem[]): string[] {
-  return problems.map((p) => `${p.where} ("${p.text.slice(0, 90)}"): ${p.reason}`);
+function describe(problems: Problem[]): string[] {
+  return problems.map((p) => (p.sentence === null ? p.reason : `sentence ${p.sentence} (${p.check}): ${p.reason}`));
+}
+
+/** What a failed or unusable call means for the stored message. */
+function callFailure(err: unknown, what: string): { code: StepErrorCode; message: string } {
+  if (err instanceof BadAnswerError) {
+    return err.answer.kind === "cut_off"
+      ? { code: "truncated", message: `The AI's ${what} was cut off before the end, so it was not used. Try again.` }
+      : { code: "ai_error", message: `The AI's ${what} could not be used: ${err.answer.reason}. Try again.` };
+  }
+  if (err instanceof LearningAiError) {
+    if (err.failure.kind === "minute" || err.failure.kind === "day") return { code: "ai_error", message: `The AI was too busy to give its ${what}. Try again.` };
+    if (err.failure.kind === "timeout") return { code: "ai_error", message: `The AI did not give its ${what} in time. Try again.` };
+  }
+  return { code: "ai_error", message: `The AI's ${what} failed: ${err instanceof Error ? err.message.slice(0, 160) : "unknown error"}. Try again.` };
 }
 
 export async function advanceTopic(
@@ -259,7 +231,7 @@ export async function advanceTopic(
 
   const { data: topic } = await supabase
     .from("learning_topics")
-    .select("id, title, status, archived_at")
+    .select("id, title, status, archived_at, docs_site")
     .eq("id", topicId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -297,282 +269,306 @@ export async function advanceTopic(
   if (!claimed) return { kind: "busy", stepId: next.stepId };
   const stepId = claimed.id;
 
-  const trace: Record<string, unknown> = { topic: topic.title, step: claimed.title, calls: [] as unknown[] };
-  const calls = trace.calls as { kind: string; model: string; total_tokens: number; limits: RateLimits | null }[];
-  const note = (rec: CallRecord, limits: RateLimits | null) =>
-    calls.push({ kind: rec.kind, model: rec.model, total_tokens: rec.total_tokens, limits });
-  const fail = async (code: StepErrorCode, detail?: string, problems?: string[]): Promise<AdvanceResult> => {
-    await markFailed(ctx, stepId, claimedAt, code, detail);
-    trace.outcome = { failed: code, detail, problems };
+  const docsSite = topic.docs_site;
+  // A topic with an official documentation site is a code topic (the planner
+  // makes every step of it something the learner tries in code), so every
+  // lesson in it must show a code example.
+  const needsCode = docsSite !== null;
+  const spend = new LessonSpend();
+  const left: { url: string; why: string }[] = [];
+  const trace = {
+    topic: topic.title,
+    docsSite,
+    step: claimed.title,
+    calls: [] as { what: string; model: string; total_tokens: number; outcome: string; limits: RateLimits | null }[],
+    searches: [] as { phase: string; query: string; hits: string[]; candidates: string[] }[],
+    /** Every page left out, and why. */
+    pages: left,
+    copier: [] as unknown[],
+    badAnswers: [] as { what: string; kind: string; reason: string; raw: string }[],
+    g2: [] as unknown[],
+    /** Filled in as the stages run. */
+    stages: {} as Record<string, unknown>,
+  };
+  const noted = async (what: string, rec: CallRecord, limits: RateLimits | null) => {
+    await log(ctx, stepId, rec);
+    spend.add(rec);
+    trace.calls.push({ what, model: rec.model, total_tokens: rec.total_tokens, outcome: rec.outcome, limits });
+  };
+  /** Log a call that threw, with the raw answer when it was an unusable one. */
+  const notedError = async (what: string, err: unknown) => {
+    if (err instanceof LearningAiError || err instanceof BadAnswerError) await noted(what, err.record, null);
+    if (err instanceof BadAnswerError) trace.badAnswers.push({ what, kind: err.answer.kind, reason: err.answer.reason, raw: err.answer.raw });
+  };
+  const spentByModel = () => ({ [LEARNING_WRITE_MODEL]: spend.spent(LEARNING_WRITE_MODEL), [LEARNING_SEARCH_MODEL]: spend.spent(LEARNING_SEARCH_MODEL) });
+  const fail = async (code: StepErrorCode, message: string, problems?: string[]): Promise<AdvanceResult> => {
+    await markFailed(ctx, stepId, claimedAt, code, message);
+    trace.stages.outcome = { failed: code, message, problems, spent: spentByModel() };
     await debugDump(stepId, trace);
     return { kind: "failed", stepId, code, problems: problems?.slice(0, 10) };
   };
 
-  // 1. Search (gpt-oss-20b + browser_search).
-  let hits;
-  try {
-    const search = await withShortWait(ctx, stepId, 40_000, () => searchForStep(claimed.search_query));
-    await log(ctx, stepId, search.record);
-    note(search.record, search.limits);
-    hits = search.harvest.hits;
-  } catch (err) {
-    if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
-    const wait = onAiError(err);
-    if (wait) {
-      await release(ctx, stepId, claimedAt);
-      return wait;
-    }
-    return fail("sources_unreachable", "the search did not answer");
-  }
-
-  // 2. Fetch the pages ourselves and pick the one main source. Only
-  //    tool-returned URLs are tried, and only pages that loaded can be used.
+  // ── 1-2. Sources: the documentation site first, the open web only when it finds nothing.
   const provenance = new SourceProvenance();
-  hits.forEach((h) => provenance.addToolUrl(h.url));
-  const candidates = pickCandidates(hits, MAX_CANDIDATE_PAGES);
-  const { main, skipped } = await chooseMainSource(`${claimed.title} ${claimed.goal} ${claimed.search_query}`, candidates.map((c) => c.url));
-  trace.search = { hits: hits.map((h) => h.url), candidates: candidates.map((c) => c.url), skipped };
-  if (!main) return fail("sources_unreachable");
-  provenance.addFetchedUrl(main.page.url);
-  trace.main = { url: main.page.url, site: main.siteName, docs: main.docs, excerpt: main.excerpt };
+  const tried = new Set<string>();
+  let pagesAsked = 0;
+  const query = `${claimed.title} ${claimed.goal} ${claimed.search_query}`;
 
-  // 3. Copy passages word for word (gpt-oss-20b) from the main source only,
-  //    then check each one here.
-  const copierMessage = copierUserMessage({
-    stepTitle: claimed.title,
-    goal: claimed.goal,
-    sources: [{ n: 1, siteName: main.siteName, text: main.excerpt }],
-  });
-  let copy: TextCall;
-  try {
-    copy = await withShortWait(ctx, stepId, 30_000, () => copyPassages(copierMessage));
-  } catch (err) {
-    if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
-    const wait = onAiError(err);
-    if (wait) {
-      // Nothing written yet: hand the step back and let the screen wait.
-      await release(ctx, stepId, claimedAt);
-      return wait;
-    }
-    return fail("ai_error", "the passages could not be copied");
-  }
-  // A cut-off copier answer still holds the passages before the cut; the
-  // last, partial line simply fails verification.
-  const { terms, copied } = parseCopiedPassages(copy.content);
-  const verified = verifyPassages(copied, [{ n: 1, text: main.excerpt }]);
-  let passages: Passage[] = verified.passages;
-  await log(ctx, stepId, { ...copy.record, outcome: passages.length > 0 ? copy.record.outcome : "invalid" });
-  note(copy.record, copy.limits);
-
-  // Terms the main source does not define: its documentation's glossary.
-  let glossary: FetchedSource | null = null;
-  const lacking = undefinedTerms(terms, passages);
-  const glossaryUrl = main.docs && lacking.length > 0 ? findGlossaryUrl(main.page.body, main.page.url) : null;
-  if (glossaryUrl) {
+  /** One search and its pages. Returns the found source, null when nothing fit, or a result that ends this advance. */
+  const searchPhase = async (
+    phase: "docs" | "web",
+    searchQuery: string,
+    pick: (hits: SearchHit[]) => SearchHit[]
+  ): Promise<Found | null | AdvanceResult> => {
+    const room = spend.room(LEARNING_SEARCH_MODEL, SEARCH_PROMPT_TOKENS, SEARCH_MAX_TOKENS);
+    if (room === null) return fail("sources_unreachable", `No source was found: ${spend.overMessage(LEARNING_SEARCH_MODEL)}. Try again.`);
+    let hits: SearchHit[];
     try {
-      const page = await safeFetchPage(glossaryUrl);
-      const found = glossaryPassages(parseGlossary(page.body), lacking, 2, passages.length + 1);
-      if (found.length > 0) {
-        const { title, siteName } = extractPage(page.body, page.contentType, page.url);
-        glossary = { n: 2, page, title, siteName, excerpt: found.map((p) => p.text).join("\n\n") };
-        provenance.addFetchedUrl(page.url);
-        passages = [...passages, ...found];
-      }
+      const search = await withShortWait(ctx, stepId, 40_000, () => searchForStep(searchQuery, room));
+      await noted(`search (${phase})`, search.record, search.limits);
+      hits = search.harvest.hits;
     } catch (err) {
-      console.warn("[learning] glossary fetch failed:", err instanceof Error ? err.message : err);
+      await notedError(`search (${phase})`, err);
+      const wait = waitResult(err);
+      if (wait) {
+        await release(ctx, stepId, claimedAt);
+        return wait;
+      }
+      return fail("sources_unreachable", "The search for sources did not answer, so no lesson was written. Try again.");
     }
-  }
-  const stillUndefined = undefinedTerms(terms, passages);
-  trace.copier = {
-    content: copy.content,
-    terms,
-    passages,
-    rejected: verified.rejected,
-    glossary: glossaryUrl,
-    undefinedTerms: stillUndefined,
-    proseWords: passageWords(passages),
-  };
-  if (!enoughToWrite(passages)) {
-    return fail("sources_unreachable", `the page had too little to quote: ${passageWords(passages)} words in ${passages.length} passages`);
-  }
+    hits.forEach((h) => provenance.addToolUrl(h.url));
+    const candidates = pick(hits);
+    trace.searches.push({ phase, query: searchQuery, hits: hits.map((h) => h.url), candidates: candidates.map((c) => c.url) });
+    if (candidates.length === 0) {
+      left.push({ url: `the ${phase === "docs" ? "documentation-site" : "open-web"} search`, why: hits.length ? "none of its results could be used" : "it found nothing" });
+      return null;
+    }
 
-  // 4. Write (gpt-oss-120b) from the passages only.
+    const settled = await Promise.allSettled(candidates.map((c) => safeFetchPage(c.url)));
+    const viable: { page: FetchedPage; title: string; siteName: string; numbered: ReturnType<typeof numberPage> }[] = [];
+    settled.forEach((r, i) => {
+      tried.add(candidates[i].url);
+      if (r.status !== "fulfilled") {
+        left.push({ url: candidates[i].url, why: "it did not load" });
+        return;
+      }
+      const page = r.value;
+      tried.add(page.url);
+      const { title, siteName, text } = extractPage(page.body, page.contentType, page.url);
+      if (phase === "web" && isLandingPage(page.url, text)) {
+        left.push({ url: page.url, why: "a landing page, not a page that teaches" });
+        return;
+      }
+      const numbered = numberPage(excerptFor(text, query, MAIN_SOURCE_EXCERPT_CHARS));
+      const thin = pageThinness(numbered, needsCode);
+      if (thin) {
+        left.push({ url: page.url, why: thin });
+        return;
+      }
+      viable.push({ page, title, siteName, numbered });
+    });
+
+    for (const v of viable) {
+      if (pagesAsked >= MAX_SOURCE_PAGES) {
+        left.push({ url: v.page.url, why: `not tried: ${MAX_SOURCE_PAGES} pages already were` });
+        continue;
+      }
+      const message = copierUserMessage({ stepTitle: claimed.title, goal: claimed.goal, siteName: v.siteName, page: v.numbered });
+      const copyRoom = spend.room(LEARNING_COPY_MODEL, promptTokens(COPIER_SYSTEM_PROMPT, message), COPY_MAX_TOKENS);
+      if (copyRoom === null) {
+        left.push({ url: v.page.url, why: `not tried: ${spend.overMessage(LEARNING_COPY_MODEL)}` });
+        continue;
+      }
+      pagesAsked += 1;
+      let copy;
+      try {
+        copy = await withShortWait(ctx, stepId, 30_000, () => copySource(message, copyRoom));
+      } catch (err) {
+        await notedError("copier", err);
+        const wait = waitResult(err);
+        if (wait) {
+          // Nothing written yet: hand the step back and let the screen wait.
+          await release(ctx, stepId, claimedAt);
+          return wait;
+        }
+        const f = callFailure(err, "choice of what to quote");
+        return fail(f.code, f.message);
+      }
+      await noted("copier", copy.record, copy.limits);
+      const choice = chooseSource(copy.value, v.numbered, needsCode);
+      trace.copier.push({ url: v.page.url, answer: copy.value, choice });
+      if (choice.kind === "bad") {
+        console.error(`[learning] the copier's answer was not used (${choice.reason}). Raw answer:`, copy.raw);
+        return fail("ai_error", `The AI's choice of what to quote could not be used: ${choice.reason}. Try again.`);
+      }
+      if (choice.kind === "thin") {
+        left.push({ url: v.page.url, why: choice.reason });
+        continue;
+      }
+      return { page: v.page, title: v.title, siteName: v.siteName, source: choice.source };
+    }
+    return null;
+  };
+
+  const isFound = (r: Found | null | AdvanceResult): r is Found => r !== null && "source" in r;
+  let found: Found | null = null;
+  if (docsSite) {
+    const r = await searchPhase("docs", siteQuery(docsSite, claimed.search_query), (hits) => pickDocsCandidates(hits, docsSite, MAX_CANDIDATE_PAGES));
+    if (r !== null && !isFound(r)) return r;
+    found = r;
+  }
+  if (!found) {
+    const r = await searchPhase("web", claimed.search_query, (hits) => pickCandidates(hits, MAX_CANDIDATE_PAGES, tried));
+    if (r !== null && !isFound(r)) return r;
+    found = r;
+  }
+  if (!found) {
+    const why = left.map((p) => `${p.url.replace(/^https:\/\//, "")}: ${p.why}`).join("; ");
+    return fail("sources_unreachable", `No page had enough to teach this step from, so no lesson was written (${why}). Try again.`);
+  }
+  provenance.addFetchedUrl(found.page.url);
+  const source = found.source;
+  trace.stages.main = { url: found.page.url, site: found.siteName, docs: onDocsSite(found.page.url, docsSite), source };
+
+  // ── 3. The AI explanation (120b), from the source block only.
   const userMessage = writerUserMessage({
     topicTitle: topic.title,
     stepTitle: claimed.title,
     goal: claimed.goal,
-    passages,
-    undefinedTerms: stillUndefined,
+    source,
     learnerNote: claimed.rewrite_note,
     rewriteReason: claimed.rewrite_reason as "wrong" | "redo" | null,
   });
-  const codePassages = passages.filter((p) => p.kind === "code" && p.source === 1).map((p) => p.id);
-  const groundingCtx = {
-    topicTitle: topic.title,
-    stepTitle: claimed.title,
-    sourceTexts: [main.excerpt, ...(glossary ? [glossary.excerpt] : [])],
-    mainSource: 1,
-    terms,
-  };
-  const maxTokens = devOverride("LEARNING_TEST_WRITE_MAX_TOKENS") ?? undefined;
-
-  let draft: TextCall;
+  const writeRoom = spend.room(LEARNING_WRITE_MODEL, promptTokens(WRITER_SYSTEM_PROMPT, userMessage), WRITE_MAX_TOKENS);
+  if (writeRoom === null) return fail("ai_error", `The explanation was not written: ${spend.overMessage(LEARNING_WRITE_MODEL)}. Try again.`);
+  let explanation: Explanation;
   try {
-    draft = await withShortWait(ctx, stepId, 20_000, () => writeDraft(userMessage, maxTokens));
+    const draft = await withShortWait(ctx, stepId, 20_000, () => writeExplanation(userMessage, writeRoom));
+    await noted("writer", draft.record, draft.limits);
+    trace.stages.writer = draft.raw;
+    explanation = draft.value;
   } catch (err) {
-    if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
-    const wait = onAiError(err);
+    await notedError("writer", err);
+    const wait = waitResult(err);
     if (wait) {
       await release(ctx, stepId, claimedAt);
       return wait;
     }
-    const detail = err instanceof LearningAiError && err.failure.kind === "timeout" ? "it did not answer in time" : undefined;
-    return fail("ai_error", detail);
-  }
-  note(draft.record, draft.limits);
-  trace.draft = draft.content;
-  if (draft.truncated) {
-    await log(ctx, stepId, draft.record);
-    return fail("truncated");
+    const f = callFailure(err, "explanation");
+    return fail(f.code, f.message);
   }
 
-  const check = (l: DraftLesson): LessonProblem[] => [...checkLessonRules(l), ...checkGrounding(l, passages, groundingCtx)];
-  let lesson: DraftLesson;
-  let problems: LessonProblem[];
-  try {
-    lesson = settleExample(parseDraftLesson(draft.content), passages, 1);
-    problems = check(lesson);
-  } catch (err) {
-    await log(ctx, stepId, { ...draft.record, outcome: "invalid" });
-    return fail("ai_error", err instanceof LessonFormatError ? "it was not in the lesson format" : undefined);
+  // ── 4. Shape, G1, G2.
+  const shape = checkShape(explanation, source);
+  if (shape.length > 0) {
+    trace.stages.shape = describe(shape);
+    return fail("ai_error", `The AI's explanation did not have the lesson's shape, so it was not saved: ${describe(shape).join("; ")}. Try again.`, describe(shape));
   }
-  await log(ctx, stepId, { ...draft.record, outcome: problems.length ? "invalid" : "ok" });
-  trace.dropped = lesson.dropped;
 
-  /** Lines the meaning check has already accepted, by identity: a fix keeps the others as they are. */
-  const accepted = new Set<Line>();
-  const judgeLog: unknown[] = [];
-  trace.judge = judgeLog;
-  /** Run the meaning check on every line not yet accepted. Returns the lines it rejected. */
-  const meaningCheck = async (l: DraftLesson): Promise<LessonProblem[] | AdvanceResult> => {
-    const all = linesOf(l);
-    const items = judgeItems(l, passages, (x) => !accepted.has(x));
-    if (items.length === 0) return [];
-    const message = judgeUserMessage(l, judgePassages(l, passages, items), items);
+  /** G2 on these sentences. Returns its problems, or a result that ends this advance. */
+  const meaningCheck = async (sentences: Sentence[]): Promise<Problem[] | AdvanceResult> => {
+    if (sentences.length === 0) return [];
+    const message = judgeUserMessage(source, sentences);
+    const room = spend.room(LEARNING_JUDGE_MODEL, promptTokens(JUDGE_SYSTEM_PROMPT, message), JUDGE_MAX_TOKENS);
+    if (room === null) return fail("ai_error", `The explanation was not checked: ${spend.overMessage(LEARNING_JUDGE_MODEL)}. Try again.`);
     try {
-      const judged = await withShortWait(ctx, stepId, 8_000, () => judgeClaims(message, items.map((i) => i.id)));
-      await log(ctx, stepId, judged.record);
-      note(judged.record, judged.limits);
-      const out: LessonProblem[] = [];
-      for (const it of items) {
-        const v = judged.verdicts.get(it.id) ?? { ok: false, why: "" };
-        judgeLog.push({ line: it.line, kind: it.kind, cites: it.cites, term: it.term, sentence: it.sentence, ...v });
-        if (v.ok) accepted.add(all[it.line - 1]);
-        else {
-          out.push({
-            line: it.line,
-            where: `line ${it.line}`,
-            text: it.sentence,
-            reason: `the meaning check said no (${v.why || "no reason given"})`,
-          });
-        }
-      }
-      return out;
-    } catch (err) {
-      if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
       // A draft has already been paid for, so a busy check is not a reason
-      // to start again from the search: fail honestly, never loop.
-      const busy = onAiError(err) !== null;
-      return fail("ai_error", busy ? "the meaning check was too busy to answer" : "the meaning check did not answer");
+      // to start again from the search: it fails honestly, never loops.
+      const judged = await withShortWait(ctx, stepId, 8_000, () => judgeSentences(message, room));
+      await noted("meaning check (G2)", judged.record, judged.limits);
+      const read = readVerdicts(judged.value, sentences);
+      trace.g2.push({ sentences: sentences.map((x) => ({ id: x.id, text: x.text })), answer: judged.value });
+      if ("bad" in read) {
+        console.error(`[learning] the meaning check's answer was not used (${read.bad}). Raw answer:`, judged.raw);
+        return fail("ai_error", `The AI's meaning check could not be used: ${read.bad}. The explanation was not saved. Try again.`);
+      }
+      return read.problems;
+    } catch (err) {
+      await notedError("meaning check (G2)", err);
+      const f = callFailure(err, "meaning check");
+      return fail(f.code, `${f.message.replace(/ Try again\.$/, "")} The explanation was not saved. Try again.`);
     }
   };
+  /** G1, then G2 on the sentences G1 did not already reject. */
+  const checkSentences = async (which: Sentence[]): Promise<Problem[] | AdvanceResult> => {
+    const g1 = checkCodeRule(which, source);
+    const flaggedByG1 = new Set(g1.map((p) => p.sentence));
+    const g2 = await meaningCheck(which.filter((s) => !flaggedByG1.has(s.id)));
+    if (!Array.isArray(g2)) return g2;
+    return [...g1, ...g2];
+  };
 
-  // The meaning check, only for a draft the free rules accept.
-  if (problems.length === 0) {
-    const judged = await meaningCheck(lesson);
-    if (!Array.isArray(judged)) return judged;
-    problems = judged;
-  }
-  trace.firstProblems = describe(problems);
-  const firstProblems = describe(problems);
+  const first = await checkSentences(sentencesOf(explanation));
+  if (!Array.isArray(first)) return first;
+  const firstProblems = describe(first);
+  trace.stages.firstProblems = firstProblems;
 
-  // 5. At most one fix turn (Udit, condition 3): only what failed goes back.
-  let fixed = false;
-  if (problems.length > 0) {
-    const ungrounded = problems.some((p) => p.line !== null || p.where === "terms");
-    const fixable = (p: LessonProblem) =>
-      p.line !== null ||
-      ["title", "summary", "close", "walk", "terms"].includes(p.where) ||
-      (p.where === "example" && codePassages.length > 0) ||
-      (p.where === "length" && Number(p.text) < LESSON_MIN_WORDS);
-    if (!problems.every(fixable)) {
-      return fail(ungrounded ? "ungrounded" : "ai_error", "its problems cannot be fixed one line at a time", firstProblems);
+  // ── 5. At most one fix: only the flagged sentences go back.
+  let attempts = 1;
+  if (first.length > 0) {
+    const flaggedIds = Array.from(new Set(first.map((p) => p.sentence as number)));
+    const flagged = sentencesOf(explanation).filter((s) => flaggedIds.includes(s.id));
+    if (Date.now() - ctx.startedAt > ADVANCE_DEADLINE_MS - 15_000) {
+      return fail("ungrounded", `The checks rejected sentences of the explanation and there was no time left for its one fix, so it was not saved: ${firstProblems.join("; ")}. Try again.`, firstProblems);
     }
-    if (Date.now() - ctx.startedAt > ADVANCE_DEADLINE_MS - 20_000) {
-      return fail(ungrounded ? "ungrounded" : "ai_error", "there was no time left for its one fix", firstProblems);
+    const fixMessage = writerFixMessage(flagged, first, source);
+    const fixRoom = spend.room(LEARNING_WRITE_MODEL, promptTokens(WRITER_SYSTEM_PROMPT, userMessage, fixMessage), FIX_MAX_TOKENS);
+    if (fixRoom === null) {
+      return fail("ungrounded", `The checks rejected sentences of the explanation and ${spend.overMessage(LEARNING_WRITE_MODEL)}, so it was not saved: ${firstProblems.join("; ")}. Try again.`, firstProblems);
     }
-    const short = problems.find((p) => p.where === "length");
-    const asked = problems.filter((p) => p.line !== null).map((p) => p.line as number);
-    const fixMessage = writerFixMessage(problems, short ? proseWordCount(lesson) : null, codePassages);
-    let fix: TextCall;
+    let replacements: Map<number, string>;
     try {
-      fix = await withShortWait(ctx, stepId, 12_000, () => writeFix(userMessage, fixMessage));
+      const fix = await withShortWait(ctx, stepId, 12_000, () => writeFix(userMessage, fixMessage, fixRoom));
+      await noted("fix", fix.record, fix.limits);
+      trace.stages.fix = { asked: fixMessage, answer: fix.raw };
+      const read = readReplacements(fix.value, flaggedIds);
+      if ("bad" in read) {
+        console.error(`[learning] the fix's answer was not used (${read.bad}). Raw answer:`, fix.raw);
+        return fail("ai_error", `The AI's fix could not be used: ${read.bad}. The explanation was not saved. Try again.`, firstProblems);
+      }
+      replacements = read.replacements;
     } catch (err) {
-      if (err instanceof LearningAiError) await log(ctx, stepId, err.record);
+      await notedError("fix", err);
       // Releasing here would make the next request search and write the
       // whole lesson again — measured 2026-10-09: four full restarts in a
       // row, ~16,000 tokens. So the step fails honestly instead.
-      const busy = onAiError(err) !== null;
-      return fail("ai_error", busy ? "the AI was too busy to fix it" : "the fix did not answer", firstProblems);
+      const f = callFailure(err, "fix");
+      return fail(f.code, `${f.message.replace(/ Try again\.$/, "")} The explanation was not saved. Try again.`, firstProblems);
     }
-    note(fix.record, fix.limits);
-    trace.fix = { asked: fixMessage, content: fix.content };
-    // An added line that cites a defining passage is a definition: it goes
-    // just before the first line that uses its term.
-    const termOf = (l: Line): string | null =>
-      l.kind === "define" ? l.term : l.kind === "cited" ? terms.find((t) => l.cites.some((id) => definedBy(t, passages.filter((p) => p.id === id)))) ?? null : null;
-    const applied = applyFix(lesson, parseFixAnswer(fix.content), asked, termOf);
-    lesson = settleExample(applied.lesson, passages, 1);
-    problems = [
-      ...applied.missing.map((line) => ({ line, where: `line ${line}`, text: "", reason: "the fix gave no replacement for it" })),
-      ...check(lesson),
-    ];
-    await log(ctx, stepId, { ...fix.record, outcome: fix.truncated ? "truncated" : problems.length ? "invalid" : "ok" });
-    if (problems.length === 0) {
-      const judged = await meaningCheck(lesson);
-      if (!Array.isArray(judged)) return judged;
-      problems = judged;
+
+    const fixed = withReplacements(explanation, replacements);
+    explanation = fixed.explanation;
+    const shapeAfter = checkShape(explanation, source);
+    if (shapeAfter.length > 0) {
+      return fail("ai_error", `After its one fix the explanation did not have the lesson's shape, so it was not saved: ${describe(shapeAfter).join("; ")}. Try again.`, describe(shapeAfter));
     }
-    if (problems.length > 0) {
-      const after = describe(problems);
-      console.warn("[learning] lesson rejected after its fix:", JSON.stringify(after.slice(0, 10)));
-      return fail(problems.some((p) => p.line !== null || p.where === "terms") ? "ungrounded" : "ai_error", undefined, after);
+    const after = await checkSentences(sentencesOf(explanation).filter((s) => fixed.changed.includes(s.id)));
+    if (!Array.isArray(after)) return after;
+    if (after.length > 0) {
+      trace.stages.afterFix = describe(after);
+      return fail(
+        "ungrounded",
+        `After its one fix the explanation still had sentences the checks rejected, so it was not saved: ${describe(after).join("; ")}. Try again.`,
+        describe(after)
+      );
     }
-    fixed = true;
+    attempts = 2;
   }
 
-  // 6. Save: the lesson once, with its main source first and the glossary
-  //    after it if a definition was cited from there.
-  const byId = new Map(passages.map((p) => [p.id, p] as [number, Passage]));
-  const ex = exampleOf(lesson);
-  const citedSources = new Set([
-    ...linesOf(lesson).flatMap((l) => l.cites.map((id) => byId.get(id)?.source)),
-    ...(ex ? [byId.get(ex.passage)?.source] : []),
-  ]);
-  const used = [main, ...(glossary && citedSources.has(2) ? [glossary] : [])].filter(
-    (s) => (s.n === 1 || citedSources.has(s.n)) && provenance.isStorable(s.page.url)
-  );
-  if (!citedSources.has(1) || used.length === 0) return fail("ungrounded", "it cited nothing from its main source");
-
-  const body = renderLessonMarkdown(lesson, passages);
-  trace.lesson = { title: lesson.title, summary: lesson.summary, body, words: proseWordCount(lesson) };
+  // ── 6. Save: the lesson once, with its one source.
+  if (!provenance.isStorable(found.page.url)) {
+    return fail("sources_unreachable", "The source page's address could not be stored, so the lesson was not saved. Try again.");
+  }
+  const body = renderLessonBody(source, explanation);
+  trace.stages.lesson = { body, sentences: sentencesOf(explanation).length };
   const { data: saved, error: lessonError } = await supabase
     .from("learning_lessons")
     .insert({
       user_id: userId,
       step_id: stepId,
-      title: lesson.title,
-      summary: lesson.summary,
+      // The plan's own words, not new AI text outside the marked explanation.
+      title: claimed.title,
+      summary: claimed.goal.slice(0, 400),
       body,
       model: LEARNING_WRITE_MODEL,
       reason: (claimed.rewrite_reason as "wrong" | "redo" | null) ?? "first",
@@ -582,26 +578,24 @@ export async function advanceTopic(
     .single();
   if (lessonError || !saved) {
     console.error("[learning] lesson insert failed:", lessonError?.message);
-    return fail("ai_error", "it could not be saved");
+    return fail("ai_error", "The lesson was written but could not be saved. Try again.");
   }
-  const { error: sourcesError } = await supabase.from("learning_lesson_sources").insert(
-    used.map((s, i) => ({
-      user_id: userId,
-      lesson_id: saved.id,
-      position: i,
-      url: s.page.url,
-      title: s.title,
-      site_name: s.siteName,
-      origin: "search" as const,
-      http_status: s.page.status,
-      fetched_at: s.page.fetchedAt,
-    }))
-  );
+  const { error: sourcesError } = await supabase.from("learning_lesson_sources").insert({
+    user_id: userId,
+    lesson_id: saved.id,
+    position: 0,
+    url: found.page.url,
+    title: found.title,
+    site_name: found.siteName,
+    origin: "search" as const,
+    http_status: found.page.status,
+    fetched_at: found.page.fetchedAt,
+  });
   if (sourcesError) {
     // The lesson row stays but can never be shown: lesson reads require at
     // least one source (an inner join), so a source-less lesson is invisible.
     console.error("[learning] sources insert failed:", sourcesError.message);
-    return fail("ai_error", "its sources could not be saved");
+    return fail("ai_error", "The lesson was written but its source could not be saved. Try again.");
   }
 
   const { error: readyError } = await supabase
@@ -612,7 +606,7 @@ export async function advanceTopic(
     .eq("claimed_at", claimedAt);
   if (readyError) console.error("[learning] mark ready failed:", readyError.message);
 
-  trace.outcome = { saved: saved.id, attempts: fixed ? 2 : 1 };
+  trace.stages.outcome = { saved: saved.id, attempts, spent: spentByModel() };
   await debugDump(stepId, trace);
-  return { kind: "wrote", stepId, attempts: fixed ? 2 : 1, firstAttemptProblems: firstProblems.slice(0, 10) };
+  return { kind: "wrote", stepId, attempts, firstAttemptProblems: firstProblems.slice(0, 10) };
 }

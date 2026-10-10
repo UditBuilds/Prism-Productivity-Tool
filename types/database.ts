@@ -846,6 +846,8 @@ export interface Database {
           title: string;
           status: LearningTopicStatus;
           error_message: string | null;
+          /** The topic's official documentation site, a bare host ("docs.python.org"); null when it has none. */
+          docs_site: string | null;
           archived_at: string | null;
           created_at: string;
           updated_at: string;
@@ -856,6 +858,7 @@ export interface Database {
           title: string;
           status?: LearningTopicStatus;
           error_message?: string | null;
+          docs_site?: string | null;
           archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -864,6 +867,7 @@ export interface Database {
           title?: string;
           status?: LearningTopicStatus;
           error_message?: string | null;
+          docs_site?: string | null;
           archived_at?: string | null;
           updated_at?: string;
         };
