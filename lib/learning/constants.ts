@@ -67,6 +67,14 @@ export const LESSON_BUDGET: Record<string, number> = {
 export const MIN_ANSWER_TOKENS = 600;
 
 /**
+ * Retries one lesson may use in all (Udit, 2026-10-12, gate 7): the writer's
+ * JSON retry, its example retry and G2's empty-word-list retry share this
+ * limit, each kind still at most once (G2's once per pass). The one fix is
+ * not a retry. A lesson that needs a third fails honestly.
+ */
+export const MAX_RETRIES_PER_LESSON = 2;
+
+/**
  * The source block (Udit, 2026-10-10): 1-3 passages from ONE page, at most
  * 130 quoted words, plus one code example from the same page.
  */

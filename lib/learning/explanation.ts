@@ -130,9 +130,13 @@ export function linesToWalk(code: string | null): number[] {
 /**
  * The shape rules, all checked in code: at least one paragraph saying what it
  * means, then one walk-through item for every non-blank code line in order,
- * then one closing sentence; 150-500 words.
+ * then one closing sentence; and, when `length` is on, 150-500 words. The
+ * lesson job turns length off for its checks before and during the fix and
+ * counts once at the end (lengthAtEnd, Udit 2026-10-12, gate 7): the fix adds
+ * the sentences that explain words, so a draft short before it may not be
+ * after it.
  */
-export function checkShape(e: Explanation, source: SourceBlock): Problem[] {
+export function checkShape(e: Explanation, source: SourceBlock, length = true): Problem[] {
   const problems: Problem[] = [];
   const shape = (reason: string, text = "") => problems.push({ sentence: null, check: "shape", text, reason });
 
@@ -165,8 +169,25 @@ export function checkShape(e: Explanation, source: SourceBlock): Problem[] {
   else if (splitSentences(e.closing).length > 1) shape("the closing line is more than one sentence", e.closing);
 
   const words = explanationWords(e);
-  if (words < LESSON_MIN_WORDS || words > LESSON_MAX_WORDS) shape(`it is ${words} words; it must be ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS}`);
+  if (length && (words < LESSON_MIN_WORDS || words > LESSON_MAX_WORDS)) shape(`it is ${words} words; it must be ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS}`);
   return problems;
+}
+
+/**
+ * The length rule, once, on the final explanation (Udit, 2026-10-12, gate 7):
+ * over LESSON_MAX_WORDS blocks the save as before; under LESSON_MIN_WORDS is
+ * saved with a visible mark at the top (shortMark), not blocked.
+ */
+export function lengthAtEnd(e: Explanation): { words: number; verdict: "ok" | "short" | "long" } {
+  const words = explanationWords(e);
+  return { words, verdict: words > LESSON_MAX_WORDS ? "long" : words < LESSON_MIN_WORDS ? "short" : "ok" };
+}
+
+/** What leads the mark at the top of a lesson shorter than LESSON_MIN_WORDS. */
+export const SHORT_LABEL = "Shorter than usual";
+
+export function shortMark(words: number): string {
+  return `${SHORT_LABEL}: ${words} words`;
 }
 
 // ─── unexplained words ────────────────────────────────────────────────────
@@ -236,7 +257,8 @@ export function settleAfterFix(
   const settled = problems.map((problem) => ({ sentence: all.find((s) => s.id === problem.sentence) as Sentence, problem }));
   if (markMode) return { kind: "save", explanation: e, removed: [], marked: settled };
   const after = withChanges(e, { replace: new Map(settled.map((r) => [r.sentence.id, ""])) }).explanation;
-  const shape = checkShape(after, source);
+  // Length is counted once at the end (lengthAtEnd), not here.
+  const shape = checkShape(after, source, false);
   if (shape.length > 0) {
     return { kind: "fail", reasons: [...settled.map((r) => `removed ${describe(r.problem)}`), ...shape.map((p) => `then ${p.reason}`)] };
   }
@@ -269,6 +291,8 @@ export const DOUBT_NOTE = `A "${DOUBT_LABEL}" mark is where the AI check of this
 export interface Marks {
   start: string[];
   after: ReadonlyMap<number, string[]>;
+  /** Over the whole lesson, before the quote: "Shorter than usual: 136 words" (gate 7). Not a checker doubt, so no DOUBT_NOTE. */
+  top?: string[];
 }
 export const NO_MARKS: Marks = { start: [], after: new Map() };
 
@@ -328,7 +352,7 @@ function inlineCode(line: string): string {
  * count toward its words or its shape.
  */
 export function renderLessonBody(source: SourceBlock, e: Explanation, marks: Marks = NO_MARKS): string {
-  const out: string[] = [`## ${SOURCE_HEADING}`];
+  const out: string[] = [...(marks.top ?? []).map((m) => `**[${m}]**`), `## ${SOURCE_HEADING}`];
   for (const p of source.passages) out.push(`> ${p}`);
   const codeLines = source.code === null ? [] : source.code.split("\n");
   if (source.code !== null) {

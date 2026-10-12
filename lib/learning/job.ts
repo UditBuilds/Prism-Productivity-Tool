@@ -12,9 +12,11 @@ import {
   LEARNING_SEARCH_MODEL,
   LEARNING_WRITE_MODEL,
   LESSON_BUDGET,
+  LESSON_MAX_WORDS,
   MAIN_SOURCE_EXCERPT_CHARS,
   MAX_CANDIDATE_PAGES,
   MAX_COPIER_TRIES,
+  MAX_RETRIES_PER_LESSON,
   MIN_ANSWER_TOKENS,
   MIN_SOURCE_WORDS,
   SEARCH_MAX_TOKENS,
@@ -24,11 +26,14 @@ import {
 import { isLocalDevRuntime } from "@/lib/learning/dev-override";
 import {
   checkShape,
+  explanationWords,
+  lengthAtEnd,
   marksFor,
   NO_MARKS,
   renderLessonBody,
   sentencesOf,
   settleAfterFix,
+  shortMark,
   withChanges,
   type Changes,
   type Explanation,
@@ -528,9 +533,21 @@ export async function advanceTopic(
     rewriteReason: claimed.rewrite_reason as "wrong" | "redo" | null,
     exampleRules: rulesText,
   });
-  // Two separate one-time retries (Udit, 2026-10-12): Groq refusing the JSON
-  // at the schema check, and an example that breaks the rules. A cut-off
-  // answer is never retried.
+  // Retries (Udit, 2026-10-12): Groq refusing the writer's JSON at the schema
+  // check, an example that breaks the rules, and G2 listing no words — each
+  // kind at most once (G2's once per pass), and all of them together at most
+  // MAX_RETRIES_PER_LESSON (gate 7). A cut-off answer is never retried; the
+  // one fix is not a retry.
+  const retries: { kind: string }[] = [];
+  trace.stages.retries = retries;
+  /** Take one of the lesson's retries; false when they are spent. */
+  const takeRetry = (kind: string): boolean => {
+    if (retries.length >= MAX_RETRIES_PER_LESSON) return false;
+    retries.push({ kind });
+    return true;
+  };
+  const capMessage = (kind: string) =>
+    `The lesson needed a third retry (${kind}) after ${retries.map((r) => r.kind).join(" and ")}, and a lesson gets at most ${MAX_RETRIES_PER_LESSON}, so it was not saved. Try again.`;
   const notes: string[] = [];
   const writerAttempts: unknown[] = [];
   trace.stages.writerAttempts = writerAttempts;
@@ -553,6 +570,7 @@ export async function advanceTopic(
         return wait;
       }
       if (err instanceof BadAnswerError && err.answer.kind === "format" && !formatRetried) {
+        if (!takeRetry("the writer's JSON was refused")) return fail("ai_error", capMessage("the writer's JSON was refused"));
         formatRetried = true;
         writerAttempts.push({ refused: err.answer.reason, raw: err.answer.raw });
         notes.push(WRITER_FORMAT_RETRY);
@@ -567,6 +585,7 @@ export async function advanceTopic(
       writerAttempts.push({ example: answer.value.example, check });
       if (!check.ok) {
         if (!exampleRetried) {
+          if (!takeRetry("the example broke a rule")) return fail("ai_error", capMessage("the example broke a rule"), check.problems);
           exampleRetried = true;
           notes.push(writerExampleRetry(check.problems));
           continue;
@@ -591,8 +610,9 @@ export async function advanceTopic(
     trace.stages.example = { lines, aiOutput: draft.example.output, codeOutput: byCode, outputBy: source.outputBy };
   }
 
-  // ── 4. Shape, G1, G2.
-  const shape = checkShape(explanation, source);
+  // ── 4. Shape, G1, G2. Length is counted once, at the end (step 6).
+  trace.stages.length = { firstDraft: explanationWords(explanation) };
+  const shape = checkShape(explanation, source, false);
   if (shape.length > 0) {
     trace.stages.shape = describe(shape);
     return fail("ai_error", `The AI's explanation did not have the lesson's shape, so it was not saved: ${describe(shape).join("; ")}. Try again.`, describe(shape));
@@ -624,7 +644,10 @@ export async function advanceTopic(
           return fail("ai_error", `The AI's meaning check could not be used: ${read.bad}. The explanation was not saved. Try again.`);
         }
         if (source.code !== null && answer.value.words.length === 0) {
-          if (attempt === 1) continue;
+          if (attempt === 1) {
+            if (!takeRetry(`G2 listed no words (${pass})`)) return fail("ai_error", capMessage(`G2 listed no words (${pass})`));
+            continue;
+          }
           return fail("ai_error", "The AI's meaning check listed no technical words, twice, although the lesson shows code, so the explanation was not saved. Try again.");
         }
         return read;
@@ -692,7 +715,7 @@ export async function advanceTopic(
     const fixed = withChanges(explanation, changes);
     // The whole draft after the fix, so a step that fails on it can still be read (Udit, 2026-10-12).
     trace.stages.fixedDraft = fixed.explanation;
-    const shapeAfter = checkShape(fixed.explanation, source);
+    const shapeAfter = checkShape(fixed.explanation, source, false);
     if (shapeAfter.length > 0) {
       return fail("ai_error", `After its one fix the explanation did not have the lesson's shape, so it was not saved: ${describe(shapeAfter).join("; ")}. Try again.`, describe(shapeAfter));
     }
@@ -728,7 +751,18 @@ export async function advanceTopic(
     attempts = 2;
   }
 
-  // ── 6. Save: the lesson once, with its one source.
+  // ── 6. The length rule, once, on the final explanation (Udit, 2026-10-12,
+  // gate 7): the fix adds the sentences that explain words, so a draft short
+  // before it may not be after it. Over the most still blocks; under the
+  // least is saved with a mark at the top, not blocked.
+  const length = lengthAtEnd(explanation);
+  trace.stages.length = { ...(trace.stages.length as object), final: length.words, verdict: length.verdict };
+  if (length.verdict === "long") {
+    return fail("ai_error", `The explanation is ${length.words} words after its checks and its fix; at most ${LESSON_MAX_WORDS} are allowed, so it was not saved. Try again.`);
+  }
+  if (length.verdict === "short") marks = { ...marks, top: [shortMark(length.words)] };
+
+  // ── 7. Save: the lesson once, with its one source.
   if (!provenance.isStorable(found.page.url)) {
     return fail("sources_unreachable", "The source page's address could not be stored, so the lesson was not saved. Try again.");
   }

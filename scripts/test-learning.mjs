@@ -695,7 +695,7 @@ console.log("\nthe source block: chosen by number, shown word for word (passages
       'it refers to something not shown ("section")',
       "it is not a full sentence: a heading, a label or a signature line",
       "it is not a full sentence: a heading, a label or a signature line",
-      null,
+      'it refers to something not shown ("each column")',
     ]
   );
   eq(
@@ -1305,6 +1305,64 @@ console.log("\nthe example on its way through the writer, G1, G2 and the body (g
     "paragraph",
   ]);
   eq("…an output the AI wrote is labelled 'Expected output, written by AI'", types({ ...SHOWN, outputBy: "ai" })[4], "i:Expected output, written by AI:");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+console.log("\ngate 7: length at the end, the short mark, table pointers, one retry limit (Udit, 2026-10-12)");
+{
+  eq("a lesson gets at most 2 retries in all", constants.MAX_RETRIES_PER_LESSON, 2);
+  const lesson = (meaning) => ({ meaning: [{ sentences: [FILL(meaning)] }], walkthrough: [1, 2, 3, 4].map((line) => ({ line, sentences: [FILL(10)] })), closing: FILL(10) });
+  eq(
+    "the shape check can leave length out (before and during the fix): 136 words has no shape problem then",
+    [explanation.checkShape(lesson(86), SOURCE, false), explanation.checkShape(lesson(86), SOURCE).map((p) => p.reason)],
+    [[], ["it is 136 words; it must be 150 to 500"]]
+  );
+  eq(
+    "the length rule, once at the end: short, fine, too long",
+    [explanation.lengthAtEnd(lesson(86)), explanation.lengthAtEnd(lesson(100)), explanation.lengthAtEnd(lesson(451))],
+    [{ words: 136, verdict: "short" }, { words: 150, verdict: "ok" }, { words: 501, verdict: "long" }]
+  );
+  eq("the short mark says the count", explanation.shortMark(136), "Shorter than usual: 136 words");
+  const g2 = (sentence, verdict) => ({ sentence, check: "G2", verdict, text: "", reason: `it is ${verdict}` });
+  const twoMeaning = { meaning: [{ sentences: [FILL(80), FILL(30)] }], walkthrough: [1, 2, 3, 4].map((line) => ({ line, sentences: [FILL(10)] })), closing: FILL(10) };
+  eq(
+    "mark mode off: removing a sentence that takes it under 150 no longer fails there (length is counted at the end)",
+    (({ kind, explanation: e2 }) => [kind, explanation.explanationWords(e2)])(explanation.settleAfterFix(twoMeaning, [g2(2, "filler")], SOURCE, false)),
+    ["save", 130]
+  );
+
+  const tiny = { meaning: [{ sentences: ["A quote."] }], walkthrough: [{ line: 1, sentences: ["It shows the text."] }], closing: "So print shows text." };
+  const SHOWN = { passages: ["The print() function writes the value it is given."], code: "print('Hello')", output: "Hello", outputBy: "code", words: 9 };
+  const short = markdownBlocks.parseMarkdownBlocks(explanation.renderLessonBody(SHOWN, tiny, { ...explanation.NO_MARKS, top: [explanation.shortMark(136)] }));
+  eq(
+    "a short lesson: the mark is the very first thing, before the quote, and it brings no checker note",
+    [short[0].type, short[0].content[0].type, short[0].content[0].children.map((n) => n.value).join(""), short[1].type, short.some((b) => JSON.stringify(b).includes(explanation.DOUBT_LABEL))],
+    ["paragraph", "bold", "[Shorter than usual: 136 words]", "heading", false]
+  );
+  eq("…a lesson of normal length has no mark", markdownBlocks.parseMarkdownBlocks(explanation.renderLessonBody(SHOWN, tiny))[0].type, "heading");
+
+  eq(
+    "table and figure pointers are dropped too: gate 6's real 'each column' sentence first",
+    [
+      "(Note that the one space between each column was added by the way print() works: it always adds spaces between its arguments.)",
+      "The table lists every escape code.",
+      "These values are printed with two decimals.",
+      "The figure shows the steps in order.",
+      "The output above has two lines.",
+    ].map((t) => passages.refersElsewhere(t, false)),
+    [
+      'it refers to something not shown ("each column")',
+      'it refers to something not shown ("The table")',
+      'it refers to something not shown ("These values")',
+      'it refers to something not shown ("The figure")',
+      'it refers to something not shown ("above")',
+    ]
+  );
+  ok(
+    "…and the copier is told to avoid a sentence that only makes sense next to something not shown",
+    /never one that only makes sense next to something the lesson does not show \(one about "each column", "the table", "these values", "the output above" or "the figure"\)/.test(passages.COPIER_SYSTEM_PROMPT)
+  );
+  eq("…while 'the output' and 'the result' alone stay: the explanation needs them", [passages.refersElsewhere("The print() function writes the output to the screen.", false), passages.refersElsewhere("The result is shown on the screen.", false)], [null, null]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
