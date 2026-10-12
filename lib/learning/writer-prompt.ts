@@ -1,28 +1,40 @@
 import type { ObjectSchema } from "@/lib/learning/answers";
 import { LESSON_MAX_WORDS, LESSON_MIN_WORDS } from "@/lib/learning/constants";
-import { linesToWalk, type Changes, type Problem, type Sentence } from "@/lib/learning/explanation";
+import { linesToWalk, type Changes, type Explanation, type Problem, type Sentence } from "@/lib/learning/explanation";
 import type { SourceBlock } from "@/lib/learning/passages";
 import { stripWebAddresses } from "@/lib/learning/sources";
 
 /**
- * The AI explanation's writer (gpt-oss-120b): instructions, schema and input.
- * Pure strings, kept apart from the Groq call so they can be read (and
- * diffed) on their own.
+ * The AI writer (gpt-oss-120b): instructions, schema and input. Pure
+ * strings, kept apart from the Groq call so they can be read (and diffed) on
+ * their own.
  *
- * The writer is given only what the reader is shown as the source (Udit,
- * 2026-10-10): the 1-3 passages and the code example — never a web address,
- * a site name or the rest of the page — so everything it may state is
- * checkable against text right above the explanation (G1, G2).
+ * The writer is given only the quote the reader is shown (Udit, 2026-10-10):
+ * the 1-3 passages — never a web address, a site name or the rest of the
+ * page — so everything it may state is checkable against text right above
+ * the explanation (G1, G2). Since gate 6 (2026-10-12) it also writes the
+ * lesson's example, 1-3 lines, under rules code then checks (example.ts):
+ * the rules it is told are built from the same settings the check uses.
  *
- * Everything from outside Prism — the passages, the code and the learner's
- * own "This is wrong" note — is fenced in tags and named as data
- * (decision 12). The tags are stripped from inside the fenced text first, so
- * a page cannot close its own fence and start writing instructions.
+ * Everything from outside Prism — the passages and the learner's own "This is
+ * wrong" note — is fenced in tags and named as data (decision 12). The tags
+ * are stripped from inside the fenced text first, so a page cannot close its
+ * own fence and start writing instructions.
  */
 
+/** The example comes first: the walkthrough explains its lines (strict mode writes fields in this order). */
 export const WRITER_SCHEMA: ObjectSchema = {
   type: "object",
   properties: {
+    example: {
+      type: "object",
+      properties: {
+        lines: { type: "array", items: { type: "string" } },
+        output: { type: "array", items: { type: "string" } },
+      },
+      required: ["lines", "output"],
+      additionalProperties: false,
+    },
     meaning: {
       type: "array",
       items: {
@@ -46,26 +58,32 @@ export const WRITER_SCHEMA: ObjectSchema = {
     },
     closing: { type: "string" },
   },
-  required: ["meaning", "walkthrough", "closing"],
+  required: ["example", "meaning", "walkthrough", "closing"],
   additionalProperties: false,
 };
+
+/** The writer's answer: its example, then the explanation. */
+export interface WriterAnswer extends Explanation {
+  example: { lines: string[]; output: string[] };
+}
 
 /**
  * Length (Udit, 2026-10-10): as long as the idea needs, 150-500 words. The
  * first gate threw away a usable 219-word explanation under a 300-word floor,
  * and sentence counts to reach the floor produced padding.
  */
-export const WRITER_SYSTEM_PROMPT = `You explain ONE idea to a smart adult who has never written code. You get the SOURCE: 1 to 3 passages quoted word for word from one documentation page and, when there is one, a CODE example from the same page with its lines numbered. The reader sees the SOURCE right above your explanation, and your explanation is marked as written by AI.
+export const WRITER_SYSTEM_PROMPT = `You explain ONE idea to a smart adult who has never written code. You get the SOURCE: 1 to 3 passages quoted word for word from one page. The reader sees the SOURCE first, then your example under "Example written by AI", then your explanation, which is marked as written by AI.
 
 Answer with a JSON object:
+- example: lines: a tiny example of the STEP's idea that you write yourself, 1 to 3 lines of Python typed the way you would type them in a file, following every EXAMPLE RULE; output: the lines it prints, exactly. Write text in single quotes, in the example and anywhere else you write code. An empty example (no lines, no output) only when it says EXAMPLE: none.
 - meaning: what the idea means, in one or more short paragraphs. Each paragraph is a list of sentences, one sentence per item. Do not re-explain the example here: the walkthrough does that.
-- walkthrough: the CODE line by line, top to bottom: one item for EVERY line listed under LINES TO WALK THROUGH, with "line" set to that number and one or two sentences saying what the line does or shows. An empty list when there is no CODE.
+- walkthrough: your example line by line, top to bottom: one item for EVERY line of example.lines, with "line" set to its number (1 for the first) and one or two sentences saying what the line does or shows. An empty list when there is no example.
 - closing: one sentence that sums up the idea.
 
 Rules:
-- As long as the idea needs, and no longer: ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS} words in all.
-- Plain words. Every technical word or symbol in the SOURCE passages, the CODE or your own sentences is explained in plain words at or before its first use in your explanation, even one the course has not taught yet; one short sentence is enough. Explain the ones the SOURCE passages and CODE use in the meaning, before the walkthrough. If the CODE has >>>, say what it is (the prompt Python shows when it waits for you to type) and that you do not type it. Analogies are welcome.
-- Every number, piece of code, and function or library name you write must appear in the SOURCE, or be the value a CODE line produces. Write code in backticks, exactly as the CODE writes it.
+- As long as the idea needs, and no longer: ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS} words in all, the example not counted.
+- Plain words. Every technical word or symbol in the SOURCE passages, your example or your own sentences is explained in plain words at or before its first use in your explanation, even one the course has not taught yet; one short sentence is enough. Explain the ones the SOURCE passages and your example use in the meaning, before the walkthrough. Analogies are welcome.
+- Every number, piece of code, and function or library name you write must appear in the SOURCE or in your example, or be the value your example produces. Write code in backticks, exactly as your example writes it.
 - State no technical fact the SOURCE does not support.
 - No pep talk, and no sentence that says nothing.
 - Never write a line number, a link or a web address in a sentence. If you need to mention the page, call it "the page listed under Sources".
@@ -76,19 +94,24 @@ function fence(tag: string, body: string): string {
   return body.replace(new RegExp(`</?${tag}\\b[^>]*>`, "gi"), "");
 }
 
-/** The source as the writer (and the fix turn) sees it: passages, then the code numbered by line. */
+/** The example as code checked it, numbered by line, for the fix turn (the writer keeps no memory); null when there is none. */
+function exampleSection(source: SourceBlock): string | null {
+  if (source.code === null) return null;
+  const numbered = source.code
+    .split("\n")
+    .map((l, i) => `${i + 1}| ${l}`)
+    .join("\n");
+  const parts = [`YOUR EXAMPLE, as code checked it (keep it exactly; do not change it):\n<code>\n${numbered}\n</code>`];
+  if (source.output) parts.push(`ITS OUTPUT${source.outputBy === "code" ? ", worked out by code" : ""}:\n${source.output}`);
+  parts.push(`LINES TO WALK THROUGH: ${linesToWalk(source.code).join(", ")}`);
+  return parts.join("\n");
+}
+
+/** The quote as the writer sees it, and the example once there is one. */
 function sourceSection(source: SourceBlock): string {
   const parts = ["SOURCE:", ...source.passages.map((p, i) => `<passage n="${i + 1}">${fence("passage", p)}</passage>`)];
-  if (source.code !== null) {
-    const numbered = source.code
-      .split("\n")
-      .map((l, i) => `${i + 1}| ${l}`)
-      .join("\n");
-    parts.push(`CODE:\n<code>\n${fence("code", numbered)}\n</code>`);
-    parts.push(`LINES TO WALK THROUGH: ${linesToWalk(source.code).join(", ")}`);
-  } else {
-    parts.push("CODE: none");
-  }
+  const example = exampleSection(source);
+  if (example) parts.push(example);
   return parts.join("\n");
 }
 
@@ -99,6 +122,8 @@ export function writerUserMessage(input: {
   source: SourceBlock;
   learnerNote: string | null;
   rewriteReason: "wrong" | "redo" | null;
+  /** The example's rules (example.ts exampleRulesText), or null when the lesson shows no example. */
+  exampleRules: string | null;
 }): string {
   const parts = [
     `TOPIC: ${stripWebAddresses(input.topicTitle)}`,
@@ -114,7 +139,21 @@ export function writerUserMessage(input: {
     parts.push("The learner asked for this explanation to be written again from the SOURCE.");
   }
   parts.push(sourceSection(input.source));
+  parts.push(
+    input.exampleRules === null
+      ? "EXAMPLE: none: give empty lines and output lists, and an empty walkthrough."
+      : `EXAMPLE RULES (code checks every one; an example that breaks one is sent back once):\n${input.exampleRules}`
+  );
   return parts.filter(Boolean).join("\n\n");
+}
+
+/** Added when Groq refused the last answer at the schema check (gate 5: a quote inside code broke the JSON). */
+export const WRITER_FORMAT_RETRY =
+  "Your last answer was not valid JSON for the schema, so it could not be read. Answer again. Write text in the example and in any code in single quotes, so nothing in your JSON strings needs escaping.";
+
+/** Added when code's check refused the example: the one retry, with every reason. */
+export function writerExampleRetry(problems: string[]): string {
+  return `Your example broke the EXAMPLE RULES, so it was sent back:\n${problems.map((p) => `- ${p}`).join("\n")}\nWrite the whole answer again with an example that keeps every rule.`;
 }
 
 // ─── the one fix ──────────────────────────────────────────────────────────
@@ -176,6 +215,9 @@ export function writerFixMessage(
 ): string {
   const codeLines = source.code === null ? [] : source.code.split("\n");
   const out: string[] = [];
+  // The first message holds only the quote: the example goes again here, to keep.
+  const example = exampleSection(source);
+  if (example) out.push(example);
   if (flagged.length > 0) {
     out.push(
       "Some sentences of your explanation failed a check. Write a replacement for EVERY sentence below, using only the SOURCE above and the same rules. Keep each one's place and job. An empty string removes a sentence, except where it says MUST STAY: write a better one there."

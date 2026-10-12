@@ -3,10 +3,8 @@ import Groq, { APIConnectionTimeoutError, APIError } from "groq-sdk";
 import { AnswerError, readAnswer, type ObjectSchema } from "@/lib/learning/answers";
 import {
   COPY_TIMEOUT_MS,
-  FIT_TIMEOUT_MS,
   JUDGE_TIMEOUT_MS,
   LEARNING_COPY_MODEL,
-  LEARNING_FIT_MODEL,
   LEARNING_JUDGE_MODEL,
   LEARNING_SEARCH_MODEL,
   LEARNING_WRITE_MODEL,
@@ -15,8 +13,6 @@ import {
   SEARCH_TIMEOUT_MS,
   WRITE_TIMEOUT_MS,
 } from "@/lib/learning/constants";
-import type { Explanation } from "@/lib/learning/explanation";
-import { FIT_SCHEMA, FIT_SYSTEM_PROMPT, type FitAnswer } from "@/lib/learning/fit";
 import { classifyGroqFailure, jsonAnswerFailure, type GroqFailure } from "@/lib/learning/groq-errors";
 import { JUDGE_SCHEMA, JUDGE_SYSTEM_PROMPT, type JudgeAnswer } from "@/lib/learning/judge";
 import { COPIER_SCHEMA, COPIER_SYSTEM_PROMPT, type CopierAnswer } from "@/lib/learning/passages";
@@ -32,7 +28,7 @@ import {
   type PlanAnswer,
 } from "@/lib/learning/plan";
 import { harvestSearchResults, type SearchHarvest } from "@/lib/learning/sources";
-import { FIX_SCHEMA, WRITER_SCHEMA, WRITER_SYSTEM_PROMPT, type FixAnswer } from "@/lib/learning/writer-prompt";
+import { FIX_SCHEMA, WRITER_SCHEMA, WRITER_SYSTEM_PROMPT, type FixAnswer, type WriterAnswer } from "@/lib/learning/writer-prompt";
 
 /**
  * Learning's Groq calls: plan, search, copy, write, fix, judge. SERVER-ONLY
@@ -362,28 +358,9 @@ export function copySource(userMessage: string, maxTokens: number): Promise<Json
   );
 }
 
-/**
- * The fit check (fit.ts): gpt-oss-20b judges every example of every fetched
- * page against the plan. Logged as kind "judge" on the 20b model — see
- * LEARNING_FIT_MODEL.
- */
-export function checkFit(userMessage: string, maxTokens: number): Promise<JsonCall<FitAnswer>> {
-  return jsonCall<FitAnswer>(
-    "judge",
-    LEARNING_FIT_MODEL,
-    "the fit check's answer",
-    [
-      { role: "system", content: FIT_SYSTEM_PROMPT },
-      { role: "user", content: userMessage },
-    ],
-    FIT_SCHEMA,
-    { name: "example_fit", temperature: 0, maxTokens, timeoutMs: FIT_TIMEOUT_MS }
-  );
-}
-
-/** The AI explanation (gpt-oss-120b), from the shown source only. */
-export function writeExplanation(userMessage: string, maxTokens: number): Promise<JsonCall<Explanation>> {
-  return jsonCall<Explanation>(
+/** The AI example and explanation (gpt-oss-120b), from the quote only. */
+export function writeExplanation(userMessage: string, maxTokens: number): Promise<JsonCall<WriterAnswer>> {
+  return jsonCall<WriterAnswer>(
     "write",
     LEARNING_WRITE_MODEL,
     "the writer's answer",

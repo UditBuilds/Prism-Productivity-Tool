@@ -318,7 +318,8 @@ interface Evidence {
 }
 
 export function evidenceOf(source: SourceBlock): Evidence {
-  const joined = [...source.passages, source.code ?? ""].join("\n");
+  // Gate 6: the code is the AI's example, and its output (worked out by code, or written by AI) is shown too.
+  const joined = [...source.passages, source.code ?? "", source.output ?? ""].join("\n");
   return {
     text: normalize(joined),
     names: namesIn(joined),

@@ -246,6 +246,12 @@ export function settleAfterFix(
 // ─── the stored body ──────────────────────────────────────────────────────
 
 export const SOURCE_HEADING = "From the source, word for word";
+/** Gate 6 (Udit, 2026-10-12): the example is the writer's, checked by code, and marked so. */
+export const EXAMPLE_HEADING = "Example written by AI";
+/** Over the output when code worked it out (only print() of plain text, example.ts outputByCode). */
+export const OUTPUT_BY_CODE = "Output, worked out by code, not by AI:";
+/** Over the output when the AI wrote it. */
+export const OUTPUT_BY_AI = "Expected output, written by AI:";
 export const AI_HEADING = "AI explanation";
 /** Under AI_HEADING: the whole explanation is marked as AI, so no sentence carries its own AI mark. */
 export const AI_NOTE = "Written by AI to explain the source above. It is not part of the page listed under Sources.";
@@ -310,7 +316,8 @@ function inlineCode(line: string): string {
 
 /**
  * The lesson body, as lib/markdown-blocks.ts reads it and LessonBody draws
- * it: the source block (each passage a quote, then the code), then the AI
+ * it: the quote (each passage a quote), the example written by AI under its
+ * own heading with its output and who wrote that output, then the AI
  * explanation under its own heading and note — its paragraphs, the
  * walk-through as a list led by the code line each item explains, and the
  * closing line.
@@ -324,7 +331,10 @@ export function renderLessonBody(source: SourceBlock, e: Explanation, marks: Mar
   const out: string[] = [`## ${SOURCE_HEADING}`];
   for (const p of source.passages) out.push(`> ${p}`);
   const codeLines = source.code === null ? [] : source.code.split("\n");
-  if (source.code !== null) out.push("```\n" + source.code + "\n```");
+  if (source.code !== null) {
+    out.push(`## ${EXAMPLE_HEADING}`, "```\n" + source.code + "\n```");
+    if (source.output) out.push(`*${source.outputBy === "code" ? OUTPUT_BY_CODE : OUTPUT_BY_AI}*`, "```\n" + source.output + "\n```");
+  }
   out.push(`## ${AI_HEADING}`, `*${AI_NOTE}*`);
   if (marks.start.length > 0 || marks.after.size > 0) out.push(`*${DOUBT_NOTE}*`);
   if (marks.start.length > 0) out.push(marks.start.map(doubtMark).join(" "));

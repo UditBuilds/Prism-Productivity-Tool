@@ -38,23 +38,6 @@ export const JUDGE_TIMEOUT_MS = 25_000;
 export const LEARNING_COPY_MODEL = "openai/gpt-oss-20b";
 export const COPY_TIMEOUT_MS = 20_000;
 
-/**
- * The fit check (fit.ts, Udit, 2026-10-12): one call per search that judges
- * the examples of every fetched page against the plan — the step's own idea
- * and earlier steps' only. On 20b, so the 120b budget stays the writer's and
- * G2's. Logged in learning_ai_calls as kind "judge" with this model: the
- * kind column's CHECK allows only plan/search/write/judge, and G2 (the only
- * other judge) runs on 120b, so model + kind name it.
- */
-export const LEARNING_FIT_MODEL = "openai/gpt-oss-20b";
-export const FIT_TIMEOUT_MS = 25_000;
-/**
- * Examples per page the fit check judges: the shortest ones about the step.
- * 10, not fewer: on realpython.com/python-print/ the example that fits
- * "Print a greeting" is the 8th shortest of 120 about the step (measured
- * 2026-10-12). About 900 prompt tokens of code per search.
- */
-export const SCREEN_EXAMPLES_PER_PAGE = 10;
 
 /**
  * max_tokens per call: what each answer needs plus room for reasoning, which
@@ -65,7 +48,6 @@ export const SCREEN_EXAMPLES_PER_PAGE = 10;
  */
 export const SEARCH_MAX_TOKENS = 800;
 export const COPY_MAX_TOKENS = 1_500;
-export const FIT_MAX_TOKENS = 2_500;
 export const WRITE_MAX_TOKENS = 3_500;
 export const FIX_MAX_TOKENS = 2_000;
 export const JUDGE_MAX_TOKENS = 2_500;
@@ -92,10 +74,9 @@ export const MAX_SOURCE_PASSAGES = 3;
 export const SOURCE_MAX_WORDS = 130;
 /**
  * Fewer quoted words than this is not enough to teach from: try the next
- * example. 20, not 40 (Udit, 2026-10-12): the copier now reads only the
- * example's own paragraph and the one after it, and realpython.com's
- * fitting print example has 24 words there; the AI explanation (150-500
- * words) does the rest of the teaching.
+ * page. 20, not 40 (Udit, 2026-10-12, kept for gate 6): a short quote that
+ * stands on its own beats a long one that points at what the lesson does
+ * not show; the AI explanation (150-500 words) does the rest of the teaching.
  */
 export const MIN_SOURCE_WORDS = 20;
 /** A page whose relevant part has fewer usable words than this is not sent to the copier at all. */
@@ -103,8 +84,10 @@ export const MIN_PAGE_WORDS = 100;
 /** A longer code example is no longer "one short example". */
 export const MAX_EXAMPLE_CODE_LINES = 12;
 /**
- * Fitting examples the copier may be asked to quote around in one lesson,
- * best first: the next is tried only when the passage around one is too thin.
+ * Pages the copier may be asked about in one search, best first: the next is
+ * tried only when the last gave too little to quote. Per search, not per
+ * lesson, so thin documentation pages never use up the open web's tries (gate
+ * 2's failure).
  */
 export const MAX_COPIER_TRIES = 3;
 
