@@ -90,8 +90,14 @@ export const MIN_ANSWER_TOKENS = 600;
  */
 export const MAX_SOURCE_PASSAGES = 3;
 export const SOURCE_MAX_WORDS = 130;
-/** Fewer quoted words than this is not enough to teach from: try the next page. */
-export const MIN_SOURCE_WORDS = 40;
+/**
+ * Fewer quoted words than this is not enough to teach from: try the next
+ * example. 20, not 40 (Udit, 2026-10-12): the copier now reads only the
+ * example's own paragraph and the one after it, and realpython.com's
+ * fitting print example has 24 words there; the AI explanation (150-500
+ * words) does the rest of the teaching.
+ */
+export const MIN_SOURCE_WORDS = 20;
 /** A page whose relevant part has fewer usable words than this is not sent to the copier at all. */
 export const MIN_PAGE_WORDS = 100;
 /** A longer code example is no longer "one short example". */
@@ -101,9 +107,7 @@ export const MAX_EXAMPLE_CODE_LINES = 12;
  * best first: the next is tried only when the passage around one is too thin.
  */
 export const MAX_COPIER_TRIES = 3;
-/** What the copier reads around the chosen example: this many characters of paragraphs before it, and after it. */
-export const SECTION_BEFORE_CHARS = 2_500;
-export const SECTION_AFTER_CHARS = 800;
+
 
 /**
  * The most tokens one user's learning may spend in any rolling 24 hours,

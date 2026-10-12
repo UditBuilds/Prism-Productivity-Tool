@@ -4,8 +4,6 @@ import {
   MAX_SOURCE_PASSAGES,
   MIN_PAGE_WORDS,
   MIN_SOURCE_WORDS,
-  SECTION_AFTER_CHARS,
-  SECTION_BEFORE_CHARS,
   SOURCE_MAX_WORDS,
 } from "@/lib/learning/constants";
 import { isMenuLike, textUnits } from "@/lib/learning/html-text";
@@ -205,29 +203,91 @@ export function screenExamples(page: NumberedPage, terms: string[], max: number)
 }
 
 /**
- * What the copier reads for one chosen example: the page's paragraphs just
- * before it (up to `before` characters, at least one) and just after it (up
- * to `after`), and the example itself. Numbers stay the page's own.
+ * A paragraph that is not prose: a code block's caption or a site's button
+ * text ("Language: Python" above every example on realpython.com, "Output:",
+ * "Remove ads"), or anything under 5 words.
  */
-export function sectionAround(page: NumberedPage, code: PageCode, before = SECTION_BEFORE_CHARS, after = SECTION_AFTER_CHARS): NumberedPage {
+export function isCaption(text: string): boolean {
+  return wordCount(text) < 5 || /^(?:language|output|result|shell|console|terminal|remove ads|copy code|copied)\b/i.test(text.trim());
+}
+
+/** Phrases that point back to a part of the page the lesson does not show: dropped wherever they are. */
+const POINTS_BACK =
+  /\bas (?:we|you)(?:'ve| have)? (?:did|saw|seen|showed|shown|learned|discussed|mentioned)\b|\bearlier\b|\bprevious(?:ly)?\b|\babove\b|\baforementioned\b|\bas mentioned\b|\bin the (?:last|previous) (?:section|chapter)\b/gi;
+
+/**
+ * Phrases that point on to another example (Udit, 2026-10-12: "the
+ * following example" and the like). Dropped in the paragraph AFTER the
+ * example, where they are about a different one; in the example's own
+ * paragraph, "the following example" is the one shown.
+ */
+const POINTS_ON = /\bthe (?:following|next) (?:examples?|code|snippets?|listings?|programs?)\b|^example \d+\b|\bin the next (?:section|chapter)\b/gi;
+
+/**
+ * The phrases in a text that point elsewhere on the page: back always, and on
+ * to another example when `after` (the paragraph after the shown example).
+ * "below" is not one: the lesson shows the example below the passages.
+ */
+export function pointsElsewhere(text: string, after = false): string[] {
+  const back = Array.from(text.matchAll(POINTS_BACK), (m) => m[0]);
+  return after ? [...back, ...Array.from(text.matchAll(POINTS_ON), (m) => m[0])] : back;
+}
+
+export interface Section {
+  /** What the copier reads: the two paragraphs' sentences, a dropped one marked unusable, and the example. */
+  view: NumberedPage;
+  /** The example's own paragraph, and the one after it; null when there is none. */
+  own: number | null;
+  after: number | null;
+  /** Sentences not offered to the copier, and why. */
+  dropped: { id: number; text: string; why: string }[];
+}
+
+/**
+ * What the copier reads for one chosen example (Udit, 2026-10-12): ONLY the
+ * example's own paragraph — the nearest prose paragraph before it, skipping
+ * captions — and the next prose paragraph after it, never across another
+ * code block. Gate 4 read 2,500 characters back and quoted sentences about a
+ * different example. A sentence that points back is dropped from either
+ * paragraph; in the one after, so is one that points on to another example,
+ * or that ends with a colon (it introduces the next code block).
+ */
+export function sectionAround(page: NumberedPage, code: PageCode): Section {
   const paras = new Map<number, PageSentence[]>();
   for (const s of page.sentences) paras.set(s.para, [...(paras.get(s.para) ?? []), s]);
-  const size = (p: number) => (paras.get(p) ?? []).reduce((n, s) => n + s.text.length + 1, 0);
-  const keep = new Set<number>();
-  let used = 0;
-  for (let p = code.afterPara; p >= 1; p--) {
-    if (keep.size > 0 && used + size(p) > before) break;
-    keep.add(p);
-    used += size(p);
-  }
-  used = 0;
+  const textOf = (p: number) => (paras.get(p) ?? []).map((s) => s.text).join(" ");
+  const others = page.code.filter((c) => c.id !== code.id);
   const lastPara = page.sentences.reduce((m, s) => Math.max(m, s.para), 0);
-  for (let p = code.afterPara + 1; p <= lastPara; p++) {
-    if (used + size(p) > after) break;
-    keep.add(p);
-    used += size(p);
+
+  let own: number | null = null;
+  for (let p = code.afterPara; p >= 1 && p >= code.afterPara - 3; p--) {
+    if (others.some((c) => c.id < code.id && c.afterPara >= p)) break;
+    if (paras.has(p) && !isCaption(textOf(p))) {
+      own = p;
+      break;
+    }
   }
-  return { sentences: page.sentences.filter((s) => keep.has(s.para)), code: [code] };
+  let after: number | null = null;
+  for (let p = code.afterPara + 1; p <= lastPara && p <= code.afterPara + 3; p++) {
+    if (others.some((c) => c.id > code.id && c.afterPara < p)) break;
+    if (paras.has(p) && !isCaption(textOf(p))) {
+      after = p;
+      break;
+    }
+  }
+
+  const dropped: Section["dropped"] = [];
+  const sentences: PageSentence[] = [];
+  for (const p of [own, after]) {
+    if (p === null) continue;
+    for (const s of paras.get(p) ?? []) {
+      const phrases = pointsElsewhere(s.text, p === after);
+      const why = phrases.length ? `it points elsewhere ("${phrases.join('", "')}")` : p === after && /:\s*$/.test(s.text) ? "it ends with a colon: it introduces the next example" : null;
+      if (why && s.usable) dropped.push({ id: s.id, text: s.text, why });
+      sentences.push(why ? { ...s, usable: false } : s);
+    }
+  }
+  return { view: { sentences, code: [code] }, own, after, dropped };
 }
 
 /**
@@ -259,7 +319,7 @@ export const COPIER_SCHEMA: ObjectSchema = {
 
 export const COPIER_SYSTEM_PROMPT = `You choose what a beginner's lesson quotes from ONE page. You write nothing yourself: you answer with numbers only.
 
-You get a STEP (one idea a smart adult who has never written code must learn), the EXAMPLE the lesson will show (already chosen, or "none"), and the PAGE around it, cut into numbered sentences [S1], [S2], ….
+You get a STEP (one idea a smart adult who has never written code must learn), the EXAMPLE the lesson will show (already chosen, or "none"), and the PAGE around it: the paragraph just before the example and the one just after, cut into numbered sentences [S1], [S2], ….
 
 Answer with sentences: the numbers of the sentences that best explain the STEP's one idea and what the EXAMPLE shows, at most ${SOURCE_MAX_WORDS} words in all, as 1 to ${MAX_SOURCE_PASSAGES} runs of consecutive sentences. Prefer sentences that make sense on their own: avoid one that points to another part of the page ("as we did earlier", "the example above", "as mentioned before") when another sentence says the same. Never choose a sentence that is about neither the STEP nor the EXAMPLE.
 
@@ -289,20 +349,6 @@ export function copierUserMessage(input: { stepTitle: string; goal: string; site
   return [`STEP: ${input.stepTitle}`, input.goal ? `GOAL: ${input.goal}` : "", `EXAMPLE: ${example}`, `PAGE:\n<page site="${site}">\n${body}\n</page>`]
     .filter(Boolean)
     .join("\n\n");
-}
-
-/**
- * Words that send the reader to another part of the page, which the lesson
- * does not show (Udit, 2026-10-12: "as we did earlier in the calculator
- * examples" pointed at a page he never saw). "below" is not one: the lesson
- * shows the example below the passages.
- */
-const POINTS_ELSEWHERE =
-  /\b(?:as (?:we|you)(?:'ve| have)? (?:did|saw|seen|showed|shown|learned|discussed|mentioned)|earlier|previous(?:ly)?|above|aforementioned|as mentioned|in the (?:last|previous|next) (?:section|chapter))\b/gi;
-
-/** The phrases in a passage that point elsewhere on the page; empty when it stands on its own. */
-export function pointsElsewhere(text: string): string[] {
-  return Array.from(text.matchAll(POINTS_ELSEWHERE), (m) => m[0]);
 }
 
 export type SourceChoice =
@@ -365,6 +411,6 @@ export function chooseSource(answer: CopierAnswer, page: NumberedPage, example: 
     kind: "ok",
     source: { passages, code: example ? example.lines.join("\n") : null, words },
     left,
-    pointsElsewhere: passages.flatMap(pointsElsewhere),
+    pointsElsewhere: passages.flatMap((p) => pointsElsewhere(p)),
   };
 }

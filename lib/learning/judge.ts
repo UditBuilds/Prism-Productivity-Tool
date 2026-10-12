@@ -84,7 +84,15 @@ Give one verdict for every sentence listed under JUDGE:
 - "filler": pep talk, or a sentence that says nothing (for example "a vital skill", or "written exactly as shown, without additional explanation").
 reason: a few words saying why; an empty string for "ok".
 
-words: EVERY technical word or symbol in the SOURCE passages, the code or the EXPLANATION, each once: a word a smart adult who has never written code would not know in its programming sense (for example function, argument, string, expression), and every symbol with a meaning in the code (for example >>>, quotes, parentheses, =). explained_in: the number of the EXPLANATION sentence that says in plain words what it is (for >>>: what it is, and that the reader does not type it), at or before the word's first use in the EXPLANATION; null when no sentence does.`;
+words: EVERY technical word or symbol in the SOURCE passages, the code or the EXPLANATION, each once: a word a smart adult who has never written code would not know in its programming sense (for example function, argument, string, expression), and every symbol with a meaning in the code (for example >>>, quotes, parentheses, =). explained_in: the number of the EXPLANATION sentence that says in plain words what it is (for >>>: what it is, and that the reader does not type it), at or before the word's first use in the EXPLANATION; null when no sentence does. When the SOURCE has code, this list is never empty.`;
+
+/**
+ * Added to the message when the first answer listed no words although the
+ * lesson shows code (Udit, 2026-10-12): the one retry; still empty after it,
+ * the step fails.
+ */
+export const JUDGE_EMPTY_WORDS_RETRY =
+  "Your last answer listed no words. The SOURCE has code, so there are technical words or symbols to list: list every one, as the instructions say, each with the sentence that explains it or null.";
 
 const unfence = (s: string, tag: string) => s.replace(new RegExp(`</?${tag}\\b[^>]*>`, "gi"), "");
 

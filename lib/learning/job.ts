@@ -18,6 +18,7 @@ import {
   MAX_CANDIDATE_PAGES,
   MAX_COPIER_TRIES,
   MIN_ANSWER_TOKENS,
+  MIN_SOURCE_WORDS,
   SCREEN_EXAMPLES_PER_PAGE,
   SEARCH_MAX_TOKENS,
   STALE_CLAIM_MS,
@@ -50,9 +51,9 @@ import {
   type CallRecord,
   type RateLimits,
 } from "@/lib/learning/groq";
-import { FIT_SYSTEM_PROMPT, fitUserMessage, rankFitting, readFit, type FitVerdict, type ScreenPage } from "@/lib/learning/fit";
+import { decideFit, FIT_SYSTEM_PROMPT, fitUserMessage, rankFitting, type FitVerdict, type ScreenPage } from "@/lib/learning/fit";
 import { excerptFor, extractPage, queryTerms } from "@/lib/learning/html-text";
-import { JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts, type JudgeReading } from "@/lib/learning/judge";
+import { JUDGE_EMPTY_WORDS_RETRY, JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts, type JudgeReading } from "@/lib/learning/judge";
 import { budgetState, logCall } from "@/lib/learning/ledger";
 import { pickStepToWrite, type StepState } from "@/lib/learning/next-step";
 import {
@@ -64,6 +65,7 @@ import {
   pageThinness,
   screenExamples,
   sectionAround,
+  wordCount,
   type NumberedPage,
   type PageCode,
   type SourceBlock,
@@ -285,7 +287,7 @@ export async function advanceTopic(
 
   const { data: steps, error: stepsError } = await supabase
     .from("learning_steps")
-    .select("id, position, title, status, removed_at, opened_at, claimed_at, rewrite_reason")
+    .select("id, position, title, goal, status, removed_at, opened_at, claimed_at, rewrite_reason")
     .eq("topic_id", topicId)
     .eq("user_id", userId);
   if (stepsError || !steps) return { kind: "error", message: "Could not read the steps." };
@@ -333,6 +335,8 @@ export async function advanceTopic(
     pageCode: [] as { url: string; usable: number; checked: number[]; notChecked: number }[],
     /** Every fit check: each example's verdict and reason. */
     fit: [] as unknown[],
+    /** What the copier was given around each example it quoted: the two paragraphs, and the sentences dropped. */
+    sections: [] as unknown[],
     copier: [] as unknown[],
     badAnswers: [] as { what: string; kind: string; reason: string; raw: string }[],
     g2: [] as unknown[],
@@ -371,6 +375,8 @@ export async function advanceTopic(
   const planned = steps.filter((s) => s.removed_at === null).sort((a, b) => a.position - b.position);
   const earlier = planned.filter((s) => s.position < position).map((s) => s.title);
   const later = planned.filter((s) => s.position > position).map((s) => s.title);
+  // What the code scan accepts: whatever this step or an earlier one teaches, by its title and goal.
+  const taught = [claimed.title, claimed.goal, ...planned.filter((s) => s.position < position).flatMap((s) => [s.title, s.goal])].join("\n");
 
   interface Viable {
     page: FetchedPage;
@@ -389,6 +395,12 @@ export async function advanceTopic(
     const copyRoom = spend.room(LEARNING_COPY_MODEL, promptTokens(COPIER_SYSTEM_PROMPT, message), COPY_MAX_TOKENS);
     if (copyRoom === null) {
       left.push({ url: v.page.url, why: `not quoted: ${spend.overMessage(LEARNING_COPY_MODEL)}` });
+      return "thin";
+    }
+    // Free first: too few words to quote is thin without an AI call.
+    const words = view.sentences.filter((s) => s.usable).reduce((n, s) => n + wordCount(s.text), 0);
+    if (words < MIN_SOURCE_WORDS) {
+      left.push({ url: v.page.url, why: `${example ? `example ${example.id} fits, but ` : ""}the sentences around it hold ${words} usable words; at least ${MIN_SOURCE_WORDS} are needed` });
       return "thin";
     }
     copierTries += 1;
@@ -505,12 +517,26 @@ export async function advanceTopic(
         return fail(f.code, f.message);
       }
       await noted(`fit check (${phase})`, fit.record, fit.limits);
-      const read = readFit(fit.value, screened.map((v) => v.screen));
+      // The model listed ideas; code decides fit (Udit, 2026-10-12).
+      const read = decideFit(fit.value, screened.map((v) => v.screen), taught);
       trace.fit.push({
         phase,
+        stepIdeas: read.stepIdeas,
+        earlierIdeas: read.earlierIdeas,
         missing: read.missing,
         extra: read.extra,
-        verdicts: read.verdicts.map((x) => ({ url: x.page.url, example: x.code.id, lines: codeSize(x.code), code: x.code.lines.join("\n"), fits: x.fits, reason: x.reason })),
+        verdicts: read.verdicts.map((x) => ({
+          url: x.page.url,
+          example: x.code.id,
+          lines: codeSize(x.code),
+          code: x.code.lines.join("\n"),
+          ideas: x.ideas,
+          extras: x.extras,
+          notShown: x.notShown,
+          scan: x.scan,
+          fits: x.fits,
+          why: x.why,
+        })),
       });
       ranked = rankFitting(read.verdicts);
       for (const v of screened) {
@@ -525,7 +551,9 @@ export async function advanceTopic(
         left.push({ url: v.page.url, why: `example ${r.code.id} fits, but was not quoted: ${MAX_COPIER_TRIES} examples already were` });
         continue;
       }
-      const got = await quote(v, sectionAround(v.whole, r.code), r.code);
+      const section = sectionAround(v.whole, r.code);
+      trace.sections.push({ url: v.page.url, example: r.code.id, own: section.own, after: section.after, dropped: section.dropped });
+      const got = await quote(v, section.view, r.code);
       if (got !== "thin") return got;
     }
     // A step that needs no code may be taught without an example — never with one that does not fit.
@@ -602,28 +630,41 @@ export async function advanceTopic(
    * context. Returns what it found, or a result that ends this advance.
    */
   const meaningCheck = async (all: Sentence[], judged: Sentence[], pass: string): Promise<JudgeReading | AdvanceResult> => {
-    const message = judgeUserMessage(source, all, judged.map((s) => s.id));
-    const room = spend.room(LEARNING_JUDGE_MODEL, promptTokens(JUDGE_SYSTEM_PROMPT, message), JUDGE_MAX_TOKENS);
-    if (room === null) return fail("ai_error", `The explanation was not checked: ${spend.overMessage(LEARNING_JUDGE_MODEL)}. Try again.`);
-    try {
-      // A draft has already been paid for, so a busy check is not a reason
-      // to start again from the search: it fails honestly, never loops.
-      const answer = await withShortWait(ctx, stepId, 8_000, () => judgeSentences(message, room));
-      await noted(`meaning check (G2, ${pass})`, answer.record, answer.limits);
-      const read = readVerdicts(answer.value, judged, source, all);
-      trace.g2.push({ pass, judged: judged.map((x) => ({ id: x.id, text: x.text })), answer: answer.value, read });
-      if ("bad" in read) {
-        console.error(`[learning] the meaning check's answer was not used (${read.bad}). Raw answer:`, answer.raw);
-        return fail("ai_error", `The AI's meaning check could not be used: ${read.bad}. The explanation was not saved. Try again.`);
+    const base = judgeUserMessage(source, all, judged.map((s) => s.id));
+    // With code shown, an empty word list is a broken answer, never "nothing
+    // to explain" (Udit, 2026-10-12; gate 4's G2 answered "words": []): one
+    // retry that says so, then the step fails honestly.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const message = attempt === 1 ? base : `${base}\n\n${JUDGE_EMPTY_WORDS_RETRY}`;
+      const label = attempt === 1 ? pass : `${pass}, again: it listed no words`;
+      const room = spend.room(LEARNING_JUDGE_MODEL, promptTokens(JUDGE_SYSTEM_PROMPT, message), JUDGE_MAX_TOKENS);
+      if (room === null) return fail("ai_error", `The explanation was not checked: ${spend.overMessage(LEARNING_JUDGE_MODEL)}. Try again.`);
+      try {
+        // A draft has already been paid for, so a busy check is not a reason
+        // to start again from the search: it fails honestly, never loops.
+        const answer = await withShortWait(ctx, stepId, 8_000, () => judgeSentences(message, room));
+        await noted(`meaning check (G2, ${label})`, answer.record, answer.limits);
+        const read = readVerdicts(answer.value, judged, source, all);
+        trace.g2.push({ pass: label, judged: judged.map((x) => ({ id: x.id, text: x.text })), answer: answer.value, read });
+        if ("bad" in read) {
+          console.error(`[learning] the meaning check's answer was not used (${read.bad}). Raw answer:`, answer.raw);
+          return fail("ai_error", `The AI's meaning check could not be used: ${read.bad}. The explanation was not saved. Try again.`);
+        }
+        if (source.code !== null && answer.value.words.length === 0) {
+          if (attempt === 1) continue;
+          return fail("ai_error", "The AI's meaning check listed no technical words, twice, although the lesson shows code, so the explanation was not saved. Try again.");
+        }
+        return read;
+      } catch (err) {
+        await notedError(`meaning check (G2, ${label})`, err);
+        const f = callFailure(err, "meaning check");
+        return fail(f.code, `${f.message.replace(/ Try again\.$/, "")} The explanation was not saved. Try again.`);
       }
-      return read;
-    } catch (err) {
-      await notedError(`meaning check (G2, ${pass})`, err);
-      const f = callFailure(err, "meaning check");
-      return fail(f.code, `${f.message.replace(/ Try again\.$/, "")} The explanation was not saved. Try again.`);
     }
+    return fail("ai_error", "The AI's meaning check gave no usable answer, so the explanation was not saved. Try again.");
   };
-  const isReading = (r: JudgeReading | AdvanceResult): r is JudgeReading => "problems" in r;
+  // Not "problems" in r: a failed AdvanceResult carries a problems key too (found by the gate-5 stub run).
+  const isReading = (r: JudgeReading | AdvanceResult): r is JudgeReading => !("kind" in r);
 
   // First pass: G1 and G2 on every sentence; G2 also lists the words it
   // finds unexplained.
