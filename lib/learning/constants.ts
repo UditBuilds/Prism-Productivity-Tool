@@ -39,6 +39,24 @@ export const LEARNING_COPY_MODEL = "openai/gpt-oss-20b";
 export const COPY_TIMEOUT_MS = 20_000;
 
 /**
+ * The fit check (fit.ts, Udit, 2026-10-12): one call per search that judges
+ * the examples of every fetched page against the plan — the step's own idea
+ * and earlier steps' only. On 20b, so the 120b budget stays the writer's and
+ * G2's. Logged in learning_ai_calls as kind "judge" with this model: the
+ * kind column's CHECK allows only plan/search/write/judge, and G2 (the only
+ * other judge) runs on 120b, so model + kind name it.
+ */
+export const LEARNING_FIT_MODEL = "openai/gpt-oss-20b";
+export const FIT_TIMEOUT_MS = 25_000;
+/**
+ * Examples per page the fit check judges: the shortest ones about the step.
+ * 10, not fewer: on realpython.com/python-print/ the example that fits
+ * "Print a greeting" is the 8th shortest of 120 about the step (measured
+ * 2026-10-12). About 900 prompt tokens of code per search.
+ */
+export const SCREEN_EXAMPLES_PER_PAGE = 10;
+
+/**
  * max_tokens per call: what each answer needs plus room for reasoning, which
  * gpt-oss bills against max_tokens. A strict-JSON answer that reaches it does
  * NOT come back cut off: Groq refuses it with HTTP 400 json_validate_failed,
@@ -47,6 +65,7 @@ export const COPY_TIMEOUT_MS = 20_000;
  */
 export const SEARCH_MAX_TOKENS = 800;
 export const COPY_MAX_TOKENS = 1_500;
+export const FIT_MAX_TOKENS = 2_500;
 export const WRITE_MAX_TOKENS = 3_500;
 export const FIX_MAX_TOKENS = 2_000;
 export const JUDGE_MAX_TOKENS = 2_500;
@@ -77,8 +96,14 @@ export const MIN_SOURCE_WORDS = 40;
 export const MIN_PAGE_WORDS = 100;
 /** A longer code example is no longer "one short example". */
 export const MAX_EXAMPLE_CODE_LINES = 12;
-/** Pages the copier may be asked about in one lesson, across both searches. */
-export const MAX_SOURCE_PAGES = 3;
+/**
+ * Fitting examples the copier may be asked to quote around in one lesson,
+ * best first: the next is tried only when the passage around one is too thin.
+ */
+export const MAX_COPIER_TRIES = 3;
+/** What the copier reads around the chosen example: this many characters of paragraphs before it, and after it. */
+export const SECTION_BEFORE_CHARS = 2_500;
+export const SECTION_AFTER_CHARS = 800;
 
 /**
  * The most tokens one user's learning may spend in any rolling 24 hours,

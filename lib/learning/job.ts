@@ -4,18 +4,21 @@ import { checkCodeRule } from "@/lib/learning/code-rule";
 import {
   ADVANCE_DEADLINE_MS,
   COPY_MAX_TOKENS,
+  FIT_MAX_TOKENS,
   FIX_MAX_TOKENS,
   G2_MARK_MODE,
   JUDGE_MAX_TOKENS,
   LEARNING_COPY_MODEL,
+  LEARNING_FIT_MODEL,
   LEARNING_JUDGE_MODEL,
   LEARNING_SEARCH_MODEL,
   LEARNING_WRITE_MODEL,
   LESSON_BUDGET,
   MAIN_SOURCE_EXCERPT_CHARS,
   MAX_CANDIDATE_PAGES,
-  MAX_SOURCE_PAGES,
+  MAX_COPIER_TRIES,
   MIN_ANSWER_TOKENS,
+  SCREEN_EXAMPLES_PER_PAGE,
   SEARCH_MAX_TOKENS,
   STALE_CLAIM_MS,
   WRITE_MAX_TOKENS,
@@ -23,17 +26,21 @@ import {
 import { isLocalDevRuntime } from "@/lib/learning/dev-override";
 import {
   checkShape,
+  marksFor,
+  NO_MARKS,
   renderLessonBody,
   sentencesOf,
   settleAfterFix,
   withChanges,
   type Changes,
   type Explanation,
+  type Marks,
   type Problem,
   type Sentence,
 } from "@/lib/learning/explanation";
 import {
   BadAnswerError,
+  checkFit,
   copySource,
   judgeSentences,
   LearningAiError,
@@ -43,22 +50,36 @@ import {
   type CallRecord,
   type RateLimits,
 } from "@/lib/learning/groq";
-import { excerptFor, extractPage } from "@/lib/learning/html-text";
+import { FIT_SYSTEM_PROMPT, fitUserMessage, rankFitting, readFit, type FitVerdict, type ScreenPage } from "@/lib/learning/fit";
+import { excerptFor, extractPage, queryTerms } from "@/lib/learning/html-text";
 import { JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts, type JudgeReading } from "@/lib/learning/judge";
 import { budgetState, logCall } from "@/lib/learning/ledger";
 import { pickStepToWrite, type StepState } from "@/lib/learning/next-step";
 import {
   chooseSource,
-  copierSchemaFor,
+  codeSize,
   copierUserMessage,
   COPIER_SYSTEM_PROMPT,
   numberPage,
   pageThinness,
-  withPageCode,
+  screenExamples,
+  sectionAround,
+  type NumberedPage,
+  type PageCode,
   type SourceBlock,
 } from "@/lib/learning/passages";
 import { safeFetchPage, type FetchedPage } from "@/lib/learning/safe-fetch";
-import { isLandingPage, onDocsSite, pickCandidates, pickDocsCandidates, siteQuery, SourceProvenance, type SearchHit } from "@/lib/learning/sources";
+import {
+  isLandingPage,
+  isPreferred,
+  isUserContent,
+  onDocsSite,
+  pickCandidates,
+  pickDocsCandidates,
+  siteQuery,
+  SourceProvenance,
+  type SearchHit,
+} from "@/lib/learning/sources";
 import type { AdvanceResult, StepErrorCode } from "@/lib/learning/types";
 import { readFix, writerFixMessage, writerUserMessage, WRITER_SYSTEM_PROMPT } from "@/lib/learning/writer-prompt";
 import type { Database } from "@/types/database";
@@ -76,11 +97,13 @@ import type { Database } from "@/types/database";
  * The stages ("source shown + AI explains", Udit, 2026-10-10):
  *   1. search inside the topic's documentation site (20b + browser_search,
  *      "site:docs.python.org …"); the open web only when that finds nothing;
- *   2. per page, best first: the free thin-page check, then the copier (20b)
- *      chooses 1-3 passages and one code example BY NUMBER — always an
- *      example when the page has a usable one (2026-10-12) — then the rest of
- *      the thin-page check — or the next page, at most MAX_SOURCE_PAGES; no
- *      page good enough fails the step before any 120b token is spent;
+ *   2. every fetched page: the free thin-page check; then ONE fit check
+ *      (20b, fit.ts) judges the examples of all of them against the plan —
+ *      only the step's own idea and earlier steps' (2026-10-12); the server
+ *      ranks the ones that fit, and the copier (20b) chooses 1-3 passages BY
+ *      NUMBER around the best — or the next, at most MAX_COPIER_TRIES. No
+ *      example that fits fails the step before any 120b token is spent; one
+ *      that does not fit is never shown;
  *   3. the AI explanation (120b, JSON) from that source block only;
  *   4. its shape (explanation.ts), G1 the code rule (code-rule.ts, no AI),
  *      G2 the meaning check (judge.ts, 120b);
@@ -262,7 +285,7 @@ export async function advanceTopic(
 
   const { data: steps, error: stepsError } = await supabase
     .from("learning_steps")
-    .select("id, position, status, removed_at, opened_at, claimed_at, rewrite_reason")
+    .select("id, position, title, status, removed_at, opened_at, claimed_at, rewrite_reason")
     .eq("topic_id", topicId)
     .eq("user_id", userId);
   if (stepsError || !steps) return { kind: "error", message: "Could not read the steps." };
@@ -306,8 +329,10 @@ export async function advanceTopic(
     searches: [] as { phase: string; query: string; hits: string[]; candidates: string[] }[],
     /** Every page left out, and why. */
     pages: left,
-    /** Every page read: its usable code examples on the whole page and in the excerpt, and whether one was added. */
-    pageCode: [] as { url: string; codeOnPage: number; codeInExcerpt: number; added: boolean }[],
+    /** Every page read: its usable code examples, the ones the fit check was shown, and how many it was not. */
+    pageCode: [] as { url: string; usable: number; checked: number[]; notChecked: number }[],
+    /** Every fit check: each example's verdict and reason. */
+    fit: [] as unknown[],
     copier: [] as unknown[],
     badAnswers: [] as { what: string; kind: string; reason: string; raw: string }[],
     g2: [] as unknown[],
@@ -332,11 +357,68 @@ export async function advanceTopic(
     return { kind: "failed", stepId, code, problems: problems?.slice(0, 10) };
   };
 
-  // ── 1-2. Sources: the documentation site first, the open web only when it finds nothing.
+  // ── 1-2. Sources: the documentation site first; the open web when no example
+  // there fits (Udit, 2026-10-12: the rule for every code step — never a site
+  // where anyone can post, realpython.com first).
   const provenance = new SourceProvenance();
   const tried = new Set<string>();
-  let pagesAsked = 0;
+  let copierTries = 0;
   const query = `${claimed.title} ${claimed.goal} ${claimed.search_query}`;
+  const terms = queryTerms(query);
+  // The plan around the step, for the fit check: what the learner already
+  // knows, and what later steps teach.
+  const position = steps.find((s) => s.id === stepId)?.position ?? Number.POSITIVE_INFINITY;
+  const planned = steps.filter((s) => s.removed_at === null).sort((a, b) => a.position - b.position);
+  const earlier = planned.filter((s) => s.position < position).map((s) => s.title);
+  const later = planned.filter((s) => s.position > position).map((s) => s.title);
+
+  interface Viable {
+    page: FetchedPage;
+    title: string;
+    siteName: string;
+    /** The whole page, numbered: the fit check's examples and the copier's section come from it. */
+    whole: NumberedPage;
+    /** The part about the step: the thin-page check, and the copier's view when no example is shown. */
+    excerpt: NumberedPage;
+    screen: ScreenPage;
+  }
+
+  /** The copier on one page view and example. Found, "thin" (try the next), or a result that ends this advance. */
+  const quote = async (v: Viable, view: NumberedPage, example: PageCode | null): Promise<Found | "thin" | AdvanceResult> => {
+    const message = copierUserMessage({ stepTitle: claimed.title, goal: claimed.goal, siteName: v.siteName, page: view, example });
+    const copyRoom = spend.room(LEARNING_COPY_MODEL, promptTokens(COPIER_SYSTEM_PROMPT, message), COPY_MAX_TOKENS);
+    if (copyRoom === null) {
+      left.push({ url: v.page.url, why: `not quoted: ${spend.overMessage(LEARNING_COPY_MODEL)}` });
+      return "thin";
+    }
+    copierTries += 1;
+    let copy;
+    try {
+      copy = await withShortWait(ctx, stepId, 30_000, () => copySource(message, copyRoom));
+    } catch (err) {
+      await notedError("copier", err);
+      const wait = waitResult(err);
+      if (wait) {
+        // Nothing written yet: hand the step back and let the screen wait.
+        await release(ctx, stepId, claimedAt);
+        return wait;
+      }
+      const f = callFailure(err, "choice of what to quote");
+      return fail(f.code, f.message);
+    }
+    await noted("copier", copy.record, copy.limits);
+    const choice = chooseSource(copy.value, view, example, needsCode);
+    trace.copier.push({ url: v.page.url, example: example?.id ?? null, answer: copy.value, choice });
+    if (choice.kind === "bad") {
+      console.error(`[learning] the copier's answer was not used (${choice.reason}). Raw answer:`, copy.raw);
+      return fail("ai_error", `The AI's choice of what to quote could not be used: ${choice.reason}. Try again.`);
+    }
+    if (choice.kind === "thin") {
+      left.push({ url: v.page.url, why: example ? `example ${example.id} fits, but ${choice.reason}` : choice.reason });
+      return "thin";
+    }
+    return { page: v.page, title: v.title, siteName: v.siteName, source: choice.source };
+  };
 
   /** One search and its pages. Returns the found source, null when nothing fit, or a result that ends this advance. */
   const searchPhase = async (
@@ -368,8 +450,9 @@ export async function advanceTopic(
       return null;
     }
 
+    // Every fetched page is checked (Udit, 2026-10-12), not just the first that works.
     const settled = await Promise.allSettled(candidates.map((c) => safeFetchPage(c.url)));
-    const viable: { page: FetchedPage; title: string; siteName: string; numbered: ReturnType<typeof numberPage> }[] = [];
+    const viable: Viable[] = [];
     settled.forEach((r, i) => {
       tried.add(candidates[i].url);
       if (r.status !== "fulfilled") {
@@ -378,60 +461,80 @@ export async function advanceTopic(
       }
       const page = r.value;
       tried.add(page.url);
+      // A redirect can land on a site where anyone can post.
+      if (phase === "web" && isUserContent(page.url)) {
+        left.push({ url: page.url, why: "a site where anyone can post" });
+        return;
+      }
       const { title, siteName, text } = extractPage(page.body, page.contentType, page.url);
       if (phase === "web" && isLandingPage(page.url, text)) {
         left.push({ url: page.url, why: "a landing page, not a page that teaches" });
         return;
       }
-      const excerpt = withPageCode(excerptFor(text, query, MAIN_SOURCE_EXCERPT_CHARS), text);
-      trace.pageCode.push({ url: page.url, codeOnPage: excerpt.codeOnPage, codeInExcerpt: excerpt.codeInExcerpt, added: excerpt.added });
-      const numbered = numberPage(excerpt.text);
-      const thin = pageThinness(numbered, needsCode);
+      const whole = numberPage(text);
+      const excerpt = numberPage(excerptFor(text, query, MAIN_SOURCE_EXCERPT_CHARS));
+      const examples = screenExamples(whole, terms, SCREEN_EXAMPLES_PER_PAGE);
+      const usable = whole.code.filter((c) => c.usable).length;
+      trace.pageCode.push({ url: page.url, usable, checked: examples.map((c) => c.id), notChecked: usable - examples.length });
+      const thin = pageThinness(excerpt, needsCode, whole);
       if (thin) {
         left.push({ url: page.url, why: thin });
         return;
       }
-      viable.push({ page, title, siteName, numbered });
+      viable.push({ page, title, siteName, whole, excerpt, screen: { n: viable.length + 1, url: page.url, preferred: isPreferred(page.url), examples } });
     });
 
-    for (const v of viable) {
-      if (pagesAsked >= MAX_SOURCE_PAGES) {
-        left.push({ url: v.page.url, why: `not tried: ${MAX_SOURCE_PAGES} pages already were` });
-        continue;
-      }
-      const message = copierUserMessage({ stepTitle: claimed.title, goal: claimed.goal, siteName: v.siteName, page: v.numbered });
-      const copyRoom = spend.room(LEARNING_COPY_MODEL, promptTokens(COPIER_SYSTEM_PROMPT, message), COPY_MAX_TOKENS);
-      if (copyRoom === null) {
-        left.push({ url: v.page.url, why: `not tried: ${spend.overMessage(LEARNING_COPY_MODEL)}` });
-        continue;
-      }
-      pagesAsked += 1;
-      let copy;
+    // The fit check: one call for the examples of every viable page.
+    const screened = viable.filter((v) => v.screen.examples.length > 0);
+    let ranked: FitVerdict[] = [];
+    if (screened.length > 0) {
+      const message = fitUserMessage({ stepTitle: claimed.title, goal: claimed.goal, earlier, later, pages: screened.map((v) => v.screen) });
+      const fitRoom = spend.room(LEARNING_FIT_MODEL, promptTokens(FIT_SYSTEM_PROMPT, message), FIT_MAX_TOKENS);
+      if (fitRoom === null) return fail("sources_unreachable", `No example could be checked: ${spend.overMessage(LEARNING_FIT_MODEL)}. Try again.`);
+      let fit;
       try {
-        copy = await withShortWait(ctx, stepId, 30_000, () => copySource(message, copyRoom, copierSchemaFor(v.numbered)));
+        fit = await withShortWait(ctx, stepId, 35_000, () => checkFit(message, fitRoom));
       } catch (err) {
-        await notedError("copier", err);
+        await notedError(`fit check (${phase})`, err);
         const wait = waitResult(err);
         if (wait) {
-          // Nothing written yet: hand the step back and let the screen wait.
           await release(ctx, stepId, claimedAt);
           return wait;
         }
-        const f = callFailure(err, "choice of what to quote");
+        const f = callFailure(err, "check of which examples fit");
         return fail(f.code, f.message);
       }
-      await noted("copier", copy.record, copy.limits);
-      const choice = chooseSource(copy.value, v.numbered, needsCode);
-      trace.copier.push({ url: v.page.url, answer: copy.value, choice });
-      if (choice.kind === "bad") {
-        console.error(`[learning] the copier's answer was not used (${choice.reason}). Raw answer:`, copy.raw);
-        return fail("ai_error", `The AI's choice of what to quote could not be used: ${choice.reason}. Try again.`);
+      await noted(`fit check (${phase})`, fit.record, fit.limits);
+      const read = readFit(fit.value, screened.map((v) => v.screen));
+      trace.fit.push({
+        phase,
+        missing: read.missing,
+        extra: read.extra,
+        verdicts: read.verdicts.map((x) => ({ url: x.page.url, example: x.code.id, lines: codeSize(x.code), code: x.code.lines.join("\n"), fits: x.fits, reason: x.reason })),
+      });
+      ranked = rankFitting(read.verdicts);
+      for (const v of screened) {
+        if (!ranked.some((x) => x.page === v.screen)) left.push({ url: v.page.url, why: `no example fits (${v.screen.examples.length} checked)` });
       }
-      if (choice.kind === "thin") {
-        left.push({ url: v.page.url, why: choice.reason });
+    }
+
+    // The copier quotes around the best fitting example; the next only when that is too thin.
+    for (const r of ranked) {
+      const v = viable.find((x) => x.screen === r.page) as Viable;
+      if (copierTries >= MAX_COPIER_TRIES) {
+        left.push({ url: v.page.url, why: `example ${r.code.id} fits, but was not quoted: ${MAX_COPIER_TRIES} examples already were` });
         continue;
       }
-      return { page: v.page, title: v.title, siteName: v.siteName, source: choice.source };
+      const got = await quote(v, sectionAround(v.whole, r.code), r.code);
+      if (got !== "thin") return got;
+    }
+    // A step that needs no code may be taught without an example — never with one that does not fit.
+    if (!needsCode) {
+      for (const v of viable) {
+        if (copierTries >= MAX_COPIER_TRIES) break;
+        const got = await quote(v, v.excerpt, null);
+        if (got !== "thin") return got;
+      }
     }
     return null;
   };
@@ -450,7 +553,10 @@ export async function advanceTopic(
   }
   if (!found) {
     const why = left.map((p) => `${p.url.replace(/^https:\/\//, "")}: ${p.why}`).join("; ");
-    return fail("sources_unreachable", `No page had enough to teach this step from, so no lesson was written (${why}). Try again.`);
+    const lead = needsCode
+      ? "No page had an example that fits this step (only this step's idea and earlier steps') with enough to teach from, so no lesson was written"
+      : "No page had enough to teach this step from, so no lesson was written";
+    return fail("sources_unreachable", `${lead} (${why}). Try again.`);
   }
   provenance.addFetchedUrl(found.page.url);
   const source = found.source;
@@ -528,12 +634,12 @@ export async function advanceTopic(
   const first = [...g1, ...firstRead.problems];
   const firstProblems = [...describe(first), ...firstRead.words.map((w) => `unexplained word: ${w.word}`)];
   trace.stages.firstProblems = firstProblems;
-  trace.stages.unexplainedWords = { words: firstRead.words, dropped: firstRead.dropped };
+  trace.stages.unexplainedWords = { words: firstRead.words, dropped: firstRead.dropped, inventory: firstRead.inventory };
 
   // ── 5. At most one fix: only the flagged sentences go back, with the words to explain.
   let attempts = 1;
-  /** Mark mode: sentence id → the reason G2 still doubts it after the fix. */
-  let doubts = new Map<number, string>();
+  /** Mark mode: the sentences and words G2 still doubts after the fix. */
+  let marks: Marks = NO_MARKS;
   if (first.length > 0 || firstRead.words.length > 0) {
     const flaggedIds = Array.from(new Set(first.map((p) => p.sentence).filter((id): id is number => id !== null)));
     const flagged = firstSentences.filter((s) => flaggedIds.includes(s.id));
@@ -600,7 +706,11 @@ export async function advanceTopic(
     trace.stages.removed = settled.removed.map((r) => ({ id: r.sentence.id, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
     trace.stages.marked = settled.marked.map((r) => ({ id: r.sentence.id, part: r.sentence.part, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
     explanation = settled.explanation;
-    doubts = new Map(settled.marked.map((r) => [r.sentence.id, r.problem.reason]));
+    // Mark mode: a word still unexplained after the fix is marked, not ignored (Udit, 2026-10-12).
+    const wordsLeft = G2_MARK_MODE ? afterRead?.words ?? [] : [];
+    trace.stages.wordsMarked = wordsLeft;
+    trace.stages.inventoryAfterFix = afterRead?.inventory ?? null;
+    marks = marksFor(settled.marked, wordsLeft);
     attempts = 2;
   }
 
@@ -608,7 +718,7 @@ export async function advanceTopic(
   if (!provenance.isStorable(found.page.url)) {
     return fail("sources_unreachable", "The source page's address could not be stored, so the lesson was not saved. Try again.");
   }
-  const body = renderLessonBody(source, explanation, doubts);
+  const body = renderLessonBody(source, explanation, marks);
   trace.stages.lesson = { body, sentences: sentencesOf(explanation).length };
   const { data: saved, error: lessonError } = await supabase
     .from("learning_lessons")

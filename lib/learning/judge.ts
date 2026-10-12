@@ -1,5 +1,5 @@
 import type { ObjectSchema } from "@/lib/learning/answers";
-import { wordPlace, type Problem, type Sentence } from "@/lib/learning/explanation";
+import { mentionsWord, wordPlace, type Problem, type Sentence } from "@/lib/learning/explanation";
 import type { SourceBlock } from "@/lib/learning/passages";
 
 /**
@@ -20,8 +20,11 @@ import type { SourceBlock } from "@/lib/learning/passages";
  *                 versions, limits, defaults, order of evaluation, behaviour
  *                 of a named function beyond what is shown, other libraries;
  *   filler      — pep talk, or a sentence that says nothing.
- * It also lists the technical words the explanation uses without explaining
- * them in plain words; those go into the same one fix.
+ * It also lists EVERY technical word or symbol in the shown passages, the
+ * code and the explanation (Udit, 2026-10-12: gate 3 left "function", ">>>",
+ * "expression" and "floating-point" unexplained), each with the sentence that
+ * explains it in plain words, or none. The unexplained ones go into the same
+ * one fix; after the fix, any still unexplained gets a mark (mark mode).
  *
  * The judge sees exactly what the reader sees as the source — the shown
  * passages and code, nothing else from the page — and the whole explanation
@@ -36,7 +39,7 @@ export type Verdict = "ok" | "contradicts" | "unsupported" | "filler";
 
 export interface JudgeAnswer {
   verdicts: { id: number; verdict: Verdict; reason: string }[];
-  unexplained_words: string[];
+  words: { word: string; explained_in: number | null }[];
 }
 
 export const JUDGE_SCHEMA: ObjectSchema = {
@@ -55,9 +58,20 @@ export const JUDGE_SCHEMA: ObjectSchema = {
         additionalProperties: false,
       },
     },
-    unexplained_words: { type: "array", items: { type: "string" } },
+    words: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          word: { type: "string" },
+          explained_in: { type: ["integer", "null"] },
+        },
+        required: ["word", "explained_in"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["verdicts", "unexplained_words"],
+  required: ["verdicts", "words"],
   additionalProperties: false,
 };
 
@@ -70,7 +84,7 @@ Give one verdict for every sentence listed under JUDGE:
 - "filler": pep talk, or a sentence that says nothing (for example "a vital skill", or "written exactly as shown, without additional explanation").
 reason: a few words saying why; an empty string for "ok".
 
-unexplained_words: every technical word the EXPLANATION uses without explaining it in plain words the first time it appears, including words the SOURCE uses. A word counts as explained when a sentence of the explanation says what it means in plain words. An empty list when there are none.`;
+words: EVERY technical word or symbol in the SOURCE passages, the code or the EXPLANATION, each once: a word a smart adult who has never written code would not know in its programming sense (for example function, argument, string, expression), and every symbol with a meaning in the code (for example >>>, quotes, parentheses, =). explained_in: the number of the EXPLANATION sentence that says in plain words what it is (for >>>: what it is, and that the reader does not type it), at or before the word's first use in the EXPLANATION; null when no sentence does.`;
 
 const unfence = (s: string, tag: string) => s.replace(new RegExp(`</?${tag}\\b[^>]*>`, "gi"), "");
 
@@ -94,7 +108,9 @@ export function judgeUserMessage(source: SourceBlock, sentences: Sentence[], jud
 
 /** A word as the judge may write it: "`print()`", "Arguments" → "print", "Arguments". */
 function cleanWord(w: string): string {
-  return w.trim().replace(/^["'“”‘’`]+|["'“”‘’`.,;:]+$/g, "").replace(/\(\)$/, "").trim();
+  const cleaned = w.trim().replace(/^["'“”‘’`]+|["'“”‘’`.,;:]+$/g, "").replace(/\(\)$/, "").trim();
+  // A symbol ("()", a quote mark) is all punctuation: it is the word itself.
+  return cleaned || w.trim();
 }
 
 export interface JudgeReading {
@@ -104,6 +120,13 @@ export interface JudgeReading {
   words: { word: string; place: "start" | number }[];
   /** Words it named that the lesson does not use at all. */
   dropped: string[];
+  /** Every word it listed, and the sentence that explains it — null when none does, with why when its pointer was not taken. */
+  inventory: { word: string; explainedIn: number | null; note?: string }[];
+}
+
+/** A word made of letters (and spaces, hyphens, apostrophes): one whose explaining sentence must use it. A symbol such as >>> or () is taken on the judge's word. */
+function isLetterWord(word: string): boolean {
+  return /^[A-Za-z][A-Za-z\s'\u2010-\u2015-]*$/.test(word);
 }
 
 /**
@@ -136,12 +159,26 @@ export function readVerdicts(answer: JudgeAnswer, judged: Sentence[], source: So
 
   const words: JudgeReading["words"] = [];
   const dropped: string[] = [];
-  for (const raw of answer.unexplained_words) {
-    const word = cleanWord(raw);
-    if (!word || words.some((w) => w.word.toLowerCase() === word.toLowerCase())) continue;
+  const inventory: JudgeReading["inventory"] = [];
+  for (const raw of answer.words) {
+    const word = cleanWord(raw.word);
+    if (!word || inventory.some((w) => w.word.toLowerCase() === word.toLowerCase())) continue;
+    // Its pointer is taken only when that sentence exists and, for a word of
+    // letters, uses the word: a pointer to a sentence about something else
+    // is not an explanation.
+    let explainedIn = raw.explained_in;
+    let note: string | undefined;
+    if (explainedIn !== null) {
+      const by = all.find((s) => s.id === explainedIn);
+      if (!by) note = `it named sentence ${explainedIn}, which does not exist`;
+      else if (isLetterWord(word) && !mentionsWord(by.text, word)) note = `it named sentence ${explainedIn}, which does not use the word`;
+      if (note) explainedIn = null;
+    }
+    inventory.push(note ? { word, explainedIn, note } : { word, explainedIn });
+    if (explainedIn !== null) continue;
     const place = wordPlace(word, source, all);
     if (place === null) dropped.push(word);
     else words.push({ word, place });
   }
-  return { problems, words, dropped };
+  return { problems, words, dropped, inventory };
 }

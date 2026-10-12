@@ -171,10 +171,16 @@ export function checkShape(e: Explanation, source: SourceBlock): Problem[] {
 
 // ─── unexplained words ────────────────────────────────────────────────────
 
+/** Every kind of hyphen as "-": the writer writes "built‑in" with U+2011 (measured 2026-10-12). */
+const plainHyphens = (s: string) => s.replace(/[\u2010-\u2015\u2212]/g, "-");
+
 /** Does the text use the word? Case does not matter, and "argument", "arguments" and "argument(s)" are one word. */
-export function mentionsWord(text: string, word: string): boolean {
-  const w = word.toLowerCase().trim();
+export function mentionsWord(rawText: string, word: string): boolean {
+  const text = plainHyphens(rawText);
+  const w = plainHyphens(word).toLowerCase().trim();
   if (!w) return false;
+  // A symbol (">>>", "()", "=") has no word edges: it is used wherever it appears, as in "print()".
+  if (!/[a-z0-9]/.test(w)) return text.includes(w);
   const stem = w.endsWith("ies") && w.length > 4 ? w.slice(0, -3) : w.endsWith("es") && /(?:s|x|z|ch|sh)es$/.test(w) ? w.slice(0, -2) : w.endsWith("s") && !w.endsWith("ss") && w.length > 3 ? w.slice(0, -1) : w;
   const tail = w.endsWith("ies") || w.endsWith("y") ? "(?:y|ies)" : "(?:s|es|\\(s\\))?";
   const base = w.endsWith("y") ? stem.slice(0, -1) : stem;
@@ -244,10 +250,39 @@ export const AI_HEADING = "AI explanation";
 /** Under AI_HEADING: the whole explanation is marked as AI, so no sentence carries its own AI mark. */
 export const AI_NOTE = "Written by AI to explain the source above. It is not part of the page listed under Sources.";
 
-/** Mark mode (G2_MARK_MODE): what leads the mark after a sentence the meaning check still doubted. */
+/** Mark mode (G2_MARK_MODE): what leads the mark after a sentence or word the meaning check still doubted. */
 export const DOUBT_LABEL = "Doubted by the checker";
-/** Under AI_NOTE, only in a lesson that has a doubted sentence: what the mark means. */
-export const DOUBT_NOTE = `A sentence followed by "${DOUBT_LABEL}" is one that the AI check of this explanation against the source still questioned after its one correction. Its reason is in the mark.`;
+/** Under AI_NOTE, only in a lesson that has a mark: what the mark means. */
+export const DOUBT_NOTE = `A "${DOUBT_LABEL}" mark is where the AI check of this explanation against the source still found a problem after its one correction: a sentence it questions, or a word it found unexplained. Its reason is in the mark.`;
+
+/**
+ * Where the marks go: `start` before the first paragraph of the explanation
+ * (a word only the source uses, or the source uses first); `after` after the
+ * sentence with that id (sentencesOf numbering). Each entry is a reason.
+ */
+export interface Marks {
+  start: string[];
+  after: ReadonlyMap<number, string[]>;
+}
+export const NO_MARKS: Marks = { start: [], after: new Map() };
+
+/**
+ * Mark mode's marks: each sentence G2 still rejects after the fix, with its
+ * reason, and each word it still finds unexplained (Udit, 2026-10-12: marked,
+ * not ignored) — after the first sentence that uses it, or at the start when
+ * the source uses it.
+ */
+export function marksFor(sentences: Settled[], words: { word: string; place: "start" | number }[]): Marks {
+  const after = new Map<number, string[]>();
+  const add = (id: number, reason: string) => after.set(id, [...(after.get(id) ?? []), reason]);
+  for (const s of sentences) add(s.sentence.id, s.problem.reason);
+  const start: string[] = [];
+  for (const w of words) {
+    if (w.place === "start") start.push(`the source uses "${w.word}", and the explanation does not explain it in plain words`);
+    else add(w.place, `"${w.word}" is used here without being explained in plain words`);
+  }
+  return { start, after };
+}
 const MAX_DOUBT_REASON = 200;
 
 /**
@@ -280,24 +315,25 @@ function inlineCode(line: string): string {
  * walk-through as a list led by the code line each item explains, and the
  * closing line.
  *
- * `doubts` (mark mode): sentence id (sentencesOf numbering of `e`) → the
- * checker's reason. Each such sentence is followed by its mark, and DOUBT_NOTE
- * goes under the AI note. The marks are not part of the explanation, so they
- * never count toward its words or its shape.
+ * `marks` (mark mode): each sentence named in `marks.after` is followed by
+ * its marks, `marks.start` opens the explanation, and DOUBT_NOTE goes under
+ * the AI note. The marks are not part of the explanation, so they never
+ * count toward its words or its shape.
  */
-export function renderLessonBody(source: SourceBlock, e: Explanation, doubts: ReadonlyMap<number, string> = new Map()): string {
+export function renderLessonBody(source: SourceBlock, e: Explanation, marks: Marks = NO_MARKS): string {
   const out: string[] = [`## ${SOURCE_HEADING}`];
   for (const p of source.passages) out.push(`> ${p}`);
   const codeLines = source.code === null ? [] : source.code.split("\n");
   if (source.code !== null) out.push("```\n" + source.code + "\n```");
   out.push(`## ${AI_HEADING}`, `*${AI_NOTE}*`);
-  if (doubts.size > 0) out.push(`*${DOUBT_NOTE}*`);
+  if (marks.start.length > 0 || marks.after.size > 0) out.push(`*${DOUBT_NOTE}*`);
+  if (marks.start.length > 0) out.push(marks.start.map(doubtMark).join(" "));
   // The same reading order as sentencesOf, so an id names the same sentence.
   let id = 0;
   const said = (text: string) => {
     id += 1;
-    const reason = doubts.get(id);
-    return reason === undefined ? text.trim() : `${text.trim()} ${doubtMark(reason)}`;
+    const reasons = marks.after.get(id) ?? [];
+    return [text.trim(), ...reasons.map(doubtMark)].join(" ");
   };
   for (const p of e.meaning) out.push(p.sentences.map(said).join(" "));
   if (e.walkthrough.length > 0) {

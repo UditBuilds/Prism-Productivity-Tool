@@ -64,7 +64,7 @@ Answer with a JSON object:
 
 Rules:
 - As long as the idea needs, and no longer: ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS} words in all.
-- Plain words. Explain every technical word in plain words the first time it appears, even one the course has not taught yet; one short sentence is enough. Analogies are welcome.
+- Plain words. Every technical word or symbol in the SOURCE passages, the CODE or your own sentences is explained in plain words at or before its first use in your explanation, even one the course has not taught yet; one short sentence is enough. Explain the ones the SOURCE passages and CODE use in the meaning, before the walkthrough. If the CODE has >>>, say what it is (the prompt Python shows when it waits for you to type) and that you do not type it. Analogies are welcome.
 - Every number, piece of code, and function or library name you write must appear in the SOURCE, or be the value a CODE line produces. Write code in backticks, exactly as the CODE writes it.
 - State no technical fact the SOURCE does not support.
 - No pep talk, and no sentence that says nothing.

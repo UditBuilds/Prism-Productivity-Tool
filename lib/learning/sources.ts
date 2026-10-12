@@ -145,24 +145,55 @@ export function pickDocsCandidates(hits: SearchHit[], docsSite: string, max: num
 }
 
 /**
- * Pages to try from the open web: fetchable links only, one per site so a
- * lesson is not three pages of the same tutorial, in the search tool's
- * order, minus pages already tried.
+ * Sites where anyone can post (Udit, 2026-10-12): forums, Q&A sites, blog
+ * platforms and code hosts. Never a lesson's source, because nobody checks
+ * what is posted there. Matched by host suffix, so a subdomain counts too
+ * (someone.medium.com, python.stackexchange.com).
+ */
+export const USER_CONTENT_HOSTS = [
+  "medium.com", "geeksforgeeks.org", "stackoverflow.com", "stackexchange.com", "superuser.com", "serverfault.com", "askubuntu.com",
+  "reddit.com", "quora.com", "dev.to", "hashnode.dev", "hashnode.com", "substack.com", "blogspot.com", "wordpress.com",
+  "github.com", "github.io", "discuss.python.org", "python-forum.io", "sololearn.com", "hackernoon.com", "towardsdatascience.com",
+  "linkedin.com", "kaggle.com", "replit.com",
+];
+
+/** Tutorial sites tried first on the open web, whose fitting examples also win (Udit, 2026-10-12). */
+export const PREFERRED_HOSTS = ["realpython.com"];
+
+function onHost(url: string, hosts: string[]): boolean {
+  const host = hostOf(url);
+  return host !== null && hosts.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+/** True for a page on a site where anyone can post. */
+export function isUserContent(url: string): boolean {
+  return onHost(url, USER_CONTENT_HOSTS);
+}
+
+/** True for a page on a preferred tutorial site. */
+export function isPreferred(url: string): boolean {
+  return onHost(url, PREFERRED_HOSTS);
+}
+
+/**
+ * Pages to try from the open web: fetchable links only, never a site where
+ * anyone can post, one per site so a lesson is not three pages of the same
+ * tutorial, a preferred site first, then the search tool's order, minus pages
+ * already tried.
  */
 export function pickCandidates(hits: SearchHit[], max: number, skip: Set<string> = new Set()): SearchHit[] {
   const out: SearchHit[] = [];
   const hosts = new Set<string>();
   for (const hit of hits) {
-    if (skip.has(hit.url)) continue;
+    if (skip.has(hit.url) || isUserContent(hit.url)) continue;
     const url = fetchable(hit.url);
     if (!url) continue;
     const host = url.hostname.replace(/^www\./, "").toLowerCase();
     if (hosts.has(host)) continue;
     hosts.add(host);
     out.push(hit);
-    if (out.length >= max) break;
   }
-  return out;
+  return out.sort((a, b) => Number(isPreferred(b.url)) - Number(isPreferred(a.url))).slice(0, max);
 }
 
 const MARKETING = [

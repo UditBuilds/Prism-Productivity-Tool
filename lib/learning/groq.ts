@@ -3,8 +3,10 @@ import Groq, { APIConnectionTimeoutError, APIError } from "groq-sdk";
 import { AnswerError, readAnswer, type ObjectSchema } from "@/lib/learning/answers";
 import {
   COPY_TIMEOUT_MS,
+  FIT_TIMEOUT_MS,
   JUDGE_TIMEOUT_MS,
   LEARNING_COPY_MODEL,
+  LEARNING_FIT_MODEL,
   LEARNING_JUDGE_MODEL,
   LEARNING_SEARCH_MODEL,
   LEARNING_WRITE_MODEL,
@@ -14,9 +16,10 @@ import {
   WRITE_TIMEOUT_MS,
 } from "@/lib/learning/constants";
 import type { Explanation } from "@/lib/learning/explanation";
+import { FIT_SCHEMA, FIT_SYSTEM_PROMPT, type FitAnswer } from "@/lib/learning/fit";
 import { classifyGroqFailure, jsonAnswerFailure, type GroqFailure } from "@/lib/learning/groq-errors";
 import { JUDGE_SCHEMA, JUDGE_SYSTEM_PROMPT, type JudgeAnswer } from "@/lib/learning/judge";
-import { COPIER_SYSTEM_PROMPT, type CopierAnswer } from "@/lib/learning/passages";
+import { COPIER_SCHEMA, COPIER_SYSTEM_PROMPT, type CopierAnswer } from "@/lib/learning/passages";
 import {
   PLAN_SCHEMA,
   PLAN_SYSTEM_PROMPT,
@@ -343,10 +346,9 @@ export async function searchForStep(query: string, maxTokens: number): Promise<S
 /**
  * The copier (passages.ts): gpt-oss-20b answers with sentence and code
  * numbers only. Logged as kind "write" on the 20b model — see
- * LEARNING_COPY_MODEL. `schema`: copierSchemaFor(the page), which has no null
- * for the code example when the page has one.
+ * LEARNING_COPY_MODEL.
  */
-export function copySource(userMessage: string, maxTokens: number, schema: ObjectSchema): Promise<JsonCall<CopierAnswer>> {
+export function copySource(userMessage: string, maxTokens: number): Promise<JsonCall<CopierAnswer>> {
   return jsonCall<CopierAnswer>(
     "write",
     LEARNING_COPY_MODEL,
@@ -355,8 +357,27 @@ export function copySource(userMessage: string, maxTokens: number, schema: Objec
       { role: "system", content: COPIER_SYSTEM_PROMPT },
       { role: "user", content: userMessage },
     ],
-    schema,
+    COPIER_SCHEMA,
     { name: "source_choice", temperature: 0, maxTokens, timeoutMs: COPY_TIMEOUT_MS }
+  );
+}
+
+/**
+ * The fit check (fit.ts): gpt-oss-20b judges every example of every fetched
+ * page against the plan. Logged as kind "judge" on the 20b model — see
+ * LEARNING_FIT_MODEL.
+ */
+export function checkFit(userMessage: string, maxTokens: number): Promise<JsonCall<FitAnswer>> {
+  return jsonCall<FitAnswer>(
+    "judge",
+    LEARNING_FIT_MODEL,
+    "the fit check's answer",
+    [
+      { role: "system", content: FIT_SYSTEM_PROMPT },
+      { role: "user", content: userMessage },
+    ],
+    FIT_SCHEMA,
+    { name: "example_fit", temperature: 0, maxTokens, timeoutMs: FIT_TIMEOUT_MS }
   );
 }
 

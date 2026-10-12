@@ -22,6 +22,7 @@
 export type Schema =
   | { type: "string"; enum?: string[]; description?: string }
   | { type: "integer"; description?: string }
+  | { type: "boolean"; description?: string }
   | { type: ["string", "null"]; description?: string }
   | { type: ["integer", "null"]; description?: string }
   | { type: "array"; items: Schema; description?: string }
@@ -72,6 +73,8 @@ export function schemaProblem(value: unknown, schema: Schema, path = "answer"): 
       return null;
     case "integer":
       return typeof value === "number" && Number.isInteger(value) ? null : `${path} must be a whole number, not ${describe(value)}`;
+    case "boolean":
+      return typeof value === "boolean" ? null : `${path} must be true or false, not ${describe(value)}`;
     case "array": {
       if (!Array.isArray(value)) return `${path} must be a list, not ${describe(value)}`;
       for (let i = 0; i < value.length; i++) {
