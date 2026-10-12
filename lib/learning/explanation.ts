@@ -1,5 +1,6 @@
 import { LESSON_MAX_WORDS, LESSON_MIN_WORDS } from "@/lib/learning/constants";
 import { splitSentences, wordCount, type SourceBlock } from "@/lib/learning/passages";
+import { stripWebAddresses } from "@/lib/learning/sources";
 
 /**
  * The AI explanation (Udit, 2026-10-10, "source shown + AI explains"), its
@@ -111,7 +112,10 @@ export interface Problem {
   sentence: number | null;
   /** "G1": the code rule (code-rule.ts). "G2": the meaning check (judge.ts). "links": a web address. "shape": these rules. */
   check: "G1" | "G2" | "links" | "shape";
-  /** G2 only: its verdict. After the fix, "contradicts" fails the step; "unsupported" and "filler" are removed. */
+  /**
+   * G2 only: its verdict. After the fix, in mark mode (G2_MARK_MODE) all three are kept and marked; with it
+   * off, "contradicts" fails the step and "unsupported" and "filler" are removed.
+   */
   verdict?: "contradicts" | "unsupported" | "filler";
   text: string;
   reason: string;
@@ -193,38 +197,76 @@ export function wordPlace(word: string, source: SourceBlock, sentences: Sentence
 
 // ─── after the one fix ────────────────────────────────────────────────────
 
+/** A sentence the checks still found a problem in after the one fix, with that problem. */
+export interface Settled {
+  sentence: Sentence;
+  problem: Problem;
+}
+
 /**
- * What happens after the one fix (Udit, 2026-10-10), given the problems the
- * checks still find in the new sentences:
- *   - a sentence G2 still finds contradicting the source fails the step;
- *   - a G1 or link problem still fails the step (G1 is unchanged);
- *   - a sentence still unsupported or filler is REMOVED;
- * then the lesson is saved only if its shape still holds.
+ * What happens after the one fix, given the problems the checks still find in
+ * the new sentences. A G1 or link problem fails the step either way (G1 is
+ * unchanged). For what G2 still rejects:
+ *   - mark mode on (Udit, 2026-10-12, "mark, don't block"): every such
+ *     sentence, in any part and with any verdict, is KEPT and listed in
+ *     `marked`, so the body shows it with the checker's reason; nothing is
+ *     removed, so the shape the fix left — already checked — holds;
+ *   - mark mode off (Udit, 2026-10-10): a sentence still contradicting fails
+ *     the step; one still unsupported or filler is REMOVED, and the lesson is
+ *     saved only if its shape still holds.
+ * `marked` holds sentence ids of the explanation returned, which in mark mode
+ * is the one given: nothing is renumbered.
  */
 export function settleAfterFix(
   e: Explanation,
   problems: Problem[],
-  source: SourceBlock
-): { kind: "fail"; reasons: string[] } | { kind: "save"; explanation: Explanation; removed: { sentence: Sentence; problem: Problem }[] } {
+  source: SourceBlock,
+  markMode: boolean
+): { kind: "fail"; reasons: string[] } | { kind: "save"; explanation: Explanation; removed: Settled[]; marked: Settled[] } {
   const describe = (p: Problem) => (p.sentence === null ? p.reason : `sentence ${p.sentence} (${p.check}${p.verdict ? `, ${p.verdict}` : ""}): ${p.reason}`);
-  const hard = problems.filter((p) => p.check !== "G2" || p.verdict === "contradicts");
+  const hard = problems.filter((p) => p.check !== "G2" || p.sentence === null || (!markMode && p.verdict === "contradicts"));
   if (hard.length > 0) return { kind: "fail", reasons: hard.map(describe) };
   const all = sentencesOf(e);
-  const removed = problems.map((problem) => ({ sentence: all.find((s) => s.id === problem.sentence) as Sentence, problem }));
-  const after = withChanges(e, { replace: new Map(removed.map((r) => [r.sentence.id, ""])) }).explanation;
+  const settled = problems.map((problem) => ({ sentence: all.find((s) => s.id === problem.sentence) as Sentence, problem }));
+  if (markMode) return { kind: "save", explanation: e, removed: [], marked: settled };
+  const after = withChanges(e, { replace: new Map(settled.map((r) => [r.sentence.id, ""])) }).explanation;
   const shape = checkShape(after, source);
   if (shape.length > 0) {
-    return { kind: "fail", reasons: [...removed.map((r) => `removed ${describe(r.problem)}`), ...shape.map((p) => `then ${p.reason}`)] };
+    return { kind: "fail", reasons: [...settled.map((r) => `removed ${describe(r.problem)}`), ...shape.map((p) => `then ${p.reason}`)] };
   }
-  return { kind: "save", explanation: after, removed };
+  return { kind: "save", explanation: after, removed: settled, marked: [] };
 }
 
 // ─── the stored body ──────────────────────────────────────────────────────
 
 export const SOURCE_HEADING = "From the source, word for word";
 export const AI_HEADING = "AI explanation";
-/** Under AI_HEADING: the whole explanation is marked as AI, so no sentence carries its own mark. */
+/** Under AI_HEADING: the whole explanation is marked as AI, so no sentence carries its own AI mark. */
 export const AI_NOTE = "Written by AI to explain the source above. It is not part of the page listed under Sources.";
+
+/** Mark mode (G2_MARK_MODE): what leads the mark after a sentence the meaning check still doubted. */
+export const DOUBT_LABEL = "Doubted by the checker";
+/** Under AI_NOTE, only in a lesson that has a doubted sentence: what the mark means. */
+export const DOUBT_NOTE = `A sentence followed by "${DOUBT_LABEL}" is one that the AI check of this explanation against the source still questioned after its one correction. Its reason is in the mark.`;
+const MAX_DOUBT_REASON = 200;
+
+/**
+ * The checker's reason as plain text the Markdown body shows exactly: it is
+ * model text, so no web address (a lesson holds no links), no backtick or
+ * asterisk (they would turn into code or bold), no square bracket (it could
+ * start a link), no line break (it would end the list item), and at most 200
+ * characters, cut between words.
+ */
+export function doubtReason(reason: string): string {
+  const plain = stripWebAddresses(reason).replace(/`/g, "'").replace(/\*/g, "").replace(/\[/g, "(").replace(/\]/g, ")").replace(/\s+/g, " ").trim();
+  if (!plain) return "no reason given";
+  return plain.length <= MAX_DOUBT_REASON ? plain : `${plain.slice(0, MAX_DOUBT_REASON - 1).replace(/\s+\S*$/, "")}…`;
+}
+
+/** The visible mark that follows a doubted sentence: the label and the reason, in bold. */
+export function doubtMark(reason: string): string {
+  return `**[${DOUBT_LABEL}: ${doubtReason(reason)}]**`;
+}
 
 /** A code line as inline code in the walk-through list (a backtick would end the span early). */
 function inlineCode(line: string): string {
@@ -237,18 +279,31 @@ function inlineCode(line: string): string {
  * explanation under its own heading and note — its paragraphs, the
  * walk-through as a list led by the code line each item explains, and the
  * closing line.
+ *
+ * `doubts` (mark mode): sentence id (sentencesOf numbering of `e`) → the
+ * checker's reason. Each such sentence is followed by its mark, and DOUBT_NOTE
+ * goes under the AI note. The marks are not part of the explanation, so they
+ * never count toward its words or its shape.
  */
-export function renderLessonBody(source: SourceBlock, e: Explanation): string {
+export function renderLessonBody(source: SourceBlock, e: Explanation, doubts: ReadonlyMap<number, string> = new Map()): string {
   const out: string[] = [`## ${SOURCE_HEADING}`];
   for (const p of source.passages) out.push(`> ${p}`);
   const codeLines = source.code === null ? [] : source.code.split("\n");
   if (source.code !== null) out.push("```\n" + source.code + "\n```");
   out.push(`## ${AI_HEADING}`, `*${AI_NOTE}*`);
-  for (const p of e.meaning) out.push(p.sentences.map((s) => s.trim()).join(" "));
+  if (doubts.size > 0) out.push(`*${DOUBT_NOTE}*`);
+  // The same reading order as sentencesOf, so an id names the same sentence.
+  let id = 0;
+  const said = (text: string) => {
+    id += 1;
+    const reason = doubts.get(id);
+    return reason === undefined ? text.trim() : `${text.trim()} ${doubtMark(reason)}`;
+  };
+  for (const p of e.meaning) out.push(p.sentences.map(said).join(" "));
   if (e.walkthrough.length > 0) {
-    out.push(e.walkthrough.map((w) => `- ${inlineCode(codeLines[w.line - 1] ?? "")} — ${w.sentences.map((s) => s.trim()).join(" ")}`).join("\n"));
+    out.push(e.walkthrough.map((w) => `- ${inlineCode(codeLines[w.line - 1] ?? "")} — ${w.sentences.map(said).join(" ")}`).join("\n"));
   }
-  out.push(e.closing.trim());
+  out.push(said(e.closing));
   return out.join("\n\n");
 }
 

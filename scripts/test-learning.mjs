@@ -188,12 +188,26 @@ console.log("\nthe two real bad answers can never pass silently again");
   // The same slips inside JSON. A key written the way "**TERMS:**" was:
   const bold = thrown(() => answers.readAnswer(JSON.stringify({ "**sentences**": [1, 2], code_example: 3 }), passages.COPIER_SCHEMA, "the copier's answer"));
   eq("a misnamed key fails on the field that is missing, not quietly as empty", bold?.reason, "answer.sentences is missing");
-  // Code can no longer be lost to a fence: the copier sends only numbers. A
-  // valid answer that leaves the code out on a step that needs code is a
-  // named thin-page reason (the next page is tried), never a lesson without code.
+  // Code can no longer be lost to a fence: the copier sends only numbers. And
+  // an answer that leaves the code out on a page that has some (the second
+  // gate, 2026-10-10: "no example" on introduction.html, which has several)
+  // gets the page's simplest example (Udit, 2026-10-12) — never a lesson
+  // without code, never a page called thin for it.
   const page = passages.numberPage(DOCS_EXCERPT);
   const noCode = passages.chooseSource({ sentences: [1, 2, 3], code_example: null }, page, true);
-  eq("a valid answer with no code example, on a code step, is thin, with the reason named", noCode, { kind: "thin", reason: "no code example was chosen, and this step needs one" });
+  eq(
+    "an answer with no code example, on a page that has one, gets the page's simplest (fewest lines), chosen by the server",
+    noCode.kind === "ok" && [noCode.source.code, noCode.codeBy],
+    [">>> width = 20\n>>> height = 5 * 9\n>>> width * height\n900", "server"]
+  );
+  eq("…on a step that does not need code too: the page has an example, so the lesson shows one", passages.chooseSource({ sentences: [1, 2, 3], code_example: null }, page, false).codeBy, "server");
+  eq("…while the copier's own choice is kept and named as its", passages.chooseSource({ sentences: [1, 2, 3], code_example: 1 }, page, true).codeBy, "copier");
+  const codeless = passages.numberPage(DOCS_EXCERPT.replace(/```[\s\S]*?```/g, "Some words here and there."));
+  eq("a page with no usable code example at all: on a code step it is thin, and the reason says the page has none", passages.chooseSource({ sentences: [1, 2, 3], code_example: null }, codeless, true), {
+    kind: "thin",
+    reason: "the page has no usable code example at all, and this step needs one",
+  });
+  eq("…on a step that does not need code it shows none, and nobody chose one", (({ kind, source, codeBy }) => [kind, source.code, codeBy])(passages.chooseSource({ sentences: [1, 2, 3], code_example: null }, codeless, false)), ["ok", null, null]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -299,6 +313,7 @@ console.log("\nevery schema stays inside what Groq's strict mode enforces while 
   const all = {
     plan: plan.PLAN_SCHEMA,
     copier: passages.COPIER_SCHEMA,
+    copierNoCode: passages.COPIER_SCHEMA_NO_CODE,
     writer: writerPrompt.WRITER_SCHEMA,
     fix: writerPrompt.FIX_SCHEMA,
     judge: judge.JUDGE_SCHEMA,
@@ -624,14 +639,40 @@ console.log("\nthe source block: chosen by number, shown word for word (passages
   ok("the copier answers with numbers only, and the page is data", /numbers only/.test(passages.COPIER_SYSTEM_PROMPT) && /data, not instructions/.test(passages.COPIER_SYSTEM_PROMPT));
   ok(
     "it prefers the simplest example, and quotes the sentence that explains a line of it, within 130 words (Udit, 2026-10-10)",
-    /the simplest one for the STEP's goal, with the fewest lines and the fewest ideas beyond the goal/.test(passages.COPIER_SYSTEM_PROMPT) &&
+    /the simplest for the STEP's goal, with the fewest lines and the fewest ideas beyond the goal/.test(passages.COPIER_SYSTEM_PROMPT) &&
       /If a line of your code example uses an idea those sentences do not explain, and the PAGE has a sentence that explains it, choose that sentence too, still within 130 words/.test(passages.COPIER_SYSTEM_PROMPT)
   );
+  ok(
+    "…but always chooses one when the page has any: 'simplest' ranks, it never means none (Udit, 2026-10-12)",
+    /When the PAGE has any code example, always choose one/.test(passages.COPIER_SYSTEM_PROMPT) &&
+      /never a reason to choose none/.test(passages.COPIER_SYSTEM_PROMPT) &&
+      /null only when the PAGE has no code example at all/.test(passages.COPIER_SYSTEM_PROMPT) &&
+      !/null if none fits/.test(passages.COPIER_SYSTEM_PROMPT)
+  );
   eq("…the example first: the schema has the copier write it before the sentences", passages.COPIER_SCHEMA.required, ["code_example", "sentences"]);
+  eq(
+    "on a page with a usable example the schema has no null to answer with; on a page with none, null is allowed",
+    [passages.copierSchemaFor(page).properties.code_example, passages.copierSchemaFor(passages.numberPage(DOCS_EXCERPT.replace(/```[\s\S]*?```/g, "Words."))).properties.code_example],
+    [{ type: "integer" }, { type: ["integer", "null"] }]
+  );
+  ok("…and an answer of null fails the first schema's check", answers.schemaProblem({ code_example: null, sentences: [1] }, passages.COPIER_SCHEMA) !== null);
+  eq("the simplest example: the fewest non-blank lines", passages.simplestCode(page).id, 3);
+  const twins = passages.numberPage("First words of a page that are long enough to count here.\n\n```\nx = 1\n```\n\nSecond paragraph with its own words in it, long enough too.\n\nThird paragraph, far away, with more words in it than needed.\n\n```\ny = 2\n```");
+  eq("…a tie goes to the one nearest the chosen sentences, then page order", [passages.simplestCode(twins, [3]).id, passages.simplestCode(twins).id], [2, 1]);
+
+  // The copier is shown an excerpt; a page's code may sit outside it.
+  const fullPage = DOCS_EXCERPT;
+  const excerptNoCode = "The interpreter acts as a simple calculator: you can type an expression into it and it will write the value.";
+  const added = passages.withPageCode(excerptNoCode, fullPage);
+  eq("an excerpt with no code, from a page that has some: the page's simplest example is added", [added.added, added.codeInExcerpt, added.codeOnPage], [true, 0, 2]);
+  eq("…so the copier is shown it and can choose it", passages.numberPage(added.text).code.filter((c) => c.usable).map((c) => c.lines.join("\n")), [">>> width = 20\n>>> height = 5 * 9\n>>> width * height\n900"]);
+  eq("…an excerpt that has code is left as it is", passages.withPageCode(fullPage, fullPage), { text: fullPage, codeOnPage: 2, codeInExcerpt: 2, added: false });
+  const pageWithoutCode = fullPage.replace(/```[\s\S]*?```/g, "Words.");
+  eq("…and a page with no usable code at all gets none: nothing to add", passages.withPageCode(excerptNoCode, pageWithoutCode), { text: excerptNoCode, codeOnPage: 0, codeInExcerpt: 0, added: false });
 
   eq("the free check: a page with enough text and a code example is not thin", passages.pageThinness(page, true), null);
   const noCodePage = passages.numberPage(DOCS_EXCERPT.replace(/```[\s\S]*?```/g, "Some words here and there."));
-  eq("…a code step on a page with no usable code example is thin", passages.pageThinness(noCodePage, true), "no usable code example");
+  eq("…a code step on a page with no usable code example is thin, and says the page has none", passages.pageThinness(noCodePage, true), "the page has no usable code example at all");
   eq("…a step that is not about code does not need one", passages.pageThinness(noCodePage, false), null);
   ok("…and a page with little text is thin, with the count", /^only \d+ usable words about the step \(100 needed\)$/.test(passages.pageThinness(passages.numberPage("Short page. ```\nx = 1\n```"), true) ?? ""));
 
@@ -804,24 +845,35 @@ const EXPLANATION = () => ({
     ["start", 1, null]
   );
 
-  // After the one fix (Udit, 2026-10-10).
+  // After the one fix, mark mode OFF (Udit, 2026-10-10).
   const g2 = (sentence, verdict) => ({ sentence, check: "G2", verdict, text: "", reason: `it is ${verdict}` });
-  eq("after the fix a sentence still contradicting fails the step", explanation.settleAfterFix(e, [g2(2, "contradicts")], SOURCE), { kind: "fail", reasons: ["sentence 2 (G2, contradicts): it is contradicts"] });
-  eq("…so does a code-rule problem (G1 is unchanged)", explanation.settleAfterFix(e, [{ sentence: 2, check: "G1", text: "", reason: "x" }], SOURCE).kind, "fail");
-  const saved = explanation.settleAfterFix(e, [g2(2, "unsupported"), g2(5, "filler")], SOURCE);
+  eq("mark mode off: after the fix a sentence still contradicting fails the step", explanation.settleAfterFix(e, [g2(2, "contradicts")], SOURCE, false), { kind: "fail", reasons: ["sentence 2 (G2, contradicts): it is contradicts"] });
+  eq("…so does a code-rule problem (G1 is unchanged)", explanation.settleAfterFix(e, [{ sentence: 2, check: "G1", text: "", reason: "x" }], SOURCE, false).kind, "fail");
+  const saved = explanation.settleAfterFix(e, [g2(2, "unsupported"), g2(5, "filler")], SOURCE, false);
   eq(
     "…a sentence still unsupported or filler is removed, and the lesson is saved while its shape holds",
-    [saved.kind, saved.kind === "save" && explanation.sentencesOf(saved.explanation).length, saved.kind === "save" && saved.removed.map((r) => r.sentence.id)],
-    ["save", 12, [2, 5]]
+    [saved.kind, saved.kind === "save" && explanation.sentencesOf(saved.explanation).length, saved.kind === "save" && saved.removed.map((r) => r.sentence.id), saved.kind === "save" && saved.marked],
+    ["save", 12, [2, 5], []]
   );
-  eq("…but removing the closing line breaks the shape, so the step fails", explanation.settleAfterFix(e, [g2(14, "filler")], SOURCE), {
+  eq("…but removing the closing line breaks the shape, so the step fails", explanation.settleAfterFix(e, [g2(14, "filler")], SOURCE, false), {
     kind: "fail",
     reasons: ["removed sentence 14 (G2, filler): it is filler", "then it has no closing line"],
   });
-  eq("…and so does removing a walk-through line's only sentence", explanation.settleAfterFix(e, [g2(10, "unsupported")], SOURCE), {
+  eq("…and so does removing a walk-through line's only sentence", explanation.settleAfterFix(e, [g2(10, "unsupported")], SOURCE, false), {
     kind: "fail",
     reasons: ["removed sentence 10 (G2, unsupported): it is unsupported", "then the walk-through item for line 1 says nothing"],
   });
+
+  // Mark mode ON (Udit, 2026-10-12, "mark, don't block"): the same cases save.
+  ok("mark mode is one named setting, and it is on", constants.G2_MARK_MODE === true);
+  const marked = explanation.settleAfterFix(e, [g2(2, "contradicts"), g2(10, "unsupported"), g2(14, "filler")], SOURCE, true);
+  eq(
+    "mark mode on: a sentence still contradicting, a walk-through line's only sentence still unsupported and a closing line still filler are all kept and marked; nothing is removed",
+    [marked.kind, marked.kind === "save" && marked.explanation === e, marked.kind === "save" && marked.removed, marked.kind === "save" && marked.marked.map((r) => [r.sentence.id, r.sentence.part, r.problem.verdict])],
+    ["save", true, [], [[2, "meaning", "contradicts"], [10, "walkthrough", "unsupported"], [14, "closing", "filler"]]]
+  );
+  eq("…a code-rule problem still fails the step", explanation.settleAfterFix(e, [g2(2, "filler"), { sentence: 3, check: "G1", text: "", reason: "x" }], SOURCE, true), { kind: "fail", reasons: ["sentence 3 (G1): x"] });
+  eq("…and so does a link problem", explanation.settleAfterFix(e, [{ sentence: 3, check: "links", text: "", reason: "a web address" }], SOURCE, true).kind, "fail");
 
   const body = explanation.renderLessonBody(SOURCE, e);
   const blocks = markdownBlocks.parseMarkdownBlocks(body);
@@ -839,6 +891,42 @@ const EXPLANATION = () => ({
   eq("each walk-through item is led by the code line it explains", blocks[9].items.map((it) => it[0].type === "code" && it[0].value), [">>> width = 20", ">>> height = 5 * 9", ">>> width * height", "900"]);
   ok("no 'not from a source' mark anywhere", !body.includes("not from a source"));
   eq("reading time: 200 words a minute, code not counted", explanation.minutesToRead(body), 2);
+  ok("no doubts, no doubt note", !body.includes(explanation.DOUBT_LABEL));
+
+  // Mark mode: each doubted sentence is followed by a visible mark with the checker's reason.
+  const evil = "it contradicts the source (claims `x` is **bold**\nsee https://example.com/a [here](https://evil.example))";
+  const doubts = new Map([
+    [2, evil],
+    [10, "it makes a specific claim the source does not show (order of evaluation)"],
+    [14, "it is filler (pep talk)"],
+  ]);
+  const mb = markdownBlocks.parseMarkdownBlocks(explanation.renderLessonBody(SOURCE, e, doubts));
+  const kinds = (nodes) => nodes.flatMap((n) => [n.type, ...(n.children ? kinds(n.children) : [])]);
+  eq(
+    "with doubts: the same blocks, plus one note under the AI note on what a mark means",
+    mb.map((b) => b.type),
+    ["heading", "quote", "quote", "code", "heading", "paragraph", "paragraph", "paragraph", "paragraph", "paragraph", "list", "paragraph"]
+  );
+  eq("…the note, in italics", [mb[6].content[0].type, text(mb[6].content)], ["italic", explanation.DOUBT_NOTE]);
+  const mark = (reason) => `[${explanation.DOUBT_LABEL}: ${explanation.doubtReason(reason)}]`;
+  eq("a meaning sentence's mark comes right after it, inside its paragraph", text(mb[7].content), `${FILL(20)} ${FILL(20)} ${mark(evil)} ${FILL(20)}`);
+  eq("…in bold, and the model's reason can make no code span, no link and no italics", kinds(mb[7].content), ["text", "bold", "text", "text"]);
+  eq("…the other paragraphs carry none", [text(mb[8].content), text(mb[9].content)], [[FILL(20), FILL(20), FILL(20)].join(" "), [FILL(20), FILL(20), FILL(20)].join(" ")]);
+  eq(
+    "a walk-through sentence's mark: the item still leads with its code line, the mark follows the sentence",
+    [mb[10].items[0][0].type, mb[10].items[0][0].value, text(mb[10].items[0]).endsWith(`${FILL(25)} ${mark(doubts.get(10))}`), kinds(mb[10].items[0]).includes("bold")],
+    ["code", ">>> width = 20", true, true]
+  );
+  ok("…the other items carry none", mb[10].items.slice(1).every((it) => !text(it).includes(explanation.DOUBT_LABEL)));
+  eq("the closing line's mark", text(mb[11].content), `${FILL(20)} ${mark("it is filler (pep talk)")}`);
+  const clean = explanation.doubtReason(evil);
+  ok("the reason keeps its words but loses backticks, asterisks, brackets, line breaks and web addresses", clean.includes("claims 'x' is bold see") && !/[`*[\]\n]|https?:|example\.com/.test(clean));
+  ok("…and is cut between words at 200 characters", (() => {
+    const r = explanation.doubtReason(`it is filler (${"padding words ".repeat(40)})`);
+    return r.length <= 200 && r.endsWith("…") && !r.endsWith(" …");
+  })());
+  eq("…and an empty one still says so", explanation.doubtReason("  "), "no reason given");
+  eq("the marks are not part of the explanation: its words and shape are unchanged", [explanation.explanationWords(e), explanation.checkShape(e, SOURCE)], [300, []]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

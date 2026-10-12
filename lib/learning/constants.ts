@@ -118,6 +118,17 @@ export const MAIN_SOURCE_EXCERPT_CHARS = 7_000;
 export const LESSON_MIN_WORDS = 150;
 export const LESSON_MAX_WORDS = 500;
 
+/**
+ * Mark mode, "mark, don't block" (Udit, 2026-10-12): after its one fix, a
+ * sentence the meaning check (G2) still rejects — in any part, with any
+ * verdict — is kept and saved with a visible mark and the checker's reason
+ * (explanation.ts DOUBT_LABEL), instead of failing the step (contradicts) or
+ * being removed (unsupported, filler). G1 and the shape rules still block.
+ * false restores the 2026-10-10 rule. The marks are part of the saved body,
+ * so switching this off later does not unmark lessons already saved.
+ */
+export const G2_MARK_MODE = true;
+
 /** Shown under a source that is not on the topic's official documentation site. */
 export const TUTORIAL_LABEL = "tutorial site, not official docs";
 

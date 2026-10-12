@@ -16,7 +16,7 @@ import {
 import type { Explanation } from "@/lib/learning/explanation";
 import { classifyGroqFailure, jsonAnswerFailure, type GroqFailure } from "@/lib/learning/groq-errors";
 import { JUDGE_SCHEMA, JUDGE_SYSTEM_PROMPT, type JudgeAnswer } from "@/lib/learning/judge";
-import { COPIER_SCHEMA, COPIER_SYSTEM_PROMPT, type CopierAnswer } from "@/lib/learning/passages";
+import { COPIER_SYSTEM_PROMPT, type CopierAnswer } from "@/lib/learning/passages";
 import {
   PLAN_SCHEMA,
   PLAN_SYSTEM_PROMPT,
@@ -343,9 +343,10 @@ export async function searchForStep(query: string, maxTokens: number): Promise<S
 /**
  * The copier (passages.ts): gpt-oss-20b answers with sentence and code
  * numbers only. Logged as kind "write" on the 20b model — see
- * LEARNING_COPY_MODEL.
+ * LEARNING_COPY_MODEL. `schema`: copierSchemaFor(the page), which has no null
+ * for the code example when the page has one.
  */
-export function copySource(userMessage: string, maxTokens: number): Promise<JsonCall<CopierAnswer>> {
+export function copySource(userMessage: string, maxTokens: number, schema: ObjectSchema): Promise<JsonCall<CopierAnswer>> {
   return jsonCall<CopierAnswer>(
     "write",
     LEARNING_COPY_MODEL,
@@ -354,7 +355,7 @@ export function copySource(userMessage: string, maxTokens: number): Promise<Json
       { role: "system", content: COPIER_SYSTEM_PROMPT },
       { role: "user", content: userMessage },
     ],
-    COPIER_SCHEMA,
+    schema,
     { name: "source_choice", temperature: 0, maxTokens, timeoutMs: COPY_TIMEOUT_MS }
   );
 }

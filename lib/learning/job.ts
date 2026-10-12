@@ -5,6 +5,7 @@ import {
   ADVANCE_DEADLINE_MS,
   COPY_MAX_TOKENS,
   FIX_MAX_TOKENS,
+  G2_MARK_MODE,
   JUDGE_MAX_TOKENS,
   LEARNING_COPY_MODEL,
   LEARNING_JUDGE_MODEL,
@@ -46,7 +47,16 @@ import { excerptFor, extractPage } from "@/lib/learning/html-text";
 import { JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts, type JudgeReading } from "@/lib/learning/judge";
 import { budgetState, logCall } from "@/lib/learning/ledger";
 import { pickStepToWrite, type StepState } from "@/lib/learning/next-step";
-import { chooseSource, copierUserMessage, COPIER_SYSTEM_PROMPT, numberPage, pageThinness, type SourceBlock } from "@/lib/learning/passages";
+import {
+  chooseSource,
+  copierSchemaFor,
+  copierUserMessage,
+  COPIER_SYSTEM_PROMPT,
+  numberPage,
+  pageThinness,
+  withPageCode,
+  type SourceBlock,
+} from "@/lib/learning/passages";
 import { safeFetchPage, type FetchedPage } from "@/lib/learning/safe-fetch";
 import { isLandingPage, onDocsSite, pickCandidates, pickDocsCandidates, siteQuery, SourceProvenance, type SearchHit } from "@/lib/learning/sources";
 import type { AdvanceResult, StepErrorCode } from "@/lib/learning/types";
@@ -67,15 +77,17 @@ import type { Database } from "@/types/database";
  *   1. search inside the topic's documentation site (20b + browser_search,
  *      "site:docs.python.org …"); the open web only when that finds nothing;
  *   2. per page, best first: the free thin-page check, then the copier (20b)
- *      chooses 1-3 passages and one code example BY NUMBER, then the rest of
+ *      chooses 1-3 passages and one code example BY NUMBER — always an
+ *      example when the page has a usable one (2026-10-12) — then the rest of
  *      the thin-page check — or the next page, at most MAX_SOURCE_PAGES; no
  *      page good enough fails the step before any 120b token is spent;
  *   3. the AI explanation (120b, JSON) from that source block only;
  *   4. its shape (explanation.ts), G1 the code rule (code-rule.ts, no AI),
- *      G2 the meaning check (judge.ts, 20b);
+ *      G2 the meaning check (judge.ts, 120b);
  *   5. at most ONE fix that resends only the flagged sentences; a cut-off
- *      answer is never applied; then the lesson is saved or the step fails
- *      with the real reason and waits for "Try again".
+ *      answer is never applied; then the lesson is saved — in mark mode
+ *      (G2_MARK_MODE) with a visible mark on each sentence G2 still doubts —
+ *      or the step fails with the real reason and waits for "Try again".
  * Each model has a per-lesson token budget (LESSON_BUDGET); every call is
  * given only what is left of it.
  */
@@ -294,6 +306,8 @@ export async function advanceTopic(
     searches: [] as { phase: string; query: string; hits: string[]; candidates: string[] }[],
     /** Every page left out, and why. */
     pages: left,
+    /** Every page read: its usable code examples on the whole page and in the excerpt, and whether one was added. */
+    pageCode: [] as { url: string; codeOnPage: number; codeInExcerpt: number; added: boolean }[],
     copier: [] as unknown[],
     badAnswers: [] as { what: string; kind: string; reason: string; raw: string }[],
     g2: [] as unknown[],
@@ -369,7 +383,9 @@ export async function advanceTopic(
         left.push({ url: page.url, why: "a landing page, not a page that teaches" });
         return;
       }
-      const numbered = numberPage(excerptFor(text, query, MAIN_SOURCE_EXCERPT_CHARS));
+      const excerpt = withPageCode(excerptFor(text, query, MAIN_SOURCE_EXCERPT_CHARS), text);
+      trace.pageCode.push({ url: page.url, codeOnPage: excerpt.codeOnPage, codeInExcerpt: excerpt.codeInExcerpt, added: excerpt.added });
+      const numbered = numberPage(excerpt.text);
       const thin = pageThinness(numbered, needsCode);
       if (thin) {
         left.push({ url: page.url, why: thin });
@@ -392,7 +408,7 @@ export async function advanceTopic(
       pagesAsked += 1;
       let copy;
       try {
-        copy = await withShortWait(ctx, stepId, 30_000, () => copySource(message, copyRoom));
+        copy = await withShortWait(ctx, stepId, 30_000, () => copySource(message, copyRoom, copierSchemaFor(v.numbered)));
       } catch (err) {
         await notedError("copier", err);
         const wait = waitResult(err);
@@ -516,6 +532,8 @@ export async function advanceTopic(
 
   // ── 5. At most one fix: only the flagged sentences go back, with the words to explain.
   let attempts = 1;
+  /** Mark mode: sentence id → the reason G2 still doubts it after the fix. */
+  let doubts = new Map<number, string>();
   if (first.length > 0 || firstRead.words.length > 0) {
     const flaggedIds = Array.from(new Set(first.map((p) => p.sentence).filter((id): id is number => id !== null)));
     const flagged = firstSentences.filter((s) => flaggedIds.includes(s.id));
@@ -552,6 +570,8 @@ export async function advanceTopic(
     }
 
     const fixed = withChanges(explanation, changes);
+    // The whole draft after the fix, so a step that fails on it can still be read (Udit, 2026-10-12).
+    trace.stages.fixedDraft = fixed.explanation;
     const shapeAfter = checkShape(fixed.explanation, source);
     if (shapeAfter.length > 0) {
       return fail("ai_error", `After its one fix the explanation did not have the lesson's shape, so it was not saved: ${describe(shapeAfter).join("; ")}. Try again.`, describe(shapeAfter));
@@ -569,15 +589,18 @@ export async function advanceTopic(
     if (afterRead !== null && !isReading(afterRead)) return afterRead;
     const still = afterRead?.problems ?? [];
     trace.stages.afterFix = describe(still);
-    // Still contradicting: the step fails. Still unsupported or filler: the
-    // sentence is removed, and the lesson is saved if its shape still holds.
-    const settled = settleAfterFix(fixed.explanation, still, source);
+    // Mark mode: every sentence G2 still rejects is kept and marked. Off:
+    // still contradicting fails the step; still unsupported or filler is
+    // removed, and the lesson is saved if its shape still holds.
+    const settled = settleAfterFix(fixed.explanation, still, source, G2_MARK_MODE);
     if (settled.kind === "fail") {
       const code = still.some((p) => p.verdict === "contradicts") ? "ungrounded" : "ai_error";
       return fail(code, `After its one fix the explanation could not be saved: ${settled.reasons.join("; ")}. Try again.`, settled.reasons);
     }
     trace.stages.removed = settled.removed.map((r) => ({ id: r.sentence.id, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
+    trace.stages.marked = settled.marked.map((r) => ({ id: r.sentence.id, part: r.sentence.part, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
     explanation = settled.explanation;
+    doubts = new Map(settled.marked.map((r) => [r.sentence.id, r.problem.reason]));
     attempts = 2;
   }
 
@@ -585,7 +608,7 @@ export async function advanceTopic(
   if (!provenance.isStorable(found.page.url)) {
     return fail("sources_unreachable", "The source page's address could not be stored, so the lesson was not saved. Try again.");
   }
-  const body = renderLessonBody(source, explanation);
+  const body = renderLessonBody(source, explanation, doubts);
   trace.stages.lesson = { body, sentences: sentencesOf(explanation).length };
   const { data: saved, error: lessonError } = await supabase
     .from("learning_lessons")
