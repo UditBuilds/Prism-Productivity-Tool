@@ -117,9 +117,9 @@ eq("explanations are written on gpt-oss-120b", constants.LEARNING_WRITE_MODEL, "
 eq("the source is chosen on gpt-oss-20b", constants.LEARNING_COPY_MODEL, "openai/gpt-oss-20b");
 eq("G2 runs on gpt-oss-120b (Udit, 2026-10-10)", constants.LEARNING_JUDGE_MODEL, "openai/gpt-oss-120b");
 eq(
-  "one lesson may spend 8,000 tokens on 120b (writer, G2, fix, G2) and 15,000 on 20b (Udit, 2026-10-10)",
+  "one lesson may spend 10,000 tokens on 120b (writer, G2, fix, G2; Udit, 2026-10-13, was 8,000) and 15,000 on 20b (Udit, 2026-10-10)",
   [constants.LESSON_BUDGET["openai/gpt-oss-120b"], constants.LESSON_BUDGET["openai/gpt-oss-20b"]],
-  [8000, 15000]
+  [10000, 15000]
 );
 eq("plans have up to 30 steps", constants.PLAN_MAX_STEPS, 30);
 eq(
@@ -922,6 +922,24 @@ const SOURCE = {
   code: ">>> width = 20\n>>> height = 5 * 9\n>>> width * height\n900",
   words: 61,
 };
+/** Gate 7's live lesson (2026-10-12): its quote and the example code checked, with the output code worked out. */
+const HELLO = {
+  passages: ["There are several ways to present the output of a program; data can be printed in a human-readable form, or written to a file for future use."],
+  code: "print('Hello, world!')",
+  output: "Hello, world!",
+  outputBy: "code",
+  words: 27,
+};
+/** Gate 7's first draft, as the writer wrote it (live trace; U+2011 hyphens as written). */
+const G7_DRAFT = () => ({
+  meaning: [{ sentences: [
+    "The idea is to use the built‑in function print to send a single piece of text to the screen.",
+    "The text is written inside single quotes so that Python treats it as a literal string, which means the characters appear exactly as typed.",
+    "When the program runs, the print function takes that string and displays it in a human‑readable form, which matches the description in the source that output can be presented for people to read.",
+  ] }],
+  walkthrough: [{ line: 1, sentences: ["This line calls the print function with one argument: the string 'Hello, world!'.", "The function immediately writes that string to the console, producing the output shown."] }],
+  closing: "A single print call shows how to display readable text on the screen.",
+});
 /** 3 x 3 x 20 + 4 x 25 + 20 = 300 words. */
 const EXPLANATION = () => ({
   meaning: [0, 1, 2].map(() => ({ sentences: [FILL(20), FILL(20), FILL(20)] })),
@@ -978,6 +996,11 @@ const EXPLANATION = () => ({
   );
   eq("…one due before the closing line ends the walk-through instead", [as[15].text, as[15].line, as[16].part], ["A variable is a name for a value.", 4, "closing"]);
   eq("…and the new sentences are given in the new numbering", added.changed, [1, 11, 16]);
+  eq(
+    "…and each sentence carried over unchanged maps its old id to its new one (gate 8); a replaced or removed one has none",
+    [added.kept.get(1), added.kept.get(10), added.kept.get(14), added.kept.size, swap.kept.get(2), swap.kept.get(5), swap.kept.get(6), swap.kept.get(14), swap.kept.size],
+    [2, 12, 17, 14, undefined, undefined, 5, undefined, 11]
+  );
 
   ok("'argument(s)' in a passage uses the word 'arguments'", explanation.mentionsWord("the value of the argument(s) it is given", "arguments"));
   ok("'variables' uses 'variable', 'libraries' uses 'library'", explanation.mentionsWord("two variables", "variable") && explanation.mentionsWord("many libraries", "library"));
@@ -992,6 +1015,40 @@ const EXPLANATION = () => ({
     "where a word's explanation goes: first of all when the source uses it, else before its first sentence, nowhere when the lesson never uses it",
     ["variable", "loop", "dictionary"].map((w) => explanation.wordPlace(w, SOURCE, words)),
     ["start", 1, null]
+  );
+
+  // Gate 8 (Udit, 2026-10-13): only the quoted passages are "the source"; an
+  // example's word or symbol is explained in the walk-through of its line;
+  // never a mark inside quoted text.
+  const G7 = explanation.sentencesOf(G7_DRAFT());
+  eq(
+    "gate 7's symbols: ( ) and ' go in the walk-through of line 1 (sentence 4), not at the start; the comma inside 'Hello, world!' and the passage's prose comma are never asked for",
+    ["(", ")", "'", ",", "()"].map((w) => explanation.wordPlace(w, HELLO, G7)),
+    [4, 4, 4, null, 4]
+  );
+  eq(
+    "a word only the example and later sentences use: the earliest of its first sentence and its line's walk-through; one the meaning uses goes before that sentence",
+    ["print", "argument", "console", "output"].map((w) => explanation.wordPlace(w, HELLO, G7)),
+    [1, 4, 5, "start"]
+  );
+  eq("a letter word that sits only inside quoted text in the example is not the example's", explanation.codeUses(HELLO.code, "world"), false);
+  eq(
+    "a symbol a sentence writes in code (`…`) counts there, outside its quoted text; its prose punctuation never does",
+    [
+      explanation.wordPlace("(", HELLO, [{ id: 1, text: "Use `print('Hi, you')` to show text.", part: "meaning", line: null }, ...G7.slice(3).map((s) => ({ ...s, id: s.id - 2 }))]),
+      explanation.wordPlace(",", HELLO, [{ id: 1, text: "Use `print('Hi, you')` to show text, and (here) more.", part: "meaning", line: null }]),
+    ],
+    [1, null]
+  );
+  eq(
+    "a symbol that is not prose punctuation still counts in a passage: '>>>' and '=' in the quote go at the start",
+    [explanation.wordPlace(">>>", { ...HELLO, passages: ["Type it after the >>> prompt."] }, G7), explanation.wordPlace("=", SOURCE, G7)],
+    ["start", "start"]
+  );
+  eq(
+    "codeUses: outside quoted text only; a bracket pair is both its halves",
+    [explanation.codeUses("print('a, b')", ","), explanation.codeUses("print('a, b')", "'"), explanation.codeUses("print('a')", "()"), explanation.codeUses("x = '(y)'", "()"), explanation.codeUses("x = 5", "=")],
+    [false, true, true, false, true]
   );
 
   // After the one fix, mark mode OFF (Udit, 2026-10-10).
@@ -1128,10 +1185,12 @@ console.log("\nthe writer and its one fix (writer-prompt.ts)");
   ok("…as long as the idea needs, 150 to 500 words (Udit, 2026-10-10)", /As long as the idea needs, and no longer: 150 to 500 words/.test(sys) && !/aim for/.test(sys));
   ok("…not re-explaining the example in the meaning, and no pep talk", /Do not re-explain the example here/.test(sys) && /No pep talk, and no sentence that says nothing/.test(sys));
   ok(
-    "…every technical word or symbol in the passages, its example and its own sentences, in plain words at or before first use; the source's and the example's in the meaning",
+    "…every technical word or symbol in the passages, its example and its own sentences, in plain words at or before first use; the passages' in the meaning, the example's in its line's walk-through (gate 8)",
     /Every technical word or symbol in the SOURCE passages, your example or your own sentences is explained in plain words at or before its first use in your explanation, even one the course has not taught yet; one short sentence is enough/.test(sys) &&
-      /Explain the ones the SOURCE passages and your example use in the meaning, before the walkthrough/.test(sys)
+      /Explain the ones the SOURCE passages use in the meaning, before the walkthrough\. Explain a word or symbol of your example in the walkthrough item for the line that uses it, unless your meaning already uses it\./.test(sys) &&
+      !/the SOURCE passages and your example use in the meaning/.test(sys)
   );
+  ok("…and never explains a mark inside quoted text as code (gate 8)", /A mark inside quoted text \(the comma in 'Hello, world!'\) is part of the text, not code: never explain it as code/.test(sys));
   ok(
     "the writer writes the example (gate 6): 1 to 3 lines typed as in a file, every EXAMPLE RULE, its exact output, text in single quotes",
     /example: lines: a tiny example of the STEP's idea that you write yourself, 1 to 3 lines of Python typed the way you would type them in a file, following every EXAMPLE RULE; output: the lines it prints, exactly/.test(sys) &&
@@ -1153,8 +1212,20 @@ console.log("\nthe writer and its one fix (writer-prompt.ts)");
   const fix = writerPrompt.writerFixMessage(flagged, problems, words, SOURCE, all);
   ok("the fix resends only the flagged sentences, each with its place and why", fix.includes("2. (explains what the idea means) failed because the number 30") && fix.includes("11. (explains code line 2: >>> height = 5 * 9; MUST STAY) failed because it makes a specific claim"));
   ok("…the closing line and a walk-through line's only sentence must be replaced, never removed", fix.includes("14. (the closing sentence; MUST STAY) failed because it is filler") && /except where it says MUST STAY/.test(fix));
-  ok("…and asks one short sentence for each unexplained word, saying where it goes", fix.includes("- arguments (placed at the start of the explanation, because the SOURCE uses it)") && fix.includes("- interpreter (placed just before sentence 9)"));
-  eq("…and nothing else of the explanation", fix.split("\n\n").length, 6);
+  ok(
+    "…and asks one short sentence for each unexplained word, saying where it goes in words the fix can act on (it never sees sentence numbers)",
+    fix.includes("- arguments (placed at the start of the explanation, because the quoted SOURCE passages use it)") &&
+      fix.includes(`- interpreter (placed just before this sentence of your explanation, the first that uses it: "${all[8].text}")`)
+  );
+  ok("…and that it brings in no new technical word unexplained (gate 8)", fix.endsWith(writerPrompt.FIX_NEW_WORDS_RULE) && /such as "list" or "items" to explain parentheses/.test(writerPrompt.FIX_NEW_WORDS_RULE) && /explain it in plain words in that same sentence/.test(writerPrompt.FIX_NEW_WORDS_RULE));
+  eq("…and nothing else of the explanation", fix.split("\n\n").length, 7);
+  const walkFix = writerPrompt.writerFixMessage([], [], [{ word: "=", place: 10 }, { word: "variable", place: 14 }], SOURCE, all);
+  ok(
+    "an example's word goes in the walk-through of its line, named with the line; one before the closing line says so",
+    walkFix.includes("- = (placed in the walk-through of example line 1, >>> width = 20, before what it says about that line: say what it does on that line)") &&
+      walkFix.includes("- variable (placed just before your closing sentence)")
+  );
+  ok("a fix with nothing to write is not told the new-word rule", !writerPrompt.writerFixMessage([], [], [], SOURCE, all).includes(writerPrompt.FIX_NEW_WORDS_RULE));
   ok("…the example goes again, as code checked it, to keep (the first message holds only the quote)", fix.startsWith("YOUR EXAMPLE, as code checked it (keep it exactly; do not change it):\n<code>\n1| >>> width = 20"));
   eq(
     "mustStay: the closing line and a walk-through line's only sentence",
@@ -1253,13 +1324,98 @@ console.log("\nG2, the meaning check (judge.ts): verdicts redefined, and unexpla
   eq("…nor one to a sentence that does not exist", pick(v(allOk, [{ word: "words", explained_in: 99 }])).inventory, [{ word: "words", explainedIn: null, note: "it named sentence 99, which does not exist" }]);
   eq("a symbol is taken on the judge's word: '>>>' explained by sentence 1, which need not write it", pick(v(allOk, [{ word: ">>>", explained_in: 1 }])), { words: [], dropped: [], inventory: [{ word: ">>>", explainedIn: 1 }] });
   eq(
-    "…unexplained, a symbol the code or a passage uses is explained at the start: '>>>', and '()' keeps its name",
-    pick(v(allOk, un(">>>", "()"))).words,
-    [{ word: ">>>", place: "start" }, { word: "()", place: "start" }]
+    "…unexplained, a symbol only the example uses goes in the walk-through of its first line (sentence 10), not at the start (gate 8); '()', in the passages' prose only, is dropped",
+    (({ words, dropped }) => ({ words, dropped }))(v(allOk, un(">>>", "()"))),
+    { words: [{ word: ">>>", place: 10 }], dropped: ["()"] }
   );
   eq("a sentence with no verdict is a bad answer, never a pass", v([allOk[0], allOk[2]]), { bad: "it gave no verdict for sentence 10" });
   eq("…so is a verdict for a sentence it was not asked about", v([...allOk, { id: 12, verdict: "ok", reason: "" }]), { bad: "it judged sentence 12, which it was not asked about" });
   eq("…and two verdicts for one sentence", v([allOk[0], { id: 9, verdict: "filler", reason: "x" }]), { bad: "it judged sentence 9 twice" });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+console.log("\nafter the one fix, G2's first pass stands (gate 8)");
+{
+  // Replay of gate 7's live run (2026-10-12): G2's two real answers, the fix's real four sentences.
+  const before = explanation.sentencesOf(G7_DRAFT());
+  const B = "built‑in";
+  const firstAnswer = {
+    verdicts: [1, 2, 3, 4, 5, 6].map((id) => ({ id, verdict: "ok", reason: "" })),
+    words: [
+      ["print", 1], ["function", 1], ["argument", 4], ["string", 2], ["single quotes", 2], ["console", 5], ["output", 5],
+      ["(", null], [")", null], ["'", null], [",", null], [B, 1], ["literal", 2], ["human‑readable", 3],
+    ].map(([word, explained_in]) => ({ word, explained_in })),
+  };
+  const first = judge.readVerdicts(firstAnswer, before, HELLO, before);
+  eq(
+    "gate 7's first pass, read under gate 8's rules: ( ) ' go to the walk-through of line 1 (sentence 4); the comma inside 'Hello, world!' is dropped",
+    [first.words, first.dropped],
+    [[{ word: "(", place: 4 }, { word: ")", place: 4 }, { word: "'", place: 4 }], [","]]
+  );
+  const fixed = explanation.withChanges(G7_DRAFT(), {
+    atStart: [
+      "The left parenthesis starts a list of items that a function will use.",
+      "The right parenthesis ends that list.",
+      "A single quote marks the beginning or end of a piece of text called a string.",
+      "A comma separates multiple items inside the parentheses.",
+    ],
+  });
+  const now = explanation.sentencesOf(fixed.explanation);
+  const afterAnswer = {
+    verdicts: [1, 2, 3, 4].map((id) => ({ id, verdict: "ok", reason: "" })),
+    words: [
+      ["(", 1], [")", 2], ["'", 3], [",", 4], ["left parenthesis", 1], ["right parenthesis", 2], ["single quote", 3], ["comma", 4],
+      ["function", null], ["argument", null], ["string", null], ["print", null], [B, null], ["list", null], ["items", null],
+    ].map(([word, explained_in]) => ({ word, explained_in })),
+  };
+  const after = judge.readVerdicts(afterAnswer, now.filter((s) => fixed.changed.includes(s.id)), HELLO, now);
+  eq("…its after-fix pass said 7 words were unexplained", after.words.map((w) => w.word), ["function", "argument", "string", "print", B, "list", "items"]);
+  const settled = judge.wordsAfterFix({ first, after, kept: fixed.kept, before, now, changed: fixed.changed });
+  eq("…of which only the two the fix brought in are marked: 'list' and 'items' (gate 7 marked all 7)", settled.mark, [{ word: "list", place: 1 }, { word: "items", place: 1 }]);
+  eq(
+    "…and why, word by word: the first pass's sentences for the other five are still there and still use them",
+    settled.decisions.map((d) => [d.word, d.decision, d.why]),
+    [
+      ["function", "kept the first answer", "the first pass said sentence 1 explains it; that sentence is still there, as sentence 5, and uses it"],
+      ["argument", "kept the first answer", "the first pass said sentence 4 explains it; that sentence is still there, as sentence 8, and uses it"],
+      ["string", "kept the first answer", "the first pass said sentence 2 explains it; that sentence is still there, as sentence 6, and uses it"],
+      ["print", "kept the first answer", "the first pass said sentence 1 explains it; that sentence is still there, as sentence 5, and uses it"],
+      [B, "kept the first answer", "the first pass said sentence 1 explains it; that sentence is still there, as sentence 5, and uses it"],
+      ["list", "marked", "the fix brought it in and did not explain it"],
+      ["items", "marked", "the fix brought it in and did not explain it"],
+    ]
+  );
+
+  // The other cases, on a small lesson.
+  const small = { meaning: [{ sentences: ["A variable is a name for a value.", "You give it a value with an equal sign."] }], walkthrough: [], closing: "So a name holds a value." };
+  const s0 = explanation.sentencesOf(small);
+  const reading = (words, inventory) => ({ problems: [], words, dropped: [], inventory });
+  const swapped = explanation.withChanges(small, { replace: new Map([[1, "A name keeps a value for later."]]) });
+  const s1 = explanation.sentencesOf(swapped.explanation);
+  const firstVar = reading([], [{ word: "variable", explainedIn: 1 }, { word: "value", explainedIn: 1 }]);
+  eq(
+    "a word whose explaining sentence the fix replaced: the after-fix answer stands, and it is marked",
+    judge.wordsAfterFix({ first: firstVar, after: reading([{ word: "variable", place: "start" }], []), kept: swapped.kept, before: s0, now: s1, changed: swapped.changed }),
+    { mark: [{ word: "variable", place: "start" }], decisions: [{ word: "variable", decision: "marked", why: "the first pass said sentence 1 explains it, but the fix replaced or removed that sentence" }] }
+  );
+  const added = explanation.withChanges(small, { before: new Map([[2, ["An equal sign stores the value under the name."]]]) });
+  const s2 = explanation.sentencesOf(added.explanation);
+  eq(
+    "a word the first pass found unexplained and the after-fix pass still does: marked",
+    judge.wordsAfterFix({ first: reading([{ word: "equal sign", place: 2 }], [{ word: "equal sign", explainedIn: null }]), after: reading([{ word: "equal sign", place: 2 }], []), kept: added.kept, before: s0, now: s2, changed: added.changed }).decisions[0].decision,
+    "marked"
+  );
+  eq(
+    "a word the first pass did not list, which only the old sentences use: not marked (the after-fix pass cannot add doubts about text the fix left alone)",
+    judge.wordsAfterFix({ first: reading([], []), after: reading([{ word: "name", place: 1 }], []), kept: added.kept, before: s0, now: s2, changed: added.changed }),
+    { mark: [], decisions: [{ word: "name", decision: "not marked", why: "the first pass did not find it unexplained, and the fix did not bring it in" }] }
+  );
+  eq(
+    "one name, written two ways by the judge, is one word: 'value' then 'Values', so the first answer stands",
+    judge.wordsAfterFix({ first: firstVar, after: reading([{ word: "Values", place: 1 }], []), kept: added.kept, before: s0, now: s2, changed: added.changed }).decisions[0].decision,
+    "kept the first answer"
+  );
+  ok("G2 is told never to list a mark inside quoted text in the code (gate 8)", /A mark inside quoted text in the code is part of the text, not code: do not list it \(the comma in 'Hello, world!'\)/.test(judge.JUDGE_SYSTEM_PROMPT));
 }
 
 // ─────────────────────────────────────────────────────────────────────────

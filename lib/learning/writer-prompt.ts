@@ -82,7 +82,7 @@ Answer with a JSON object:
 
 Rules:
 - As long as the idea needs, and no longer: ${LESSON_MIN_WORDS} to ${LESSON_MAX_WORDS} words in all, the example not counted.
-- Plain words. Every technical word or symbol in the SOURCE passages, your example or your own sentences is explained in plain words at or before its first use in your explanation, even one the course has not taught yet; one short sentence is enough. Explain the ones the SOURCE passages and your example use in the meaning, before the walkthrough. Analogies are welcome.
+- Plain words. Every technical word or symbol in the SOURCE passages, your example or your own sentences is explained in plain words at or before its first use in your explanation, even one the course has not taught yet; one short sentence is enough. Explain the ones the SOURCE passages use in the meaning, before the walkthrough. Explain a word or symbol of your example in the walkthrough item for the line that uses it, unless your meaning already uses it. A mark inside quoted text (the comma in 'Hello, world!') is part of the text, not code: never explain it as code. Analogies are welcome.
 - Every number, piece of code, and function or library name you write must appear in the SOURCE or in your example, or be the value your example produces. Write code in backticks, exactly as your example writes it.
 - State no technical fact the SOURCE does not support.
 - No pep talk, and no sentence that says nothing.
@@ -230,15 +230,35 @@ export function writerFixMessage(
   if (words.length > 0) {
     out.push(
       "These technical words are used without being explained in plain words. For each, write ONE short sentence that explains it to someone who has never written code:\n" +
-        words
-          .map((w) => `- ${w.word} (placed ${w.place === "start" ? "at the start of the explanation, because the SOURCE uses it" : `just before sentence ${w.place}`})`)
-          .join("\n")
+        words.map((w) => `- ${w.word} (placed ${wherePlaced(w.place, all, codeLines)})`).join("\n")
     );
   } else {
     out.push("No words need explaining: give an empty explanations list.");
   }
   if (flagged.length === 0) out.push("No sentence needs replacing: give an empty replacements list.");
+  // Gate 7's fix explained "(" as "starts a list of items", bringing in two
+  // words it never explained (Udit, 2026-10-13).
+  if (flagged.length > 0 || words.length > 0) out.push(FIX_NEW_WORDS_RULE);
   return out.join("\n\n");
+}
+
+/** Every fix is told this (Udit, 2026-10-13, gate 8): the after-fix check marks any new word it leaves unexplained. */
+export const FIX_NEW_WORDS_RULE =
+  'In every sentence you write, use plain words. Bring in no technical word that the explanation does not already use (such as "list" or "items" to explain parentheses). If a sentence needs one, explain it in plain words in that same sentence.';
+
+/**
+ * Where a word's sentence goes, in words the fix can act on: it never sees
+ * the explanation's sentence numbers (Udit, 2026-10-13: an example's word is
+ * explained in the walk-through of its line).
+ */
+function wherePlaced(place: "start" | number, all: Sentence[], codeLines: string[]): string {
+  if (place === "start") return "at the start of the explanation, because the quoted SOURCE passages use it";
+  const s = all.find((x) => x.id === place);
+  if (s?.part === "walkthrough" && s.line !== null) {
+    return `in the walk-through of example line ${s.line}, ${(codeLines[s.line - 1] ?? "").trim()}, before what it says about that line: say what it does on that line`;
+  }
+  if (s?.part === "closing") return "just before your closing sentence";
+  return s ? `just before this sentence of your explanation, the first that uses it: "${s.text}"` : `just before sentence ${place}`;
 }
 
 /**

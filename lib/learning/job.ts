@@ -54,7 +54,7 @@ import {
 } from "@/lib/learning/groq";
 import { checkExample, exampleRulesFor, exampleRulesText, outputByCode } from "@/lib/learning/example";
 import { excerptFor, extractPage } from "@/lib/learning/html-text";
-import { JUDGE_EMPTY_WORDS_RETRY, JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts, type JudgeReading } from "@/lib/learning/judge";
+import { JUDGE_EMPTY_WORDS_RETRY, JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts, wordsAfterFix, type JudgeReading } from "@/lib/learning/judge";
 import { budgetState, logCall } from "@/lib/learning/ledger";
 import { pickStepToWrite, type StepState } from "@/lib/learning/next-step";
 import {
@@ -743,8 +743,16 @@ export async function advanceTopic(
     trace.stages.removed = settled.removed.map((r) => ({ id: r.sentence.id, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
     trace.stages.marked = settled.marked.map((r) => ({ id: r.sentence.id, part: r.sentence.part, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
     explanation = settled.explanation;
-    // Mark mode: a word still unexplained after the fix is marked, not ignored (Udit, 2026-10-12).
-    const wordsLeft = G2_MARK_MODE ? afterRead?.words ?? [] : [];
+    // Mark mode: a word still unexplained after the fix is marked, not ignored
+    // (Udit, 2026-10-12) — but the after-fix pass cannot undo the first
+    // (2026-10-13, gate 8): a word the first pass found explained in a sentence
+    // the fix left alone stays explained. Only words the fix brought in, or
+    // that were unexplained before it, are marked.
+    const afterWords = afterRead
+      ? wordsAfterFix({ first: firstRead, after: afterRead, kept: fixed.kept, before: firstSentences, now: fixedSentences, changed: fixed.changed })
+      : { mark: [], decisions: [] };
+    trace.stages.wordsAfterFix = afterWords.decisions;
+    const wordsLeft = G2_MARK_MODE ? afterWords.mark : [];
     trace.stages.wordsMarked = wordsLeft;
     trace.stages.inventoryAfterFix = afterRead?.inventory ?? null;
     marks = marksFor(settled.marked, wordsLeft);

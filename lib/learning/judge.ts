@@ -1,5 +1,5 @@
 import type { ObjectSchema } from "@/lib/learning/answers";
-import { mentionsWord, wordPlace, type Problem, type Sentence } from "@/lib/learning/explanation";
+import { isSymbol, mentionsWord, sentenceUses, wordPlace, type Problem, type Sentence } from "@/lib/learning/explanation";
 import type { SourceBlock } from "@/lib/learning/passages";
 
 /**
@@ -24,7 +24,9 @@ import type { SourceBlock } from "@/lib/learning/passages";
  * code and the explanation (Udit, 2026-10-12: gate 3 left "function", ">>>",
  * "expression" and "floating-point" unexplained), each with the sentence that
  * explains it in plain words, or none. The unexplained ones go into the same
- * one fix; after the fix, any still unexplained gets a mark (mark mode).
+ * one fix; after the fix, any still unexplained gets a mark (mark mode) —
+ * unless the first pass had already found it explained in a sentence the
+ * fix left alone (wordsAfterFix, gate 8).
  *
  * The judge sees exactly what the reader sees as the source — the shown
  * passages and code, nothing else from the page — and the whole explanation
@@ -84,7 +86,7 @@ Give one verdict for every sentence listed under JUDGE:
 - "filler": pep talk, or a sentence that says nothing (for example "a vital skill", or "written exactly as shown, without additional explanation").
 reason: a few words saying why; an empty string for "ok".
 
-words: EVERY technical word or symbol in the SOURCE passages, the code or the EXPLANATION, each once: a word a smart adult who has never written code would not know in its programming sense (for example function, argument, string, expression), and every symbol with a meaning in the code (for example >>>, quotes, parentheses, =). explained_in: the number of the EXPLANATION sentence that says in plain words what it is (for >>>: what it is, and that the reader does not type it), at or before the word's first use in the EXPLANATION; null when no sentence does. When the SOURCE has code, this list is never empty.`;
+words: EVERY technical word or symbol in the SOURCE passages, the code or the EXPLANATION, each once: a word a smart adult who has never written code would not know in its programming sense (for example function, argument, string, expression), and every symbol with a meaning in the code (for example >>>, quotes, parentheses, =). A mark inside quoted text in the code is part of the text, not code: do not list it (the comma in 'Hello, world!'). explained_in: the number of the EXPLANATION sentence that says in plain words what it is (for >>>: what it is, and that the reader does not type it), at or before the word's first use in the EXPLANATION; null when no sentence does. When the SOURCE has code, this list is never empty.`;
 
 /**
  * Added to the message when the first answer listed no words although the
@@ -190,4 +192,79 @@ export function readVerdicts(answer: JudgeAnswer, judged: Sentence[], source: So
     else words.push({ word, place });
   }
   return { problems, words, dropped, inventory };
+}
+
+// ─── after the one fix: the first pass's answers stand ────────────────────
+
+/** One word and its name as the judge may write it twice: "Single quotes" and "single quote" are one word; a symbol is itself. */
+function sameWord(a: string, b: string): boolean {
+  if (isSymbol(a) || isSymbol(b)) return a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
+  return mentionsWord(a, b) && mentionsWord(b, a);
+}
+
+export interface WordDecision {
+  word: string;
+  decision: "kept the first answer" | "marked" | "not marked";
+  why: string;
+}
+
+/**
+ * Which words G2's after-fix pass found unexplained are marked (Udit,
+ * 2026-10-13, gate 8: the after-fix pass may not undo the first). Gate 7's
+ * after-fix pass said null for "print" and "string" although the sentences
+ * its first pass had named were still there and still explained them.
+ *   - The first pass named a sentence for the word, and that sentence is
+ *     still there unchanged (`kept`, old id to new) and, for a word of
+ *     letters, still uses it: that answer stands; no mark.
+ *   - The first pass named a sentence the fix replaced or removed: the
+ *     after-fix answer stands (the fix took the explanation away).
+ *   - The first pass found it unexplained (it was sent to the fix): marked.
+ *   - A sentence the fix wrote uses it and no sentence before the fix did:
+ *     the fix brought it in, and it is marked.
+ *   - Anything else — a word the first pass did not list as unexplained and
+ *     the fix did not bring in — is not marked.
+ */
+export function wordsAfterFix(input: {
+  first: JudgeReading;
+  after: JudgeReading;
+  /** withChanges' kept: old id to new id, for each sentence carried over unchanged. */
+  kept: ReadonlyMap<number, number>;
+  /** The explanation's sentences before the fix (first-pass numbering). */
+  before: Sentence[];
+  /** After the fix (after-fix numbering). */
+  now: Sentence[];
+  /** Ids (after-fix numbering) of the sentences the fix wrote. */
+  changed: number[];
+}): { mark: JudgeReading["words"]; decisions: WordDecision[] } {
+  const { first, after, kept, before, now, changed } = input;
+  const mark: JudgeReading["words"] = [];
+  const decisions: WordDecision[] = [];
+  for (const w of after.words) {
+    const said = first.inventory.find((x) => sameWord(x.word, w.word));
+    if (said && said.explainedIn !== null) {
+      // Unchanged, so a word of letters it used (readVerdicts checked) it still uses; checked again all the same.
+      const at = kept.get(said.explainedIn);
+      const still = at !== undefined ? now.find((s) => s.id === at) : undefined;
+      if (still && (!isLetterWord(w.word) || mentionsWord(still.text, w.word))) {
+        decisions.push({ word: w.word, decision: "kept the first answer", why: `the first pass said sentence ${said.explainedIn} explains it; that sentence is still there, as sentence ${at}, and uses it` });
+        continue;
+      }
+      mark.push(w);
+      decisions.push({ word: w.word, decision: "marked", why: `the first pass said sentence ${said.explainedIn} explains it, but the fix replaced or removed that sentence` });
+      continue;
+    }
+    if (first.words.some((x) => sameWord(x.word, w.word))) {
+      mark.push(w);
+      decisions.push({ word: w.word, decision: "marked", why: "unexplained before the fix, and still unexplained after it" });
+      continue;
+    }
+    const broughtIn = now.some((s) => changed.includes(s.id) && sentenceUses(s, w.word)) && !before.some((s) => sentenceUses(s, w.word));
+    if (broughtIn) {
+      mark.push(w);
+      decisions.push({ word: w.word, decision: "marked", why: "the fix brought it in and did not explain it" });
+      continue;
+    }
+    decisions.push({ word: w.word, decision: "not marked", why: "the first pass did not find it unexplained, and the fix did not bring it in" });
+  }
+  return { mark, decisions };
 }

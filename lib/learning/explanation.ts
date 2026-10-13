@@ -1,4 +1,5 @@
 import { LESSON_MAX_WORDS, LESSON_MIN_WORDS } from "@/lib/learning/constants";
+import { emptyStrings } from "@/lib/learning/example";
 import { splitSentences, wordCount, type SourceBlock } from "@/lib/learning/passages";
 import { stripWebAddresses } from "@/lib/learning/sources";
 
@@ -57,13 +58,16 @@ export interface Changes {
  * The explanation with the changes made. A paragraph left empty goes; a
  * walk-through item left empty stays, so the shape check reports the code
  * line it no longer explains; a removed closing line leaves "", which the
- * shape check reports. Returns the new explanation and the ids, in ITS
- * numbering, of the sentences that are new.
+ * shape check reports. Returns the new explanation, the ids, in ITS
+ * numbering, of the sentences that are new, and `kept`: for each sentence
+ * carried over unchanged, its old id to its new one (gate 8: what G2's first
+ * pass said about it still stands).
  */
-export function withChanges(e: Explanation, changes: Changes): { explanation: Explanation; changed: number[] } {
+export function withChanges(e: Explanation, changes: Changes): { explanation: Explanation; changed: number[]; kept: Map<number, number> } {
   const replace = changes.replace ?? new Map<number, string>();
   const before = changes.before ?? new Map<number, string[]>();
-  type Slot = { text: string; isNew: boolean };
+  /** oldId: the sentence's id before the changes, when it is carried over unchanged. */
+  type Slot = { text: string; isNew: boolean; oldId?: number };
   const meaning: Slot[][] = e.meaning.map(() => []);
   const walkthrough: Slot[][] = e.walkthrough.map(() => []);
   if (changes.atStart?.length) {
@@ -75,7 +79,7 @@ export function withChanges(e: Explanation, changes: Changes): { explanation: Ex
     id += 1;
     for (const t of before.get(id) ?? []) into.push({ text: t, isNew: true });
     const r = replace.get(id);
-    if (r === undefined) into.push({ text, isNew: false });
+    if (r === undefined) into.push({ text, isNew: false, oldId: id });
     else if (r.trim()) into.push({ text: r.trim(), isNew: true });
   };
   e.meaning.forEach((p, g) => p.sentences.forEach((text) => visit(meaning[g], text)));
@@ -84,17 +88,22 @@ export function withChanges(e: Explanation, changes: Changes): { explanation: Ex
   const lastPart = walkthrough.length > 0 ? walkthrough[walkthrough.length - 1] : meaning[meaning.length - 1];
   for (const t of before.get(id) ?? []) lastPart?.push({ text: t, isNew: true });
   const r = replace.get(id);
-  const closing: Slot = r === undefined ? { text: e.closing, isNew: false } : { text: r.trim(), isNew: Boolean(r.trim()) };
+  const closing: Slot = r === undefined ? { text: e.closing, isNew: false, oldId: id } : { text: r.trim(), isNew: Boolean(r.trim()) };
 
-  const kept = meaning.filter((p) => p.length > 0);
-  const ordered = [...kept.flat(), ...walkthrough.flat(), closing];
+  const nonEmpty = meaning.filter((p) => p.length > 0);
+  const ordered = [...nonEmpty.flat(), ...walkthrough.flat(), closing];
+  const kept = new Map<number, number>();
+  ordered.forEach((s, i) => {
+    if (s.oldId !== undefined) kept.set(s.oldId, i + 1);
+  });
   return {
     explanation: {
-      meaning: kept.map((p) => ({ sentences: p.map((s) => s.text) })),
+      meaning: nonEmpty.map((p) => ({ sentences: p.map((s) => s.text) })),
       walkthrough: e.walkthrough.map((w, g) => ({ line: w.line, sentences: walkthrough[g].map((s) => s.text) })),
       closing: closing.text,
     },
     changed: ordered.flatMap((s, i) => (s.isNew ? [i + 1] : [])),
+    kept,
   };
 }
 
@@ -209,17 +218,68 @@ export function mentionsWord(rawText: string, word: string): boolean {
   return new RegExp(`(^|[^a-z0-9_])${escaped}${tail}($|[^a-z0-9_])`, "i").test(text);
 }
 
+/** A "word" with no letter or digit in it: a symbol such as >>>, =, ( or '. */
+export function isSymbol(word: string): boolean {
+  return !/[A-Za-z0-9À-ɏ]/.test(word);
+}
+
+/**
+ * Punctuation ordinary prose is full of. As a "word" it counts only where
+ * code uses it — never in the quote's or the explanation's own prose, where
+ * every comma and bracket would match (gate 7 explained the comma of
+ * "Hello, world!" as code).
+ */
+const PROSE_MARKS = /^[\s.,;:!?'"()‘’“”‐-―…-]+$/;
+
+/**
+ * Does this code use the word outside quoted text? A mark inside quoted text
+ * is part of the text, not code (Udit, 2026-10-13), so every text's contents
+ * are emptied first (emptyStrings). A bracket pair ("()") is used when both
+ * its halves are.
+ */
+export function codeUses(code: string, word: string): boolean {
+  const typed = emptyStrings(code);
+  const w = word.replace(/\s+/g, "");
+  if (/^(?:\(\)|\[\]|\{\})$/.test(w)) return typed.includes(w[0]) && typed.includes(w[1]);
+  return mentionsWord(typed, word);
+}
+
+/** A sentence's code spans (`…`): where a sentence can use a symbol. */
+function codeSpans(text: string): string[] {
+  return Array.from(text.matchAll(/`([^`]+)`/g), (m) => m[1]);
+}
+
+/** Does the sentence use the word? A symbol only inside its code spans, outside quoted text; a word anywhere. */
+export function sentenceUses(s: Sentence, word: string): boolean {
+  return isSymbol(word) ? codeSpans(s.text).some((c) => codeUses(c, word)) : mentionsWord(s.text, word);
+}
+
 /**
  * Where the one short sentence explaining a word goes (Udit, 2026-10-10:
- * explained the first time it appears). A word the source block uses — the
- * reader meets it there first, and the source is shown word for word — is
- * explained at the start of the meaning; any other word just before the
- * first sentence that uses it. Null when the lesson does not use the word at
- * all (the judge named a word that is not there).
+ * explained the first time it appears). Only the quoted passages are "the
+ * source" (Udit, 2026-10-13, gate 8): the example is the AI's.
+ *   - A word the passages use goes at the start of the meaning: the reader
+ *     meets it there first. Not a prose mark (comma, bracket, quote mark):
+ *     in a passage those are punctuation.
+ *   - Otherwise the earliest of: just before the first sentence that uses it
+ *     (a symbol: in that sentence's code), and the walk-through item for the
+ *     first example line that uses it, as that item's first sentence — so an
+ *     example's word or symbol is explained where its line is.
+ *   - Null when the lesson does not use it — including a mark that sits only
+ *     inside quoted text, such as the comma in 'Hello, world!'.
  */
 export function wordPlace(word: string, source: SourceBlock, sentences: Sentence[]): "start" | number | null {
-  if ([...source.passages, source.code ?? ""].some((t) => mentionsWord(t, word))) return "start";
-  return sentences.find((s) => mentionsWord(s.text, word))?.id ?? null;
+  const prose = isSymbol(word) && PROSE_MARKS.test(word);
+  if (!prose && source.passages.some((t) => mentionsWord(t, word))) return "start";
+  const candidates: number[] = [];
+  const first = sentences.find((s) => sentenceUses(s, word));
+  if (first) candidates.push(first.id);
+  if (source.code !== null) {
+    const line = source.code.split("\n").findIndex((l) => codeUses(l, word)) + 1;
+    const item = line > 0 ? sentences.find((s) => s.part === "walkthrough" && s.line === line) : undefined;
+    if (item) candidates.push(item.id);
+  }
+  return candidates.length > 0 ? Math.min(...candidates) : null;
 }
 
 // ─── after the one fix ────────────────────────────────────────────────────

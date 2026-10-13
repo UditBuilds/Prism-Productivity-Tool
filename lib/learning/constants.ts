@@ -58,9 +58,11 @@ export const PLAN_MAX_TOKENS = 6_000;
  * writer, G2, the fix and G2 again; on 20b the searches and the copier.
  * job.ts adds up each call's real usage and gives the next call only what is
  * left, so a lesson that would go over stops with that reason instead.
+ * 120b at 10,000, not 8,000 (Udit, 2026-10-13, gate 8): gate 7's chain was
+ * 5,900 with no retry, and its two allowed retries reach about 9,200.
  */
 export const LESSON_BUDGET: Record<string, number> = {
-  [LEARNING_WRITE_MODEL]: 8_000,
+  [LEARNING_WRITE_MODEL]: 10_000,
   [LEARNING_SEARCH_MODEL]: 15_000,
 };
 /** A call is not worth making with less room than this for its answer. */
