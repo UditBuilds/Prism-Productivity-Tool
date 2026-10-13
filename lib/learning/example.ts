@@ -10,11 +10,14 @@ import { hasWebAddress } from "@/lib/learning/sources";
  *     titles and goals name (for step 30: print), and must call this step's;
  *   - gives each call exactly ONE value: plain text in quotes — a whole
  *     number only once a step teaches numbers, a name only once a step
- *     teaches storing values and the example stored it first;
+ *     teaches storing values and the example stored it first, and texts
+ *     joined into one (with + or side by side) only once a step teaches
+ *     joining text (gate 9);
  *   - has no >>> prompt, comments, backticks, web addresses, formatting,
  *     operators, imports or loops (the plain scan, scanExtras, as well);
- * and when it is only print() of plain text, code works out its output
- * (outputByCode) instead of trusting the AI's.
+ * and when it is only print() of plain text — joined or stored under a name
+ * included — code works out its output (outputByCode) instead of trusting
+ * the AI's.
  */
 
 // ─── the plain scan: obvious extras ──────────────────────────────────────
@@ -50,6 +53,9 @@ interface ExtraRule {
 
 /** Stores a value: "Store a number", "Creating variables". */
 const TEACHES_ASSIGNMENT = /\b(?:variables?|assign\w*|stor(?:e|es|ing)|names? for)\b/i;
+
+/** Joins text: "Combine text values", "joining text literals", "concatenate" (Udit, 2026-10-13, gate 9). */
+const TEACHES_JOINING = /\b(?:combin\w*|join\w*|concatenat\w*)\b/i;
 
 /**
  * Udit's list (2026-10-12): .format(, f-strings, % formatting,
@@ -94,6 +100,12 @@ export interface ExampleRules {
   numbers: boolean;
   /** "name = value" is allowed: a step so far teaches storing values. */
   assignment: boolean;
+  /**
+   * Text values may be joined into one: with + or side by side (Udit,
+   * 2026-10-13, gate 9: step 32 "Combine text values" could not show its idea
+   * under "one plain value" and "no operators").
+   */
+  joinText: boolean;
   /** This step's and the earlier steps' titles and goals, for the plain scan. */
   taught: string;
 }
@@ -109,6 +121,7 @@ export function exampleRulesFor(step: { title: string; goal: string }, earlier: 
     allowedCalls: names(taught),
     numbers: /\b(?:numbers?|integers?|arithmetic|math)\b/i.test(taught),
     assignment: TEACHES_ASSIGNMENT.test(taught),
+    joinText: TEACHES_JOINING.test(taught),
     taught,
   };
 }
@@ -123,10 +136,12 @@ export function exampleRulesText(r: ExampleRules): string {
     "- 1 to 3 lines, typed as in a file: no >>> prompt, no comments, no backticks.",
     "- One statement per line.",
     `- Call only: ${calls}.${r.stepCalls.length ? ` Call ${r.stepCalls.map((c) => `${c}()`).join(" or ")} at least once: it is this step's idea.` : ""}`,
-    "- Each call gets exactly ONE value.",
+    r.joinText ? "- Each call gets exactly ONE value; texts joined into one count as one value." : "- Each call gets exactly ONE value.",
     `- A value is ${values.join(", or ")}.`,
     r.assignment ? "- You may store a value with name = value." : "- No = (storing a value comes in a later step).",
-    "- No +, * or other operators, no formatting (f-strings, .format, %), no imports, no loops.",
+    r.joinText
+      ? `- You may join text values into one, with + ('Hello, ' + 'world'${r.assignment ? ", or 'Hi ' + name for a name that holds text" : ""}) or by writing two texts side by side ('Hello, ' 'world'). Only text is joined: no number in a join. No other operators (*, -, /), no formatting (f-strings, .format, %), no imports, no loops.`
+      : "- No +, * or other operators, no formatting (f-strings, .format, %), no imports, no loops.",
   ];
   return lines.join("\n");
 }
@@ -226,8 +241,53 @@ export function checkExample(lines: string[], rules: ExampleRules): ExampleCheck
   const problems: string[] = [];
   const typed = lines.map((l) => l.replace(/\s+$/, "")).filter((l) => l.trim());
   if (typed.length < 1 || typed.length > 3) problems.push(`it has ${typed.length} lines; 1 to 3 are allowed`);
-  const stored = new Set<string>();
+  /** Each stored name and what it holds: only a name holding text may be joined (Python refuses 'a' + 5). */
+  const stored = new Map<string, "text" | "number">();
   let callsStep = false;
+
+  /** One part of a join: plain text, or a name the example stored with text in it. */
+  const joinPart = (t: Token): string | null => {
+    if (t.kind === "text") {
+      if (t.prefix) return `its text has the prefix ${t.prefix} (${/f/i.test(t.prefix) ? "an f-string" : "a special text value"})`;
+      if (t.escape) return "its text has a backslash code such as \\n";
+      if (!t.value.trim()) return "it joins an empty text";
+      return null;
+    }
+    if (t.kind === "name") {
+      if (!rules.assignment || !stored.has(t.raw)) return `it joins the name ${t.raw}, which ${rules.assignment ? "the example has not stored" : "no step so far teaches"}`;
+      return stored.get(t.raw) === "text" ? null : `it joins the name ${t.raw}, which holds a number: only text can be joined`;
+    }
+    if (t.kind === "number") return `it joins the number ${t.raw}: only text can be joined`;
+    return null;
+  };
+  /**
+   * Texts joined into one (rules.joinText, gate 9): parts with + between
+   * them, or two texts side by side ('Hello, ' 'world'). Nothing else.
+   */
+  const joined = (arg: Token[]): string | null => {
+    const notJoin = `its value is not one plain value or a join of text values (${shown(arg)})`;
+    let wantPart = true;
+    let prev: Token | null = null;
+    for (const t of arg) {
+      if (t.kind === "op" && t.raw === "+") {
+        if (wantPart) return notJoin;
+        wantPart = true;
+        prev = t;
+        continue;
+      }
+      if (t.kind === "op" || t.kind === "comment") return notJoin;
+      // Side by side works only for two texts: name 'x' is not Python.
+      if (!wantPart && !(t.kind === "text" && prev?.kind === "text")) return notJoin;
+      const why = joinPart(t);
+      if (why) return why;
+      wantPart = false;
+      prev = t;
+    }
+    return wantPart ? notJoin : null;
+  };
+  /** What a valid value holds, for `stored`. */
+  const holds = (arg: Token[]): "text" | "number" =>
+    arg.length === 1 && arg[0].kind === "number" ? "number" : arg.length === 1 && arg[0].kind === "name" ? stored.get(arg[0].raw) ?? "text" : "text";
 
   typed.forEach((line, k) => {
     const at = `line ${k + 1}`;
@@ -247,7 +307,7 @@ export function checkExample(lines: string[], rules: ExampleRules): ExampleCheck
       return;
     }
     const value = (arg: Token[]): string | null => {
-      if (arg.length !== 1) return `its value is not one plain value (${shown(arg)})`;
+      if (arg.length !== 1) return rules.joinText ? joined(arg) : `its value is not one plain value (${shown(arg)})`;
       const t = arg[0];
       if (t.kind === "text") {
         if (t.prefix) return `its text has the prefix ${t.prefix} (${/f/i.test(t.prefix) ? "an f-string" : "a special text value"})`;
@@ -266,7 +326,7 @@ export function checkExample(lines: string[], rules: ExampleRules): ExampleCheck
       if (!rules.assignment) problems.push(`${at} stores a value with =, which no step so far teaches`);
       const why = value(tokens.slice(2));
       if (why) problems.push(`${at}: ${why}`);
-      stored.add(first.raw);
+      stored.set(first.raw, holds(tokens.slice(2)));
       return;
     }
     // name(args)
@@ -305,21 +365,58 @@ export function checkExample(lines: string[], rules: ExampleRules): ExampleCheck
 }
 
 /**
- * The output, worked out by code: only when every line is print() of one
- * plain text value — print writes the text and ends the line. Null for
- * anything else (its output is the AI's, labelled as such).
+ * Plain text, worked out: texts with no prefix and no backslash code, and
+ * names holding such text, joined with + or side by side. Null for anything
+ * else — a number among them included.
+ */
+function textOf(tokens: Token[], known: ReadonlyMap<string, string>): string | null {
+  let out = "";
+  let wantPart = true;
+  let prev: Token | null = null;
+  for (const t of tokens) {
+    if (t.kind === "op" && t.raw === "+") {
+      if (wantPart) return null;
+      wantPart = true;
+      prev = t;
+      continue;
+    }
+    if (!wantPart && !(t.kind === "text" && prev?.kind === "text")) return null;
+    if (t.kind === "text" && !t.prefix && !t.escape) out += t.value;
+    else if (t.kind === "name" && known.has(t.raw)) out += known.get(t.raw);
+    else return null;
+    wantPart = false;
+    prev = t;
+  }
+  return wantPart ? null : out;
+}
+
+/**
+ * The output, worked out by code: only when every line is print() of plain
+ * text, or stores plain text under a name — the text may be joined from
+ * parts (gate 9), and a name may stand for text code worked out on an
+ * earlier line. print writes the text and ends the line. Null for anything
+ * else, numbers included (its output is the AI's, labelled as such).
  */
 export function outputByCode(lines: string[]): string[] | null {
   const typed = lines.map((l) => l.trim()).filter(Boolean);
   if (typed.length === 0) return null;
+  const known = new Map<string, string>();
   const out: string[] = [];
   for (const line of typed) {
     const t = tokenize(line);
-    if (typeof t === "string" || t.length !== 4) return null;
-    const [fn, open, text, close] = t;
-    const plain = text.kind === "text" && !text.prefix && !text.escape;
-    if (fn.kind !== "name" || fn.raw !== "print" || open.kind !== "op" || open.raw !== "(" || !plain || close.kind !== "op" || close.raw !== ")") return null;
-    out.push(text.value);
+    if (typeof t === "string" || t.length < 3) return null;
+    const [first, second] = t;
+    const last = t[t.length - 1];
+    if (first.kind === "name" && second.kind === "op" && second.raw === "=") {
+      const text = textOf(t.slice(2), known);
+      if (text === null) known.delete(first.raw);
+      else known.set(first.raw, text);
+      continue;
+    }
+    if (first.kind !== "name" || first.raw !== "print" || second.kind !== "op" || second.raw !== "(" || last.kind !== "op" || last.raw !== ")") return null;
+    const text = textOf(t.slice(2, -1), known);
+    if (text === null) return null;
+    out.push(text);
   }
   return out;
 }

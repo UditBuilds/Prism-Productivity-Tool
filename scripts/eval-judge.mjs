@@ -1,9 +1,12 @@
 /**
- * Send the meaning check's test set (scripts/judge-cases.json) to the REAL
- * G2 judge — lib/learning/judge.ts, strict JSON, each group's explanation
- * sent exactly as the lesson job sends it — on gpt-oss-20b and gpt-oss-120b,
- * and score both: each scored sentence's verdict, and the unexplained words
- * each group must and must not report.
+ * Send the test set (scripts/judge-cases.json) to the REAL G2 word check —
+ * lib/learning/judge.ts, strict JSON, each group's explanation sent exactly
+ * as the lesson job sends it — on gpt-oss-20b and gpt-oss-120b, and score
+ * the unexplained words each group must and must not report, each pointer's
+ * quote checked by code as in a lesson. Since gate 9 (Udit, 2026-10-13) G2
+ * gives no sentence verdicts, so the cases' "expect" verdicts are no longer
+ * scored; they stay in the file as the record of what the old check was
+ * asked.
  *
  * This SPENDS Groq tokens on the live app's account (a few thousand per
  * model per run), so it is not part of `npm test` (which only runs
@@ -22,7 +25,8 @@ import { pathToFileURL } from "node:url";
 
 const root = process.cwd();
 const out = mkdtempSync(path.join(tmpdir(), "prism-judge-eval-"));
-const MODULES = ["constants", "answers", "net-guard", "html-text", "sources", "passages", "explanation", "judge"];
+// explanation.ts imports example.ts since gate 8 (emptyStrings).
+const MODULES = ["constants", "answers", "net-guard", "html-text", "sources", "passages", "example", "explanation", "judge"];
 const files = MODULES.map((name) => {
   const text = readFileSync(path.join(root, "lib", "learning", `${name}.ts`), "utf8").replace(
     /["']@\/lib\/learning\/([a-z-]+)["']/g,
@@ -90,8 +94,6 @@ for (const key of which) {
   if (!model) throw new Error(`unknown model ${key}; use 20b or 120b`);
   console.log(`\n━━ ${model}`);
   let tokens = 0;
-  let verdictsOk = 0;
-  let verdictsAll = 0;
   let wordsOk = 0;
   let wordsAll = 0;
   for (const group of set.groups) {
@@ -106,29 +108,16 @@ for (const key of which) {
         { role: "system", content: judge.JUDGE_SYSTEM_PROMPT },
         { role: "user", content: judge.judgeUserMessage(group.source, sentences) },
       ],
-      response_format: { type: "json_schema", json_schema: { name: "verdicts", strict: true, schema: judge.JUDGE_SCHEMA } },
+      response_format: { type: "json_schema", json_schema: { name: "words", strict: true, schema: judge.JUDGE_SCHEMA } },
       reasoning_effort: "low",
       temperature: 0,
       max_tokens: JUDGE_MAX_TOKENS,
     });
     tokens += body.usage?.total_tokens ?? 0;
-    const answer = answers.readAnswer(body.choices?.[0]?.message?.content ?? "", judge.JUDGE_SCHEMA, "the meaning check's answer");
-    const read = judge.readVerdicts(answer, sentences, group.source, sentences);
-    if ("bad" in read) {
-      console.log(`  group ${group.name}: the answer could not be used: ${read.bad}`);
-      verdictsAll += group.cases.filter((c) => c.expect).length;
-      continue;
-    }
+    const answer = answers.readAnswer(body.choices?.[0]?.message?.content ?? "", judge.JUDGE_SCHEMA, "the word check's answer");
+    const read = judge.readWords(answer, group.source, sentences);
     console.log(`  ${group.name} (${body.usage?.total_tokens ?? 0} tokens)`);
-    group.cases.forEach((c, i) => {
-      if (!c.expect) return;
-      const v = answer.verdicts.find((x) => x.id === i + 1);
-      const got = v?.verdict ?? "none";
-      const pass = got === c.expect || (c.accept ?? []).includes(got);
-      verdictsAll += 1;
-      if (pass) verdictsOk += 1;
-      console.log(`    ${pass ? "ok  " : "MISS"} ${c.id.padEnd(40)} expect ${c.expect.padEnd(11)} got ${got.padEnd(11)}${v?.reason ? ` ${v.reason}` : ""}`);
-    });
+    for (const w of read.inventory.filter((x) => x.note)) console.log(`    pointer not taken: ${w.word}: ${w.note}`);
     const listed = read.words.map((w) => w.word).concat(read.dropped);
     if (group.words) {
       for (const w of group.words.include) {
@@ -146,7 +135,7 @@ for (const key of which) {
     }
     console.log(`    unexplained words it listed: ${listed.length ? listed.join(", ") : "(none)"}`);
   }
-  const line = `${model}: verdicts ${verdictsOk}/${verdictsAll}, words ${wordsOk}/${wordsAll}, ${tokens} tokens`;
+  const line = `${model}: words ${wordsOk}/${wordsAll}, ${tokens} tokens`;
   summary.push(line);
   console.log(`\n${line}`);
 }

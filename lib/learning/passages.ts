@@ -245,6 +245,83 @@ export function withoutReferences(page: NumberedPage): { page: NumberedPage; dro
   return { page: { sentences, code: page.code }, dropped };
 }
 
+// ─── the step's main word (gate 9) ───────────────────────────────────────
+
+/**
+ * The word the quote must use (Udit, 2026-10-13, gate 9): "print" for "Print
+ * a greeting". A passage may use any of its forms — "printed" counts for
+ * "print" — and an idea a passage names in other words has those too: step
+ * 31 "Store a number" is taught by "The equal sign (=) is used to assign a
+ * value to a variable."
+ */
+export interface MainWord {
+  word: string;
+  /** Every form that counts, lower case. */
+  forms: string[];
+}
+
+interface Idea extends MainWord {
+  /** A title or goal that matches this teaches the idea. */
+  teaches: RegExp;
+}
+
+/** The ideas of a beginner's code course, roughly in course order. */
+const IDEAS: Idea[] = [
+  { word: "print", teaches: /\bprint\w*/i, forms: ["print", "prints", "printed", "printing"] },
+  {
+    word: "variable",
+    teaches: /\b(?:variables?|assign\w*|stor(?:e|es|ed|ing))\b/i,
+    forms: ["variable", "variables", "assign", "assigns", "assigned", "assigning", "assignment", "store", "stores", "stored", "storing"],
+  },
+  {
+    word: "concatenate",
+    teaches: /\b(?:combin\w*|join\w*|concatenat\w*)\b/i,
+    forms: ["concatenate", "concatenates", "concatenated", "concatenating", "concatenation", "join", "joins", "joined", "joining", "combine", "combines", "combined", "combining"],
+  },
+  { word: "list", teaches: /\blists?\b/i, forms: ["list", "lists"] },
+  { word: "append", teaches: /\bappend\w*/i, forms: ["append", "appends", "appended", "appending"] },
+  { word: "loop", teaches: /\bloop\w*/i, forms: ["loop", "loops", "looping", "iterate", "iterates", "iteration"] },
+  { word: "if", teaches: /\b(?:if statements?|conditions?|conditional|decision)\b/i, forms: ["if", "condition", "conditions", "conditional"] },
+  { word: "function", teaches: /\bfunctions?\b/i, forms: ["function", "functions", "def"] },
+  { word: "return", teaches: /\breturn\w*/i, forms: ["return", "returns", "returned", "returning"] },
+  { word: "import", teaches: /\bimport\w*/i, forms: ["import", "imports", "imported", "importing", "module", "modules"] },
+  { word: "NumPy", teaches: /\bnumpy\b/i, forms: ["numpy"] },
+  { word: "array", teaches: /\barrays?\b/i, forms: ["array", "arrays"] },
+];
+
+const TITLE_LITTLE = new Set("a an the of to in on for with and or your from into make use write run add create".split(" "));
+
+/**
+ * The step's main word: the idea named first in its title, else in its goal;
+ * with neither, the title's first word of four letters or more (any form
+ * that starts with it counts). Null for a title with no such word.
+ */
+export function mainWordFor(step: { title: string; goal: string }): MainWord | null {
+  for (const text of [step.title, step.goal]) {
+    let best: { at: number; idea: Idea } | null = null;
+    for (const idea of IDEAS) {
+      const m = idea.teaches.exec(text);
+      if (m && (best === null || m.index < best.at)) best = { at: m.index, idea };
+    }
+    if (best) return { word: best.idea.word, forms: best.idea.forms };
+  }
+  const first = (step.title.toLowerCase().match(/[a-z]+/g) ?? []).find((w) => w.length >= 4 && !TITLE_LITTLE.has(w));
+  return first ? { word: first, forms: [first] } : null;
+}
+
+/** Does the text use the main word, in any of its forms? A fallback word (no idea found) counts in any form that starts with it. */
+export function usesMainWord(text: string, main: MainWord): boolean {
+  const known = IDEAS.some((i) => i.word === main.word);
+  const forms = main.forms.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return new RegExp(known ? `\\b(?:${forms})\\b` : `\\b(?:${forms})[a-z]*\\b`, "i").test(text);
+}
+
+/** Added to the copier's message for its one retry on a page whose first choice did not use the main word. */
+export function copierMainWordRetry(main: MainWord): string {
+  const others = main.forms.filter((f) => f !== main.word.toLowerCase());
+  return `Your last choice quoted no sentence that uses "${main.word}"${others.length ? ` (or ${others.join(", ")})` : ""}, the STEP's idea. Choose again, and include at least one sentence that uses it.`;
+}
+
 // ─── the copier: sentence numbers only ───────────────────────────────────
 
 export interface CopierAnswer {

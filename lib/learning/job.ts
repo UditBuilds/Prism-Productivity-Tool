@@ -25,6 +25,7 @@ import {
 } from "@/lib/learning/constants";
 import { isLocalDevRuntime } from "@/lib/learning/dev-override";
 import {
+  CHECKER_UNUSABLE_NOTE,
   checkShape,
   explanationWords,
   lengthAtEnd,
@@ -32,7 +33,6 @@ import {
   NO_MARKS,
   renderLessonBody,
   sentencesOf,
-  settleAfterFix,
   shortMark,
   withChanges,
   type Changes,
@@ -44,7 +44,7 @@ import {
 import {
   BadAnswerError,
   copySource,
-  judgeSentences,
+  judgeWords,
   LearningAiError,
   searchForStep,
   writeExplanation,
@@ -54,14 +54,26 @@ import {
 } from "@/lib/learning/groq";
 import { checkExample, exampleRulesFor, exampleRulesText, outputByCode } from "@/lib/learning/example";
 import { excerptFor, extractPage } from "@/lib/learning/html-text";
-import { JUDGE_EMPTY_WORDS_RETRY, JUDGE_SYSTEM_PROMPT, judgeUserMessage, readVerdicts, wordsAfterFix, type JudgeReading } from "@/lib/learning/judge";
+import {
+  courseWordsAfterFix,
+  JUDGE_EMPTY_WORDS_RETRY,
+  JUDGE_SYSTEM_PROMPT,
+  judgeUserMessage,
+  readWords,
+  sameWord,
+  wordsAfterFix,
+  type JudgeReading,
+} from "@/lib/learning/judge";
 import { budgetState, logCall } from "@/lib/learning/ledger";
 import { pickStepToWrite, type StepState } from "@/lib/learning/next-step";
 import {
   chooseSource,
+  copierMainWordRetry,
   copierUserMessage,
   COPIER_SYSTEM_PROMPT,
+  mainWordFor,
   numberPage,
+  usesMainWord,
   pageThinness,
   withoutReferences,
   wordCount,
@@ -113,11 +125,15 @@ import type { Database } from "@/types/database";
  *      that does not fit is never shown;
  *   3. the AI explanation (120b, JSON) from that source block only;
  *   4. its shape (explanation.ts), G1 the code rule (code-rule.ts, no AI),
- *      G2 the meaning check (judge.ts, 120b);
- *   5. at most ONE fix that resends only the flagged sentences; a cut-off
- *      answer is never applied; then the lesson is saved — in mark mode
- *      (G2_MARK_MODE) with a visible mark on each sentence G2 still doubts —
- *      or the step fails with the real reason and waits for "Try again".
+ *      G2 the word check (judge.ts, 120b), which since gate 9 (Udit,
+ *      2026-10-13) gives no sentence verdicts and never fails the step;
+ *   5. at most ONE fix that resends only the flagged sentences and the
+ *      unexplained words; a cut-off answer is never applied; then the lesson
+ *      is saved — in mark mode (G2_MARK_MODE) with a visible mark on each
+ *      word G2 still finds unexplained, and each course word a fix sentence
+ *      brings in unexplained (code) — or the step fails with the real reason
+ *      and waits for "Try again". Only the copier, the writer (its fix
+ *      included), shape, G1 and the length limit can fail a step.
  * Each model has a per-lesson token budget (LESSON_BUDGET); every call is
  * given only what is left of it.
  */
@@ -256,7 +272,7 @@ async function debugDump(stepId: string, data: unknown): Promise<void> {
 }
 
 function describe(problems: Problem[]): string[] {
-  return problems.map((p) => (p.sentence === null ? p.reason : `sentence ${p.sentence} (${p.check}${p.verdict ? `, ${p.verdict}` : ""}): ${p.reason}`));
+  return problems.map((p) => (p.sentence === null ? p.reason : `sentence ${p.sentence} (${p.check}): ${p.reason}`));
 }
 
 /** What a failed or unusable call means for the stored message. */
@@ -372,6 +388,10 @@ export async function advanceTopic(
   // The plan before this step: what the example may use besides the step's own idea.
   const position = steps.find((s) => s.id === stepId)?.position ?? Number.POSITIVE_INFINITY;
   const earlierSteps = steps.filter((s) => s.removed_at === null && s.position < position).sort((a, b) => a.position - b.position);
+  // The word the quote must use: "print" for "Print a greeting" (gate 9).
+  const main = mainWordFor({ title: claimed.title, goal: claimed.goal });
+  trace.stages.mainWord = main;
+  const isFound = (r: Found | "thin" | null | AdvanceResult): r is Found => r !== null && r !== "thin" && "source" in r;
 
   interface Viable {
     page: FetchedPage;
@@ -382,9 +402,10 @@ export async function advanceTopic(
   }
   const usableWords = (p: NumberedPage) => p.sentences.filter((s) => s.usable).reduce((n, s) => n + wordCount(s.text), 0);
 
-  /** The copier on one page. Found, "thin" (try the next page), or a result that ends this advance. */
-  const quote = async (v: Viable): Promise<Found | "thin" | AdvanceResult> => {
-    const message = copierUserMessage({ stepTitle: claimed.title, goal: claimed.goal, siteName: v.siteName, page: v.view });
+  /** The copier on one page; `note` is added for its retry there. Found, "thin" (try the next page), or a result that ends this advance. */
+  const quote = async (v: Viable, note?: string): Promise<Found | "thin" | AdvanceResult> => {
+    const base = copierUserMessage({ stepTitle: claimed.title, goal: claimed.goal, siteName: v.siteName, page: v.view });
+    const message = note ? `${base}\n\n${note}` : base;
     const copyRoom = spend.room(LEARNING_COPY_MODEL, promptTokens(COPIER_SYSTEM_PROMPT, message), COPY_MAX_TOKENS);
     if (copyRoom === null) {
       left.push({ url: v.page.url, why: `not tried: ${spend.overMessage(LEARNING_COPY_MODEL)}` });
@@ -404,9 +425,9 @@ export async function advanceTopic(
       const f = callFailure(err, "choice of what to quote");
       return fail(f.code, f.message);
     }
-    await noted("copier", copy.record, copy.limits);
+    await noted(note ? "copier, again" : "copier", copy.record, copy.limits);
     const choice = chooseSource(copy.value, v.view);
-    trace.copier.push({ url: v.page.url, answer: copy.value, choice });
+    trace.copier.push({ url: v.page.url, retry: Boolean(note), answer: copy.value, choice });
     if (choice.kind === "bad") {
       console.error(`[learning] the copier's answer was not used (${choice.reason}). Raw answer:`, copy.raw);
       return fail("ai_error", `The AI's choice of what to quote could not be used: ${choice.reason}. Try again.`);
@@ -488,18 +509,37 @@ export async function advanceTopic(
         left.push({ url: v.page.url, why: `only ${words} usable words once sentences that refer to something not shown are dropped; at least ${MIN_SOURCE_WORDS} are needed` });
         continue;
       }
+      // The quote must use the step's main word (Udit, 2026-10-13, gate 9):
+      // a page with no usable sentence that does is left before any try.
+      if (main && !v.view.sentences.some((s) => s.usable && usesMainWord(s.text, main))) {
+        left.push({ url: v.page.url, why: `no usable sentence uses "${main.word}", the step's main word` });
+        continue;
+      }
       if (tries >= MAX_COPIER_TRIES) {
-        left.push({ url: v.page.url, why: `not tried: ${MAX_COPIER_TRIES} pages of this search already were` });
+        left.push({ url: v.page.url, why: `not tried: ${MAX_COPIER_TRIES} copier tries of this search were already used` });
         continue;
       }
       tries += 1;
-      const got = await quote(v);
+      let got = await quote(v);
+      // A choice without it: the copier once more on the same page, as one of
+      // the same tries, told the word; then the next page.
+      if (main && isFound(got) && !got.source.passages.some((p) => usesMainWord(p, main))) {
+        if (tries >= MAX_COPIER_TRIES) {
+          left.push({ url: v.page.url, why: `its quote did not use "${main.word}", and no copier try was left to choose again` });
+          continue;
+        }
+        tries += 1;
+        got = await quote(v, copierMainWordRetry(main));
+        if (isFound(got) && !got.source.passages.some((p) => usesMainWord(p, main))) {
+          left.push({ url: v.page.url, why: `its quote did not use "${main.word}", twice` });
+          continue;
+        }
+      }
       if (got !== "thin") return got;
     }
     return null;
   };
 
-  const isFound = (r: Found | null | AdvanceResult): r is Found => r !== null && "source" in r;
   let found: Found | null = null;
   if (docsSite) {
     const r = await searchPhase("docs", siteQuery(docsSite, claimed.search_query), (hits) => pickDocsCandidates(hits, docsSite, MAX_CANDIDATE_PAGES));
@@ -564,6 +604,8 @@ export async function advanceTopic(
       await noted("writer", answer.record, answer.limits);
     } catch (err) {
       await notedError("writer", err);
+      // Every attempt's whole answer is kept, refused ones too (Udit, 2026-10-13, gate 9).
+      if (err instanceof BadAnswerError) writerAttempts.push({ refused: err.answer.reason, kind: err.answer.kind, raw: err.answer.raw });
       const wait = waitResult(err);
       if (wait) {
         await release(ctx, stepId, claimedAt);
@@ -572,7 +614,6 @@ export async function advanceTopic(
       if (err instanceof BadAnswerError && err.answer.kind === "format" && !formatRetried) {
         if (!takeRetry("the writer's JSON was refused")) return fail("ai_error", capMessage("the writer's JSON was refused"));
         formatRetried = true;
-        writerAttempts.push({ refused: err.answer.reason, raw: err.answer.raw });
         notes.push(WRITER_FORMAT_RETRY);
         continue;
       }
@@ -582,7 +623,7 @@ export async function advanceTopic(
     trace.stages.writer = answer.raw;
     if (rules) {
       const check = checkExample(answer.value.example.lines, rules);
-      writerAttempts.push({ example: answer.value.example, check });
+      writerAttempts.push({ example: answer.value.example, check, raw: answer.raw });
       if (!check.ok) {
         if (!exampleRetried) {
           if (!takeRetry("the example broke a rule")) return fail("ai_error", capMessage("the example broke a rule"), check.problems);
@@ -593,7 +634,7 @@ export async function advanceTopic(
         return fail("ai_error", `The AI's example broke the example rules twice, so no lesson was written: ${check.problems.join("; ")}. Try again.`, check.problems);
       }
     } else {
-      writerAttempts.push({ example: answer.value.example });
+      writerAttempts.push({ example: answer.value.example, raw: answer.raw });
     }
     draft = answer.value;
   }
@@ -619,86 +660,89 @@ export async function advanceTopic(
   }
 
   /**
-   * G2 (120b) on the `judged` sentences, with the whole explanation as
-   * context. Returns what it found, or a result that ends this advance.
+   * G2, the word check (120b), on the whole explanation. It never ends the
+   * advance (Udit, 2026-10-13, gate 9): an answer that cannot be used — Groq
+   * refused it, it was cut off or timed out, the model was too busy, the
+   * lesson had no budget left for it, or it listed no words twice although
+   * the lesson shows code — comes back as `unusable` with why, and the
+   * lesson is saved without G2's marks, with CHECKER_UNUSABLE_NOTE on top.
    */
-  const meaningCheck = async (all: Sentence[], judged: Sentence[], pass: string): Promise<JudgeReading | AdvanceResult> => {
-    const base = judgeUserMessage(source, all, judged.map((s) => s.id));
-    // With code shown, an empty word list is a broken answer, never "nothing
-    // to explain" (Udit, 2026-10-12; gate 4's G2 answered "words": []): one
-    // retry that says so, then the step fails honestly.
+  const wordCheck = async (all: Sentence[], pass: string): Promise<JudgeReading | { unusable: string }> => {
+    const base = judgeUserMessage(source, all);
     for (let attempt = 1; attempt <= 2; attempt++) {
       const message = attempt === 1 ? base : `${base}\n\n${JUDGE_EMPTY_WORDS_RETRY}`;
       const label = attempt === 1 ? pass : `${pass}, again: it listed no words`;
       const room = spend.room(LEARNING_JUDGE_MODEL, promptTokens(JUDGE_SYSTEM_PROMPT, message), JUDGE_MAX_TOKENS);
-      if (room === null) return fail("ai_error", `The explanation was not checked: ${spend.overMessage(LEARNING_JUDGE_MODEL)}. Try again.`);
+      if (room === null) return { unusable: `it was not run: ${spend.overMessage(LEARNING_JUDGE_MODEL)}` };
+      let answer;
       try {
-        // A draft has already been paid for, so a busy check is not a reason
-        // to start again from the search: it fails honestly, never loops.
-        const answer = await withShortWait(ctx, stepId, 8_000, () => judgeSentences(message, room));
-        await noted(`meaning check (G2, ${label})`, answer.record, answer.limits);
-        const read = readVerdicts(answer.value, judged, source, all);
-        trace.g2.push({ pass: label, judged: judged.map((x) => ({ id: x.id, text: x.text })), answer: answer.value, read });
-        if ("bad" in read) {
-          console.error(`[learning] the meaning check's answer was not used (${read.bad}). Raw answer:`, answer.raw);
-          return fail("ai_error", `The AI's meaning check could not be used: ${read.bad}. The explanation was not saved. Try again.`);
-        }
-        if (source.code !== null && answer.value.words.length === 0) {
-          if (attempt === 1) {
-            if (!takeRetry(`G2 listed no words (${pass})`)) return fail("ai_error", capMessage(`G2 listed no words (${pass})`));
-            continue;
-          }
-          return fail("ai_error", "The AI's meaning check listed no technical words, twice, although the lesson shows code, so the explanation was not saved. Try again.");
-        }
-        return read;
+        answer = await withShortWait(ctx, stepId, 8_000, () => judgeWords(message, room));
       } catch (err) {
-        await notedError(`meaning check (G2, ${label})`, err);
-        const f = callFailure(err, "meaning check");
-        return fail(f.code, `${f.message.replace(/ Try again\.$/, "")} The explanation was not saved. Try again.`);
+        await notedError(`word check (G2, ${label})`, err);
+        return { unusable: callFailure(err, "word check").message.replace(/ Try again\.$/, "") };
       }
+      await noted(`word check (G2, ${label})`, answer.record, answer.limits);
+      const read = readWords(answer.value, source, all);
+      trace.g2.push({ pass: label, answer: answer.value, read });
+      // With code shown, an empty word list is a broken answer, never
+      // "nothing to explain" (Udit, 2026-10-12; gate 4's G2 answered
+      // "words": []): one retry that says so, inside the lesson's limit.
+      if (source.code !== null && answer.value.words.length === 0) {
+        if (attempt === 1 && takeRetry(`G2 listed no words (${pass})`)) continue;
+        return {
+          unusable:
+            attempt === 1
+              ? `it listed no words, and the lesson's ${MAX_RETRIES_PER_LESSON} retries were already used (${retries.map((r) => r.kind).join(" and ")})`
+              : "it listed no words, twice, although the lesson shows code",
+        };
+      }
+      return read;
     }
-    return fail("ai_error", "The AI's meaning check gave no usable answer, so the explanation was not saved. Try again.");
+    return { unusable: "it gave no usable answer" };
   };
-  // Not "problems" in r: a failed AdvanceResult carries a problems key too (found by the gate-5 stub run).
-  const isReading = (r: JudgeReading | AdvanceResult): r is JudgeReading => !("kind" in r);
+  /** Each G2 pass whose answer could not be used, and why: any one, and the lesson has no G2 marks. */
+  const unusable: { pass: string; why: string }[] = [];
+  trace.stages.g2Unusable = unusable;
 
-  // First pass: G1 and G2 on every sentence; G2 also lists the words it
-  // finds unexplained.
+  // First pass: G1 (code) and G2's word list.
   const firstSentences = sentencesOf(explanation);
   const g1 = checkCodeRule(firstSentences, source);
-  const firstRead = await meaningCheck(firstSentences, firstSentences, "first");
-  if (!isReading(firstRead)) return firstRead;
-  const first = [...g1, ...firstRead.problems];
-  const firstProblems = [...describe(first), ...firstRead.words.map((w) => `unexplained word: ${w.word}`)];
+  const firstCheck = await wordCheck(firstSentences, "first");
+  const firstRead = "unusable" in firstCheck ? null : firstCheck;
+  if ("unusable" in firstCheck) unusable.push({ pass: "first", why: firstCheck.unusable });
+  const firstWords = firstRead?.words ?? [];
+  const firstProblems = [...describe(g1), ...firstWords.map((w) => `unexplained word: ${w.word}`)];
   trace.stages.firstProblems = firstProblems;
-  trace.stages.unexplainedWords = { words: firstRead.words, dropped: firstRead.dropped, inventory: firstRead.inventory };
+  trace.stages.unexplainedWords = firstRead ? { words: firstRead.words, dropped: firstRead.dropped, inventory: firstRead.inventory } : null;
 
   // ── 5. At most one fix: only the flagged sentences go back, with the words to explain.
   let attempts = 1;
-  /** Mark mode: the sentences and words G2 still doubts after the fix. */
+  /** Mark mode: the words still unexplained after the fix. */
   let marks: Marks = NO_MARKS;
-  if (first.length > 0 || firstRead.words.length > 0) {
-    const flaggedIds = Array.from(new Set(first.map((p) => p.sentence).filter((id): id is number => id !== null)));
+  if (g1.length > 0 || firstWords.length > 0) {
+    const flaggedIds = Array.from(new Set(g1.map((p) => p.sentence).filter((id): id is number => id !== null)));
     const flagged = firstSentences.filter((s) => flaggedIds.includes(s.id));
     if (Date.now() - ctx.startedAt > ADVANCE_DEADLINE_MS - 15_000) {
       return fail("ungrounded", `The checks found problems in the explanation and there was no time left for its one fix, so it was not saved: ${firstProblems.join("; ")}. Try again.`, firstProblems);
     }
-    const fixMessage = writerFixMessage(flagged, first, firstRead.words, source, firstSentences);
+    const fixMessage = writerFixMessage(flagged, g1, firstWords, source, firstSentences);
     const fixRoom = spend.room(LEARNING_WRITE_MODEL, promptTokens(WRITER_SYSTEM_PROMPT, userMessage, fixMessage), FIX_MAX_TOKENS);
     if (fixRoom === null) {
       return fail("ungrounded", `The checks found problems in the explanation and ${spend.overMessage(LEARNING_WRITE_MODEL)}, so it was not saved: ${firstProblems.join("; ")}. Try again.`, firstProblems);
     }
     let changes: Changes;
+    let fixWords: { word: string; sentence: string }[];
     try {
       const fix = await withShortWait(ctx, stepId, 12_000, () => writeFix(userMessage, fixMessage, fixRoom));
       await noted("fix", fix.record, fix.limits);
       trace.stages.fix = { asked: fixMessage, answer: fix.raw };
-      const read = readFix(fix.value, flaggedIds, firstRead.words);
+      const read = readFix(fix.value, flaggedIds, firstWords);
       if ("bad" in read) {
         console.error(`[learning] the fix's answer was not used (${read.bad}). Raw answer:`, fix.raw);
         return fail("ai_error", `The AI's fix could not be used: ${read.bad}. The explanation was not saved. Try again.`, firstProblems);
       }
       changes = read.changes;
+      fixWords = read.explanations;
       trace.stages.changes = {
         replaced: Array.from(read.changes.replace?.entries() ?? []).map(([id, sentence]) => ({ id, was: firstSentences.find((s) => s.id === id)?.text, now: sentence })),
         explained: read.explanations,
@@ -728,34 +772,49 @@ export async function advanceTopic(
       trace.stages.afterFix = describe(g1After);
       return fail("ungrounded", `After its one fix the explanation still broke the code rule, so it was not saved: ${describe(g1After).join("; ")}. Try again.`, describe(g1After));
     }
-    const afterRead = changed.length > 0 ? await meaningCheck(fixedSentences, changed, "after fix") : null;
-    if (afterRead !== null && !isReading(afterRead)) return afterRead;
-    const still = afterRead?.problems ?? [];
-    trace.stages.afterFix = describe(still);
-    // Mark mode: every sentence G2 still rejects is kept and marked. Off:
-    // still contradicting fails the step; still unsupported or filler is
-    // removed, and the lesson is saved if its shape still holds.
-    const settled = settleAfterFix(fixed.explanation, still, source, G2_MARK_MODE);
-    if (settled.kind === "fail") {
-      const code = still.some((p) => p.verdict === "contradicts") ? "ungrounded" : "ai_error";
-      return fail(code, `After its one fix the explanation could not be saved: ${settled.reasons.join("; ")}. Try again.`, settled.reasons);
+    // G2 again on the fixed explanation, for the words — only when its first
+    // answer could be used: otherwise the lesson has no G2 marks anyway.
+    let afterRead: JudgeReading | null = null;
+    if (firstRead && changed.length > 0) {
+      const afterCheck = await wordCheck(fixedSentences, "after fix");
+      if ("unusable" in afterCheck) unusable.push({ pass: "after fix", why: afterCheck.unusable });
+      else afterRead = afterCheck;
     }
-    trace.stages.removed = settled.removed.map((r) => ({ id: r.sentence.id, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
-    trace.stages.marked = settled.marked.map((r) => ({ id: r.sentence.id, part: r.sentence.part, text: r.sentence.text, verdict: r.problem.verdict, reason: r.problem.reason }));
-    explanation = settled.explanation;
+    explanation = fixed.explanation;
     // Mark mode: a word still unexplained after the fix is marked, not ignored
     // (Udit, 2026-10-12) — but the after-fix pass cannot undo the first
     // (2026-10-13, gate 8): a word the first pass found explained in a sentence
     // the fix left alone stays explained. Only words the fix brought in, or
     // that were unexplained before it, are marked.
-    const afterWords = afterRead
-      ? wordsAfterFix({ first: firstRead, after: afterRead, kept: fixed.kept, before: firstSentences, now: fixedSentences, changed: fixed.changed })
-      : { mark: [], decisions: [] };
+    const afterWords =
+      firstRead && afterRead
+        ? wordsAfterFix({ first: firstRead, after: afterRead, kept: fixed.kept, before: firstSentences, now: fixedSentences, changed: fixed.changed })
+        : { mark: [], decisions: [] };
     trace.stages.wordsAfterFix = afterWords.decisions;
-    const wordsLeft = G2_MARK_MODE ? afterWords.mark : [];
-    trace.stages.wordsMarked = wordsLeft;
     trace.stages.inventoryAfterFix = afterRead?.inventory ?? null;
-    marks = marksFor(settled.marked, wordsLeft);
+    // Course words in the fix's sentences (code, gate 9): explained by the
+    // fix's own sentence for that word, or a sentence G2's checked quote names
+    // (in the after-fix numbering), at or before the sentence that uses it.
+    const explainedAt: { word: string; sentence: number; by: string }[] = [];
+    for (const x of fixWords) {
+      const s = changed.find((c) => c.text.trim() === x.sentence.trim());
+      if (s) explainedAt.push({ word: x.word, sentence: s.id, by: "the fix's sentence for it" });
+    }
+    for (const w of firstRead?.inventory ?? []) {
+      const at = w.explainedIn === null ? undefined : fixed.kept.get(w.explainedIn);
+      if (at !== undefined) explainedAt.push({ word: w.word, sentence: at, by: "G2's first pass, its quote checked" });
+    }
+    for (const w of afterRead?.inventory ?? []) {
+      if (w.explainedIn !== null) explainedAt.push({ word: w.word, sentence: w.explainedIn, by: "G2 after the fix, its quote checked" });
+    }
+    const course = courseWordsAfterFix({ now: fixedSentences, changed: fixed.changed, explainedAt });
+    trace.stages.courseWords = course.decisions;
+    // G2's marks only when every G2 answer could be used (Udit, 2026-10-13).
+    const wordsLeft = G2_MARK_MODE && unusable.length === 0 ? afterWords.mark : [];
+    const courseLeft = course.mark.filter((c) => !wordsLeft.some((w) => sameWord(w.word, c.word)));
+    trace.stages.wordsMarked = wordsLeft;
+    trace.stages.courseMarked = courseLeft;
+    marks = marksFor(wordsLeft, courseLeft);
     attempts = 2;
   }
 
@@ -768,7 +827,10 @@ export async function advanceTopic(
   if (length.verdict === "long") {
     return fail("ai_error", `The explanation is ${length.words} words after its checks and its fix; at most ${LESSON_MAX_WORDS} are allowed, so it was not saved. Try again.`);
   }
-  if (length.verdict === "short") marks = { ...marks, top: [shortMark(length.words)] };
+  const top: string[] = [];
+  if (unusable.length > 0) top.push(CHECKER_UNUSABLE_NOTE);
+  if (length.verdict === "short") top.push(shortMark(length.words));
+  if (top.length > 0) marks = { ...marks, top };
 
   // ── 7. Save: the lesson once, with its one source.
   if (!provenance.isStorable(found.page.url)) {

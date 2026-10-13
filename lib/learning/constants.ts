@@ -20,10 +20,11 @@ export const LEARNING_WRITE_MODEL = "openai/gpt-oss-120b";
 export const LEARNING_SEARCH_MODEL = "openai/gpt-oss-20b";
 
 /**
- * G2, the meaning check (judge.ts): reads each sentence of the explanation
- * next to the source shown above it. On 120b (Udit, 2026-10-10): on 20b it
- * rejected true walk-through sentences and passed pep talk, and its tokens
- * now come out of the same per-lesson 120b budget as the writer's.
+ * G2, the word check (judge.ts; a meaning check with sentence verdicts until
+ * gate 9, Udit 2026-10-13): lists every technical word and the words that
+ * explain it. On 120b (Udit, 2026-10-10): on 20b it rejected true
+ * walk-through sentences and passed pep talk, and its tokens come out of the
+ * same per-lesson 120b budget as the writer's.
  */
 export const LEARNING_JUDGE_MODEL = "openai/gpt-oss-120b";
 export const JUDGE_TIMEOUT_MS = 25_000;
@@ -142,12 +143,12 @@ export const LESSON_MAX_WORDS = 500;
 
 /**
  * Mark mode, "mark, don't block" (Udit, 2026-10-12): after its one fix, a
- * sentence the meaning check (G2) still rejects — in any part, with any
- * verdict — is kept and saved with a visible mark and the checker's reason
- * (explanation.ts DOUBT_LABEL), instead of failing the step (contradicts) or
- * being removed (unsupported, filler). G1 and the shape rules still block.
- * false restores the 2026-10-10 rule. The marks are part of the saved body,
- * so switching this off later does not unmark lessons already saved.
+ * word the word check (G2) still finds unexplained is saved with a visible
+ * mark (explanation.ts DOUBT_LABEL). Since gate 9 (Udit, 2026-10-13) G2 gives
+ * no sentence verdicts and can never fail a step; G1 and the shape rules
+ * still block. false saves without G2's word marks. The marks are part of the
+ * saved body, so switching this off later does not unmark lessons already
+ * saved.
  */
 export const G2_MARK_MODE = true;
 

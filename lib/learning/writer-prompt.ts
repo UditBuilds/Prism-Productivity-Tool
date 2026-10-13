@@ -1,6 +1,7 @@
 import type { ObjectSchema } from "@/lib/learning/answers";
 import { LESSON_MAX_WORDS, LESSON_MIN_WORDS } from "@/lib/learning/constants";
 import { linesToWalk, type Changes, type Explanation, type Problem, type Sentence } from "@/lib/learning/explanation";
+import { COURSE_WORDS } from "@/lib/learning/judge";
 import type { SourceBlock } from "@/lib/learning/passages";
 import { stripWebAddresses } from "@/lib/learning/sources";
 
@@ -242,9 +243,13 @@ export function writerFixMessage(
   return out.join("\n\n");
 }
 
-/** Every fix is told this (Udit, 2026-10-13, gate 8): the after-fix check marks any new word it leaves unexplained. */
-export const FIX_NEW_WORDS_RULE =
-  'In every sentence you write, use plain words. Bring in no technical word that the explanation does not already use (such as "list" or "items" to explain parentheses). If a sentence needs one, explain it in plain words in that same sentence.';
+/**
+ * Every fix is told this (Udit, 2026-10-13, gate 8): the after-fix check marks
+ * any new word it leaves unexplained. Gate 9: with the course's word list,
+ * which code checks in every sentence the fix writes (judge.ts
+ * courseWordsAfterFix) — gate 8's fix ignored the rule ("list", "command").
+ */
+export const FIX_NEW_WORDS_RULE = `In every sentence you write, use plain words. Bring in no technical word that the explanation does not already use (such as "list" or "items" to explain parentheses). If a sentence needs one, explain it in plain words in that same sentence. These course words count as technical, and code checks every sentence you write for them: ${COURSE_WORDS.join(", ")}. Avoid them; if you need one, say in plain words what it is in that same sentence.`;
 
 /**
  * Where a word's sentence goes, in words the fix can act on: it never sees

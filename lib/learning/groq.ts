@@ -388,17 +388,17 @@ export function writeFix(userMessage: string, fixMessage: string, maxTokens: num
   );
 }
 
-/** G2, the meaning check (judge.ts), on gpt-oss-120b; `model` lets the judge eval run it on 20b too. */
-export function judgeSentences(userMessage: string, maxTokens: number, model: string = LEARNING_JUDGE_MODEL): Promise<JsonCall<JudgeAnswer>> {
+/** G2, the word check (judge.ts), on gpt-oss-120b; `model` lets the judge eval run it on 20b too. */
+export function judgeWords(userMessage: string, maxTokens: number, model: string = LEARNING_JUDGE_MODEL): Promise<JsonCall<JudgeAnswer>> {
   return jsonCall<JudgeAnswer>(
     "judge",
     model,
-    "the meaning check's answer",
+    "the word check's answer",
     [
       { role: "system", content: JUDGE_SYSTEM_PROMPT },
       { role: "user", content: userMessage },
     ],
     JUDGE_SCHEMA,
-    { name: "verdicts", temperature: 0, maxTokens, timeoutMs: JUDGE_TIMEOUT_MS }
+    { name: "words", temperature: 0, maxTokens, timeoutMs: JUDGE_TIMEOUT_MS }
   );
 }

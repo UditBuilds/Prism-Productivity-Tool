@@ -119,13 +119,12 @@ export function explanationWords(e: Explanation): number {
  */
 export interface Problem {
   sentence: number | null;
-  /** "G1": the code rule (code-rule.ts). "G2": the meaning check (judge.ts). "links": a web address. "shape": these rules. */
-  check: "G1" | "G2" | "links" | "shape";
   /**
-   * G2 only: its verdict. After the fix, in mark mode (G2_MARK_MODE) all three are kept and marked; with it
-   * off, "contradicts" fails the step and "unsupported" and "filler" are removed.
+   * "G1": the code rule (code-rule.ts). "links": a web address. "shape":
+   * these rules. G2 gives no sentence verdicts since gate 9 (Udit,
+   * 2026-10-13): it lists words only (judge.ts).
    */
-  verdict?: "contradicts" | "unsupported" | "filler";
+  check: "G1" | "links" | "shape";
   text: string;
   reason: string;
 }
@@ -204,6 +203,19 @@ export function shortMark(words: number): string {
 /** Every kind of hyphen as "-": the writer writes "built‑in" with U+2011 (measured 2026-10-12). */
 const plainHyphens = (s: string) => s.replace(/[\u2010-\u2015\u2212]/g, "-");
 
+/**
+ * A word of letters as a pattern: case does not matter, and "argument",
+ * "arguments" and "argument(s)" are one word. Group 1 is the character
+ * before it. `w` is already lower case with plain hyphens.
+ */
+function wordPattern(w: string, flags: string): RegExp {
+  const stem = w.endsWith("ies") && w.length > 4 ? w.slice(0, -3) : w.endsWith("es") && /(?:s|x|z|ch|sh)es$/.test(w) ? w.slice(0, -2) : w.endsWith("s") && !w.endsWith("ss") && w.length > 3 ? w.slice(0, -1) : w;
+  const tail = w.endsWith("ies") || w.endsWith("y") ? "(?:y|ies)" : "(?:s|es|\\(s\\))?";
+  const base = w.endsWith("y") ? stem.slice(0, -1) : stem;
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9_])${escaped}${tail}(?=$|[^a-z0-9_])`, flags);
+}
+
 /** Does the text use the word? Case does not matter, and "argument", "arguments" and "argument(s)" are one word. */
 export function mentionsWord(rawText: string, word: string): boolean {
   const text = plainHyphens(rawText);
@@ -211,11 +223,20 @@ export function mentionsWord(rawText: string, word: string): boolean {
   if (!w) return false;
   // A symbol (">>>", "()", "=") has no word edges: it is used wherever it appears, as in "print()".
   if (!/[a-z0-9]/.test(w)) return text.includes(w);
-  const stem = w.endsWith("ies") && w.length > 4 ? w.slice(0, -3) : w.endsWith("es") && /(?:s|x|z|ch|sh)es$/.test(w) ? w.slice(0, -2) : w.endsWith("s") && !w.endsWith("ss") && w.length > 3 ? w.slice(0, -1) : w;
-  const tail = w.endsWith("ies") || w.endsWith("y") ? "(?:y|ies)" : "(?:s|es|\\(s\\))?";
-  const base = w.endsWith("y") ? stem.slice(0, -1) : stem;
-  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[^a-z0-9_])${escaped}${tail}($|[^a-z0-9_])`, "i").test(text);
+  return wordPattern(w, "i").test(text);
+}
+
+/**
+ * The text with the word taken out, in every form mentionsWord finds (a
+ * symbol wherever it is). checkQuote (judge.ts) uses it to see what a quote
+ * says besides the word.
+ */
+export function removeWord(rawText: string, word: string): string {
+  const text = plainHyphens(rawText);
+  const w = plainHyphens(word).toLowerCase().trim();
+  if (!w) return text;
+  if (!/[a-z0-9]/.test(w)) return text.split(w).join(" ");
+  return text.replace(wordPattern(w, "gi"), "$1 ");
 }
 
 /** A "word" with no letter or digit in it: a symbol such as >>>, =, ( or '. */
@@ -282,49 +303,6 @@ export function wordPlace(word: string, source: SourceBlock, sentences: Sentence
   return candidates.length > 0 ? Math.min(...candidates) : null;
 }
 
-// ─── after the one fix ────────────────────────────────────────────────────
-
-/** A sentence the checks still found a problem in after the one fix, with that problem. */
-export interface Settled {
-  sentence: Sentence;
-  problem: Problem;
-}
-
-/**
- * What happens after the one fix, given the problems the checks still find in
- * the new sentences. A G1 or link problem fails the step either way (G1 is
- * unchanged). For what G2 still rejects:
- *   - mark mode on (Udit, 2026-10-12, "mark, don't block"): every such
- *     sentence, in any part and with any verdict, is KEPT and listed in
- *     `marked`, so the body shows it with the checker's reason; nothing is
- *     removed, so the shape the fix left — already checked — holds;
- *   - mark mode off (Udit, 2026-10-10): a sentence still contradicting fails
- *     the step; one still unsupported or filler is REMOVED, and the lesson is
- *     saved only if its shape still holds.
- * `marked` holds sentence ids of the explanation returned, which in mark mode
- * is the one given: nothing is renumbered.
- */
-export function settleAfterFix(
-  e: Explanation,
-  problems: Problem[],
-  source: SourceBlock,
-  markMode: boolean
-): { kind: "fail"; reasons: string[] } | { kind: "save"; explanation: Explanation; removed: Settled[]; marked: Settled[] } {
-  const describe = (p: Problem) => (p.sentence === null ? p.reason : `sentence ${p.sentence} (${p.check}${p.verdict ? `, ${p.verdict}` : ""}): ${p.reason}`);
-  const hard = problems.filter((p) => p.check !== "G2" || p.sentence === null || (!markMode && p.verdict === "contradicts"));
-  if (hard.length > 0) return { kind: "fail", reasons: hard.map(describe) };
-  const all = sentencesOf(e);
-  const settled = problems.map((problem) => ({ sentence: all.find((s) => s.id === problem.sentence) as Sentence, problem }));
-  if (markMode) return { kind: "save", explanation: e, removed: [], marked: settled };
-  const after = withChanges(e, { replace: new Map(settled.map((r) => [r.sentence.id, ""])) }).explanation;
-  // Length is counted once at the end (lengthAtEnd), not here.
-  const shape = checkShape(after, source, false);
-  if (shape.length > 0) {
-    return { kind: "fail", reasons: [...settled.map((r) => `removed ${describe(r.problem)}`), ...shape.map((p) => `then ${p.reason}`)] };
-  }
-  return { kind: "save", explanation: after, removed: settled, marked: [] };
-}
-
 // ─── the stored body ──────────────────────────────────────────────────────
 
 export const SOURCE_HEADING = "From the source, word for word";
@@ -338,40 +316,62 @@ export const AI_HEADING = "AI explanation";
 /** Under AI_HEADING: the whole explanation is marked as AI, so no sentence carries its own AI mark. */
 export const AI_NOTE = "Written by AI to explain the source above. It is not part of the page listed under Sources.";
 
-/** Mark mode (G2_MARK_MODE): what leads the mark after a sentence or word the meaning check still doubted. */
+/** Mark mode (G2_MARK_MODE): what leads the mark after a word the AI word check (G2) still found unexplained. */
 export const DOUBT_LABEL = "Doubted by the checker";
-/** Under AI_NOTE, only in a lesson that has a mark: what the mark means. */
-export const DOUBT_NOTE = `A "${DOUBT_LABEL}" mark is where the AI check of this explanation against the source still found a problem after its one correction: a sentence it questions, or a word it found unexplained. Its reason is in the mark.`;
+/** Under AI_NOTE, only in a lesson that has such a mark: what the mark means. Words only since gate 9 (Udit, 2026-10-13). */
+export const DOUBT_NOTE = `A "${DOUBT_LABEL}" mark is a word that the AI check of this explanation still found unexplained in plain words after its one correction. Its reason is in the mark.`;
+
+/**
+ * A course word a sentence added by the one fix uses before any sentence
+ * explains it (Udit, 2026-10-13, gate 9: judge.ts courseWordsAfterFix). Found
+ * by code, not the AI checker, so it has its own label and note: a lesson
+ * whose checker answer could not be used can still carry one.
+ */
+export const COURSE_LABEL = "Course word not explained";
+export const COURSE_NOTE = `A "${COURSE_LABEL}" mark is a word from the course's word list that a sentence added by the correction uses before any sentence explains it. Code finds these, not the AI checker.`;
+
+/**
+ * At the top of a lesson saved although G2's answer could not be used (Udit,
+ * 2026-10-13, gate 9: the word check never fails a step), word for word as
+ * Udit wrote it.
+ */
+export const CHECKER_UNUSABLE_NOTE = "The checker's answer couldn't be used, so this lesson has no checker marks.";
 
 /**
  * Where the marks go: `start` before the first paragraph of the explanation
  * (a word only the source uses, or the source uses first); `after` after the
- * sentence with that id (sentencesOf numbering). Each entry is a reason.
+ * sentence with that id (sentencesOf numbering), and `course` likewise for
+ * code's course-word marks. Each entry is a reason.
  */
 export interface Marks {
   start: string[];
   after: ReadonlyMap<number, string[]>;
-  /** Over the whole lesson, before the quote: "Shorter than usual: 136 words" (gate 7). Not a checker doubt, so no DOUBT_NOTE. */
+  course?: ReadonlyMap<number, string[]>;
+  /**
+   * Over the whole lesson, before the quote: CHECKER_UNUSABLE_NOTE, "Shorter
+   * than usual: 136 words" (gate 7). Not a checker doubt, so no DOUBT_NOTE.
+   */
   top?: string[];
 }
 export const NO_MARKS: Marks = { start: [], after: new Map() };
 
 /**
- * Mark mode's marks: each sentence G2 still rejects after the fix, with its
- * reason, and each word it still finds unexplained (Udit, 2026-10-12: marked,
- * not ignored) — after the first sentence that uses it, or at the start when
- * the source uses it.
+ * Mark mode's marks: each word G2 still finds unexplained after the fix
+ * (Udit, 2026-10-12: marked, not ignored) — after the first sentence that
+ * uses it, or at the start when the source uses it — and each course word
+ * code marks in a fix sentence, after that sentence.
  */
-export function marksFor(sentences: Settled[], words: { word: string; place: "start" | number }[]): Marks {
+export function marksFor(words: { word: string; place: "start" | number }[], course: { word: string; place: number }[] = []): Marks {
   const after = new Map<number, string[]>();
-  const add = (id: number, reason: string) => after.set(id, [...(after.get(id) ?? []), reason]);
-  for (const s of sentences) add(s.sentence.id, s.problem.reason);
+  const add = (into: Map<number, string[]>, id: number, reason: string) => into.set(id, [...(into.get(id) ?? []), reason]);
   const start: string[] = [];
   for (const w of words) {
     if (w.place === "start") start.push(`the source uses "${w.word}", and the explanation does not explain it in plain words`);
-    else add(w.place, `"${w.word}" is used here without being explained in plain words`);
+    else add(after, w.place, `"${w.word}" is used here without being explained in plain words`);
   }
-  return { start, after };
+  const courseAfter = new Map<number, string[]>();
+  for (const c of course) add(courseAfter, c.place, `"${c.word}" is used here, and no sentence up to here explains it`);
+  return { start, after, course: courseAfter };
 }
 const MAX_DOUBT_REASON = 200;
 
@@ -388,9 +388,9 @@ export function doubtReason(reason: string): string {
   return plain.length <= MAX_DOUBT_REASON ? plain : `${plain.slice(0, MAX_DOUBT_REASON - 1).replace(/\s+\S*$/, "")}…`;
 }
 
-/** The visible mark that follows a doubted sentence: the label and the reason, in bold. */
-export function doubtMark(reason: string): string {
-  return `**[${DOUBT_LABEL}: ${doubtReason(reason)}]**`;
+/** The visible mark that follows a sentence: the label and the reason, in bold. */
+export function doubtMark(reason: string, label: string = DOUBT_LABEL): string {
+  return `**[${label}: ${doubtReason(reason)}]**`;
 }
 
 /** A code line as inline code in the walk-through list (a backtick would end the span early). */
@@ -407,11 +407,13 @@ function inlineCode(line: string): string {
  * closing line.
  *
  * `marks` (mark mode): each sentence named in `marks.after` is followed by
- * its marks, `marks.start` opens the explanation, and DOUBT_NOTE goes under
- * the AI note. The marks are not part of the explanation, so they never
- * count toward its words or its shape.
+ * its marks, then its course-word marks (`marks.course`), `marks.start` opens
+ * the explanation, and DOUBT_NOTE and COURSE_NOTE go under the AI note when
+ * their marks are there. The marks are not part of the explanation, so they
+ * never count toward its words or its shape.
  */
 export function renderLessonBody(source: SourceBlock, e: Explanation, marks: Marks = NO_MARKS): string {
+  const course = marks.course ?? new Map<number, string[]>();
   const out: string[] = [...(marks.top ?? []).map((m) => `**[${m}]**`), `## ${SOURCE_HEADING}`];
   for (const p of source.passages) out.push(`> ${p}`);
   const codeLines = source.code === null ? [] : source.code.split("\n");
@@ -421,13 +423,15 @@ export function renderLessonBody(source: SourceBlock, e: Explanation, marks: Mar
   }
   out.push(`## ${AI_HEADING}`, `*${AI_NOTE}*`);
   if (marks.start.length > 0 || marks.after.size > 0) out.push(`*${DOUBT_NOTE}*`);
-  if (marks.start.length > 0) out.push(marks.start.map(doubtMark).join(" "));
+  if (course.size > 0) out.push(`*${COURSE_NOTE}*`);
+  if (marks.start.length > 0) out.push(marks.start.map((r) => doubtMark(r)).join(" "));
   // The same reading order as sentencesOf, so an id names the same sentence.
   let id = 0;
   const said = (text: string) => {
     id += 1;
-    const reasons = marks.after.get(id) ?? [];
-    return [text.trim(), ...reasons.map(doubtMark)].join(" ");
+    const reasons = (marks.after.get(id) ?? []).map((r) => doubtMark(r));
+    const courseMarks = (course.get(id) ?? []).map((r) => doubtMark(r, COURSE_LABEL));
+    return [text.trim(), ...reasons, ...courseMarks].join(" ");
   };
   for (const p of e.meaning) out.push(p.sentences.map(said).join(" "));
   if (e.walkthrough.length > 0) {
