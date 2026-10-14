@@ -90,6 +90,13 @@ export const SOURCE_MAX_WORDS = 130;
  * not show; the AI explanation (150-500 words) does the rest of the teaching.
  */
 export const MIN_SOURCE_WORDS = 20;
+/**
+ * The one exception (Udit, 2026-10-14, gate 10): a quote that is a single
+ * sentence using the step's main word stands at this many. Gate 9's step 32
+ * lost introduction.html's 19-word "Two or more string literals … are
+ * automatically concatenated." to the 20-word floor.
+ */
+export const MIN_MAIN_SENTENCE_WORDS = 15;
 /** A page whose relevant part has fewer usable words than this is not sent to the copier at all. */
 export const MIN_PAGE_WORDS = 100;
 /** A longer code example is no longer "one short example". */

@@ -13,7 +13,7 @@ import {
   SEARCH_TIMEOUT_MS,
   WRITE_TIMEOUT_MS,
 } from "@/lib/learning/constants";
-import { classifyGroqFailure, jsonAnswerFailure, type GroqFailure } from "@/lib/learning/groq-errors";
+import { classifyGroqFailure, jsonAnswerFailure, readRefusal, type GroqFailure, type GroqRefusal } from "@/lib/learning/groq-errors";
 import { JUDGE_SCHEMA, JUDGE_SYSTEM_PROMPT, type JudgeAnswer } from "@/lib/learning/judge";
 import { COPIER_SCHEMA, COPIER_SYSTEM_PROMPT, type CopierAnswer } from "@/lib/learning/passages";
 import {
@@ -64,7 +64,9 @@ export interface CallRecord {
 export class LearningAiError extends Error {
   constructor(
     readonly failure: GroqFailure,
-    readonly record: CallRecord
+    readonly record: CallRecord,
+    /** Set when Groq refused the call (429, or 413): its body and headers as sent. */
+    readonly refusal: GroqRefusal | null = null
   ) {
     super(failure.kind === "other" ? failure.message : `groq ${failure.kind}`);
     this.name = "LearningAiError";
@@ -151,7 +153,8 @@ function failed(kind: CallRecord["kind"], model: string, err: unknown, startedAt
     console.error(`[learning] ${kind} call failed (${model}):`, failure.kind === "other" ? failure.message : "timeout");
   }
   const outcome = failure.kind === "minute" || failure.kind === "day" ? "rate_limited" : "error";
-  return new LearningAiError(failure, record(kind, model, outcome, undefined, startedAt));
+  const refusal = err instanceof APIError && (err.status === 429 || err.status === 413) ? readRefusal({ status: err.status, body: err.error, headers: err.headers }) : null;
+  return new LearningAiError(failure, record(kind, model, outcome, undefined, startedAt), refusal);
 }
 
 /** Loud by design: an unusable answer is logged with its raw text, never dropped quietly. */

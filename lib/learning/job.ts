@@ -53,6 +53,7 @@ import {
   type RateLimits,
 } from "@/lib/learning/groq";
 import { checkExample, exampleRulesFor, exampleRulesText, outputByCode } from "@/lib/learning/example";
+import type { GroqRefusal } from "@/lib/learning/groq-errors";
 import { excerptFor, extractPage } from "@/lib/learning/html-text";
 import {
   courseWordsAfterFix,
@@ -75,6 +76,7 @@ import {
   numberPage,
   usesMainWord,
   pageThinness,
+  standsAlone,
   withoutReferences,
   wordCount,
   type NumberedPage,
@@ -145,6 +147,22 @@ interface Ctx {
   userId: string;
   topicId: string;
   startedAt: number;
+  /** Every call Groq refused in this advance, for the trace (gate 10). */
+  refusals: TracedRefusal[];
+}
+
+/** A refused call as Groq sent it (groq-errors.ts readRefusal), with when, which call, and whether the job waited it out. */
+interface TracedRefusal extends GroqRefusal {
+  at: string;
+  what: string;
+  model: string;
+  /** Seconds waited before trying once more; null when the refusal went to the stage that made the call. */
+  waitedSeconds: number | null;
+}
+
+function noteRefusal(ctx: Ctx, what: string, err: unknown, waitedSeconds: number | null) {
+  if (!(err instanceof LearningAiError) || !err.refusal) return;
+  ctx.refusals.push({ at: new Date().toISOString(), what, model: err.record.model, waitedSeconds, ...err.refusal });
 }
 
 /** The chosen source page and what the lesson shows from it. */
@@ -199,18 +217,27 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * wait and try once more. Without this, the stages that follow the search —
  * each on a model whose minute budget the last call just spent — would hand
  * the step back and the next request would pay for the search again.
+ * Every refusal, waited out or not, goes to the trace as Groq sent it.
  */
-async function withShortWait<T>(ctx: Ctx, stepId: string, reserveMs: number, call: () => Promise<T>): Promise<T> {
+async function withShortWait<T>(ctx: Ctx, stepId: string, what: string, reserveMs: number, call: () => Promise<T>): Promise<T> {
   try {
     return await call();
   } catch (err) {
-    if (!(err instanceof LearningAiError) || err.failure.kind !== "minute") throw err;
-    const waitMs = err.failure.retryAfterSeconds * 1000;
+    const waitMs = err instanceof LearningAiError && err.failure.kind === "minute" ? err.failure.retryAfterSeconds * 1000 : null;
     const elapsed = Date.now() - ctx.startedAt;
-    if (waitMs > MAX_INLINE_WAIT_MS || elapsed + waitMs + reserveMs > ADVANCE_DEADLINE_MS) throw err;
-    await log(ctx, stepId, err.record);
+    if (waitMs === null || waitMs > MAX_INLINE_WAIT_MS || elapsed + waitMs + reserveMs > ADVANCE_DEADLINE_MS) {
+      noteRefusal(ctx, what, err, null);
+      throw err;
+    }
+    noteRefusal(ctx, what, err, waitMs / 1000);
+    await log(ctx, stepId, (err as LearningAiError).record);
     await sleep(waitMs);
-    return await call();
+    try {
+      return await call();
+    } catch (again) {
+      noteRefusal(ctx, `${what}, after the wait`, again, null);
+      throw again;
+    }
   }
 }
 
@@ -295,7 +322,7 @@ export async function advanceTopic(
   topicId: string,
   focusStepId: string | null
 ): Promise<AdvanceResult> {
-  const ctx: Ctx = { supabase, userId, topicId, startedAt: Date.now() };
+  const ctx: Ctx = { supabase, userId, topicId, startedAt: Date.now(), refusals: [] };
 
   const { data: topic } = await supabase
     .from("learning_topics")
@@ -356,6 +383,8 @@ export async function advanceTopic(
     references: [] as unknown[],
     copier: [] as unknown[],
     badAnswers: [] as { what: string; kind: string; reason: string; raw: string }[],
+    /** Every call Groq refused: its whole error body, the limit it names, and its rate-limit headers (gate 10). */
+    refusals: ctx.refusals,
     g2: [] as unknown[],
     /** Filled in as the stages run. */
     stages: {} as Record<string, unknown>,
@@ -376,6 +405,17 @@ export async function advanceTopic(
     trace.stages.outcome = { failed: code, message, problems, spent: spentByModel() };
     await debugDump(stepId, trace);
     return { kind: "failed", stepId, code, problems: problems?.slice(0, 10) };
+  };
+  /**
+   * Nothing written yet: hand the step back (pending) and let the screen
+   * wait. The trace is written here too (Udit, 2026-10-14, gate 10): gate 9's
+   * step 31 was handed back twice and left no record of its quote or why.
+   */
+  const handBack = async (wait: AdvanceResult): Promise<AdvanceResult> => {
+    await release(ctx, stepId, claimedAt);
+    trace.stages.outcome = { handedBack: wait, spent: spentByModel() };
+    await debugDump(stepId, trace);
+    return wait;
   };
 
   // ── 1-2. The quote: the documentation site first; the open web when no page
@@ -413,20 +453,16 @@ export async function advanceTopic(
     }
     let copy;
     try {
-      copy = await withShortWait(ctx, stepId, 30_000, () => copySource(message, copyRoom));
+      copy = await withShortWait(ctx, stepId, note ? "copier, again" : "copier", 30_000, () => copySource(message, copyRoom));
     } catch (err) {
       await notedError("copier", err);
       const wait = waitResult(err);
-      if (wait) {
-        // Nothing written yet: hand the step back and let the screen wait.
-        await release(ctx, stepId, claimedAt);
-        return wait;
-      }
+      if (wait) return handBack(wait);
       const f = callFailure(err, "choice of what to quote");
       return fail(f.code, f.message);
     }
     await noted(note ? "copier, again" : "copier", copy.record, copy.limits);
-    const choice = chooseSource(copy.value, v.view);
+    const choice = chooseSource(copy.value, v.view, main);
     trace.copier.push({ url: v.page.url, retry: Boolean(note), answer: copy.value, choice });
     if (choice.kind === "bad") {
       console.error(`[learning] the copier's answer was not used (${choice.reason}). Raw answer:`, copy.raw);
@@ -449,16 +485,13 @@ export async function advanceTopic(
     if (room === null) return fail("sources_unreachable", `No source was found: ${spend.overMessage(LEARNING_SEARCH_MODEL)}. Try again.`);
     let hits: SearchHit[];
     try {
-      const search = await withShortWait(ctx, stepId, 40_000, () => searchForStep(searchQuery, room));
+      const search = await withShortWait(ctx, stepId, `search (${phase})`, 40_000, () => searchForStep(searchQuery, room));
       await noted(`search (${phase})`, search.record, search.limits);
       hits = search.harvest.hits;
     } catch (err) {
       await notedError(`search (${phase})`, err);
       const wait = waitResult(err);
-      if (wait) {
-        await release(ctx, stepId, claimedAt);
-        return wait;
-      }
+      if (wait) return handBack(wait);
       return fail("sources_unreachable", "The search for sources did not answer, so no lesson was written. Try again.");
     }
     hits.forEach((h) => provenance.addToolUrl(h.url));
@@ -505,7 +538,8 @@ export async function advanceTopic(
     let tries = 0;
     for (const v of viable) {
       const words = usableWords(v.view);
-      if (words < MIN_SOURCE_WORDS) {
+      // A page under the floor may still hold one sentence that stands alone (gate 10).
+      if (words < MIN_SOURCE_WORDS && !v.view.sentences.some((s) => s.usable && standsAlone(s.text, main))) {
         left.push({ url: v.page.url, why: `only ${words} usable words once sentences that refer to something not shown are dropped; at least ${MIN_SOURCE_WORDS} are needed` });
         continue;
       }
@@ -600,17 +634,16 @@ export async function advanceTopic(
     if (writeRoom === null) return fail("ai_error", `The explanation was not written: ${spend.overMessage(LEARNING_WRITE_MODEL)}. Try again.`);
     let answer;
     try {
-      answer = await withShortWait(ctx, stepId, 20_000, () => writeExplanation(message, writeRoom));
+      answer = await withShortWait(ctx, stepId, "writer", 20_000, () => writeExplanation(message, writeRoom));
       await noted("writer", answer.record, answer.limits);
     } catch (err) {
       await notedError("writer", err);
-      // Every attempt's whole answer is kept, refused ones too (Udit, 2026-10-13, gate 9).
+      // Every attempt's whole answer is kept, refused ones too (Udit, 2026-10-13, gate 9);
+      // a call that failed or that Groq refused is an attempt with no answer (gate 10).
       if (err instanceof BadAnswerError) writerAttempts.push({ refused: err.answer.reason, kind: err.answer.kind, raw: err.answer.raw });
+      if (err instanceof LearningAiError) writerAttempts.push({ failed: err.failure.kind, refusal: err.refusal });
       const wait = waitResult(err);
-      if (wait) {
-        await release(ctx, stepId, claimedAt);
-        return wait;
-      }
+      if (wait) return handBack(wait);
       if (err instanceof BadAnswerError && err.answer.kind === "format" && !formatRetried) {
         if (!takeRetry("the writer's JSON was refused")) return fail("ai_error", capMessage("the writer's JSON was refused"));
         formatRetried = true;
@@ -676,7 +709,7 @@ export async function advanceTopic(
       if (room === null) return { unusable: `it was not run: ${spend.overMessage(LEARNING_JUDGE_MODEL)}` };
       let answer;
       try {
-        answer = await withShortWait(ctx, stepId, 8_000, () => judgeWords(message, room));
+        answer = await withShortWait(ctx, stepId, `word check (G2, ${label})`, 8_000, () => judgeWords(message, room));
       } catch (err) {
         await notedError(`word check (G2, ${label})`, err);
         return { unusable: callFailure(err, "word check").message.replace(/ Try again\.$/, "") };
@@ -733,7 +766,7 @@ export async function advanceTopic(
     let changes: Changes;
     let fixWords: { word: string; sentence: string }[];
     try {
-      const fix = await withShortWait(ctx, stepId, 12_000, () => writeFix(userMessage, fixMessage, fixRoom));
+      const fix = await withShortWait(ctx, stepId, "fix", 12_000, () => writeFix(userMessage, fixMessage, fixRoom));
       await noted("fix", fix.record, fix.limits);
       trace.stages.fix = { asked: fixMessage, answer: fix.raw };
       const read = readFix(fix.value, flaggedIds, firstWords);

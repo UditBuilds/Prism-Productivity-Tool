@@ -53,6 +53,74 @@ export function jsonAnswerFailure(body: unknown): { kind: "cut_off" | "format"; 
   return { kind: "format", reason: detail.slice(0, 200), raw };
 }
 
+/** Which of Groq's limits refused a call. */
+export type LimitKind = "tokens per minute" | "tokens per day" | "requests per minute" | "requests per day" | "unknown";
+
+/**
+ * A refused call (429, or the 413 this account sends for a spent minute
+ * budget) as Groq sent it, for the job's trace (Udit, 2026-10-14, gate 10):
+ * gate 9 could not tell why step 31's writer got "per day" refusals while
+ * other 120b calls went through, because nothing kept Groq's text.
+ */
+export interface GroqRefusal {
+  status: number;
+  kind: LimitKind;
+  /** Where the kind was read: Groq's message, its headers, or nowhere ("unknown"). */
+  kindFrom: "message" | "headers" | null;
+  /** Groq's error body, whole. */
+  text: string;
+  /** Every x-ratelimit-* header, retry-after and the request id, as sent. */
+  headers: Record<string, string>;
+}
+
+/** Groq's message names the limit: "… on tokens per day (TPD): Limit 200000, Used …". */
+const LIMIT_LABELS: { kind: Exclude<LimitKind, "unknown">; label: RegExp }[] = [
+  { kind: "tokens per minute", label: /\(TPM\)|tokens per minute/i },
+  { kind: "tokens per day", label: /\(TPD\)|tokens per day/i },
+  { kind: "requests per minute", label: /\(RPM\)|requests per minute/i },
+  { kind: "requests per day", label: /\(RPD\)|requests per day/i },
+];
+
+const KEPT_HEADER = /^(?:x-ratelimit-.+|retry-after|x-request-id)$/i;
+
+/** A fetch Headers (what groq-sdk gives), or a plain object (tests). */
+type HeaderSource = { forEach(cb: (value: string, key: string) => void): void } | Record<string, string> | null | undefined;
+
+function keptHeaders(headers: HeaderSource): Record<string, string> {
+  const out: Record<string, string> = {};
+  const add = (value: unknown, key: string) => {
+    if (typeof value === "string" && KEPT_HEADER.test(key)) out[key.toLowerCase()] = value;
+  };
+  if (!headers) return out;
+  if (typeof headers.forEach === "function") (headers as { forEach(cb: (value: string, key: string) => void): void }).forEach(add);
+  else Object.entries(headers).forEach(([k, v]) => add(v, k));
+  return out;
+}
+
+/**
+ * Read a refusal: the kind is the one Groq's message names; when it names
+ * none (or more than one), Groq's headers, which "always refer to" requests
+ * per DAY (x-ratelimit-*-requests) and tokens per MINUTE
+ * (x-ratelimit-*-tokens) — https://console.groq.com/docs/rate-limits, read
+ * 2026-10-14 — name it only when exactly one of the two counters is at 0.
+ * Otherwise "unknown": the kind is read, never guessed. Day/minute for the
+ * app's own waiting is still classifyGroqFailure's.
+ */
+export function readRefusal(input: { status: number; body: unknown; headers?: HeaderSource }): GroqRefusal {
+  const text = typeof input.body === "string" ? input.body : input.body === undefined ? "" : JSON.stringify(input.body);
+  const inner = typeof input.body === "object" && input.body !== null ? (input.body as { error?: { message?: unknown } }).error : undefined;
+  const message = typeof inner?.message === "string" ? inner.message : text;
+  const headers = keptHeaders(input.headers);
+  const named = LIMIT_LABELS.filter((l) => l.label.test(message));
+  if (named.length === 1) return { status: input.status, kind: named[0].kind, kindFrom: "message", text, headers };
+  const atZero = [
+    headers["x-ratelimit-remaining-requests"] === "0" ? ("requests per day" as const) : null,
+    headers["x-ratelimit-remaining-tokens"] === "0" ? ("tokens per minute" as const) : null,
+  ].filter((k): k is "requests per day" | "tokens per minute" => k !== null);
+  if (atZero.length === 1) return { status: input.status, kind: atZero[0], kindFrom: "headers", text, headers };
+  return { status: input.status, kind: "unknown", kindFrom: null, text, headers };
+}
+
 export function classifyGroqFailure(input: {
   status?: number;
   message?: string;

@@ -2,6 +2,7 @@ import type { ObjectSchema } from "@/lib/learning/answers";
 import {
   MAX_EXAMPLE_CODE_LINES,
   MAX_SOURCE_PASSAGES,
+  MIN_MAIN_SENTENCE_WORDS,
   MIN_PAGE_WORDS,
   MIN_SOURCE_WORDS,
   SOURCE_MAX_WORDS,
@@ -12,7 +13,8 @@ import { hasWebAddress } from "@/lib/learning/sources";
 /**
  * The quote (Udit, 2026-10-10; gate 6, 2026-10-12): 1-3 passages from ONE
  * page that explains the step's idea, word for word, at most 130 quoted
- * words and at least 20. Pure: no I/O, no AI call.
+ * words and at least 20 — or 15 when it is one sentence that uses the step's
+ * main word (gate 10). Pure: no I/O, no AI call.
  *
  * Since gate 6 the page gives ONLY the quote. Its code is never shown: the
  * lesson's example is written by the AI writer and checked by code
@@ -316,6 +318,15 @@ export function usesMainWord(text: string, main: MainWord): boolean {
   return new RegExp(known ? `\\b(?:${forms})\\b` : `\\b(?:${forms})[a-z]*\\b`, "i").test(text);
 }
 
+/**
+ * A single sentence that may be the whole quote below the 20-word floor
+ * (Udit, 2026-10-14, gate 10): at least MIN_MAIN_SENTENCE_WORDS words, using
+ * the step's main word.
+ */
+export function standsAlone(text: string, main: MainWord | null): boolean {
+  return main !== null && wordCount(text) >= MIN_MAIN_SENTENCE_WORDS && usesMainWord(text, main);
+}
+
 /** Added to the copier's message for its one retry on a page whose first choice did not use the main word. */
 export function copierMainWordRetry(main: MainWord): string {
   const others = main.forms.filter((f) => f !== main.word.toLowerCase());
@@ -381,10 +392,11 @@ export type SourceChoice =
  * of consecutive sentences of one paragraph (a passage), at most
  * MAX_SOURCE_PASSAGES passages and SOURCE_MAX_WORDS words — sentences past
  * either limit are left out, in page order, and listed in `left` — then at
- * least MIN_SOURCE_WORDS words. The source block has no code: the example is
- * the writer's (example.ts).
+ * least MIN_SOURCE_WORDS words, unless what is left is one sentence that
+ * stands alone with the step's `main` word (standsAlone). The source block
+ * has no code: the example is the writer's (example.ts).
  */
-export function chooseSource(answer: CopierAnswer, page: NumberedPage): SourceChoice {
+export function chooseSource(answer: CopierAnswer, page: NumberedPage, main: MainWord | null = null): SourceChoice {
   const byId = new Map(page.sentences.map((s) => [s.id, s]));
   let ids = Array.from(new Set(answer.sentences)).sort((a, b) => a - b);
   const notShown = ids.filter((id) => !byId.get(id)?.usable);
@@ -428,8 +440,10 @@ export function chooseSource(answer: CopierAnswer, page: NumberedPage): SourceCh
     words += w;
   }
 
-  if (words < MIN_SOURCE_WORDS) {
-    return { kind: "thin", reason: `the chosen sentences hold ${words} words; at least ${MIN_SOURCE_WORDS} are needed to teach from`, dropped };
+  const single = runs.length === 1 && runs[0].length === 1 ? runs[0][0].text : null;
+  if (words < MIN_SOURCE_WORDS && !(single !== null && standsAlone(single, main))) {
+    const one = main ? ` (${MIN_MAIN_SENTENCE_WORDS} for one sentence that uses "${main.word}")` : "";
+    return { kind: "thin", reason: `the chosen sentences hold ${words} words; at least ${MIN_SOURCE_WORDS} are needed to teach from${one}`, dropped };
   }
   return { kind: "ok", source: { passages: runs.map((r) => r.map((s) => s.text).join(" ")), code: null, words }, left, dropped };
 }

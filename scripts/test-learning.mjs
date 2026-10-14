@@ -1707,6 +1707,59 @@ console.log("\nthe quote must use the step's main word (passages.ts, gate 9)");
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+console.log("\none quoted sentence with the main word stands at 15 words (passages.ts, gate 10)");
+{
+  eq("the exception's floor is 15; the floor for everything else stays 20 (Udit, 2026-10-14)", [constants.MIN_MAIN_SENTENCE_WORDS, constants.MIN_SOURCE_WORDS], [15, 20]);
+  const p32 = passages.mainWordFor({ title: "Combine text values", goal: "Create and print a string by joining text literals and variables." });
+  const p30 = passages.mainWordFor({ title: "Print a greeting", goal: "Run a simple print statement to display text on the screen." });
+  // Gate 9, step 32: introduction.html's sentence on joining text, word for word, lost to the 20-word floor.
+  const intro = passages.numberPage(
+    "Strings can be concatenated (glued together) with the + operator, and repeated with *. Two or more string literals (i.e. the ones enclosed between quotes) next to each other are automatically concatenated."
+  );
+  eq("…that sentence holds 19 words", passages.wordCount(intro.sentences[1].text), 19);
+  const alone = passages.chooseSource({ sentences: [2] }, intro, p32);
+  eq("…alone, with step 32's main word \"concatenate\", it now stands", alone.kind === "ok" && [alone.source.passages, alone.source.words], [
+    ["Two or more string literals (i.e. the ones enclosed between quotes) next to each other are automatically concatenated."],
+    19,
+  ]);
+  eq("…with no main word given it is thin, as before, with the old reason", passages.chooseSource({ sentences: [2] }, intro), {
+    kind: "thin",
+    reason: "the chosen sentences hold 19 words; at least 20 are needed to teach from",
+    dropped: [],
+  });
+  eq("…for a step whose main word it lacks (print), thin, and the reason names the exception", passages.chooseSource({ sentences: [2] }, intro, p30), {
+    kind: "thin",
+    reason: 'the chosen sentences hold 19 words; at least 20 are needed to teach from (15 for one sentence that uses "print")',
+    dropped: [],
+  });
+  const sized = passages.numberPage(
+    [
+      "Two string literals next to each other are automatically concatenated into one longer string.",
+      "Two string literals next to each other are automatically concatenated into one single longer string.",
+      "Text values can be joined together in Python programs today. Two literals side by side are concatenated.",
+    ].join("\n\n")
+  );
+  eq("…the three sentences used below hold 14, 15, and 10 + 7 words", sized.sentences.map((s) => passages.wordCount(s.text)), [14, 15, 10, 7]);
+  eq("…one sentence of 14 words with the main word is still thin", passages.chooseSource({ sentences: [1] }, sized, p32).kind, "thin");
+  eq("…one of exactly 15 stands", passages.chooseSource({ sentences: [2] }, sized, p32).kind, "ok");
+  eq("…two sentences of 17 words, one with the main word, stay under the 20-word floor: thin", passages.chooseSource({ sentences: [3, 4] }, sized, p32).kind, "thin");
+  eq(
+    "standsAlone: 15 words or more AND the main word; no main word, never",
+    [passages.standsAlone(sized.sentences[1].text, p32), passages.standsAlone(sized.sentences[0].text, p32), passages.standsAlone(sized.sentences[1].text, p30), passages.standsAlone(sized.sentences[1].text, null)],
+    [true, false, false, false]
+  );
+  const pick = passages.numberPage("This is the first sentence on the page, and it says little here. Two or more string literals (i.e. the ones enclosed between quotes) next to each other are automatically concatenated.");
+  eq(
+    "…a choice left as one sentence after a pointer sentence is dropped is judged as one sentence",
+    (({ kind, dropped }) => [kind, dropped.map((d) => d.id)])(passages.chooseSource({ sentences: [1, 2] }, pick, p32)),
+    ["ok", [1]]
+  );
+  const jobSrc = readFileSync(path.join(root, "lib", "learning", "job.ts"), "utf8");
+  ok("job.ts gives the copier's choice the step's main word", /chooseSource\(copy\.value, v\.view, main\)/.test(jobSrc));
+  ok("…and a page under 20 usable words is still tried when one usable sentence stands alone", /words < MIN_SOURCE_WORDS && !v\.view\.sentences\.some\(\(s\) => s\.usable && standsAlone\(s\.text, main\)\)/.test(jobSrc));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 console.log("\nG2's test set (scripts/judge-cases.json)");
 {
   const set = JSON.parse(readFileSync(path.join(root, "scripts", "judge-cases.json"), "utf8"));
@@ -1792,6 +1845,67 @@ console.log("\nGroq failures");
   eq("a 413 on this account is the minute budget", groqErrors.classifyGroqFailure({ status: 413, message: "Request too large", retryAfter: "3" }), { kind: "minute", retryAfterSeconds: 3 });
   eq("a timeout is a timeout", groqErrors.classifyGroqFailure({ timedOut: true }), { kind: "timeout" });
   eq("anything else is other", groqErrors.classifyGroqFailure({ status: 500, message: "boom" }).kind, "other");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+console.log("\nGroq's refusal as it sent it, for the trace (groq-errors.ts readRefusal, gate 10)");
+{
+  // The TPM and TPD messages have the shape measured on this account; the
+  // RPM and RPD ones are ASSUMED, written in the same shape (none seen yet).
+  const msg = (on) => `Rate limit reached for model \`openai/gpt-oss-120b\` in organization \`org_x\` service tier \`on_demand\` on ${on}: Limit 200000, Used 199500, Requested 4000. Please try again in 1m2.5s.`;
+  const body = (on) => ({ error: { message: msg(on), type: /requests/.test(on) ? "requests" : "tokens", code: "rate_limit_exceeded" } });
+  const ON = ["tokens per minute (TPM)", "tokens per day (TPD)", "requests per minute (RPM)", "requests per day (RPD)"];
+  eq(
+    "the kind is the one Groq's message names, read from the message",
+    ON.map((on) => (({ kind, kindFrom }) => [kind, kindFrom])(groqErrors.readRefusal({ status: 429, body: body(on) }))),
+    [
+      ["tokens per minute", "message"],
+      ["tokens per day", "message"],
+      ["requests per minute", "message"],
+      ["requests per day", "message"],
+    ]
+  );
+  eq(
+    "…and it agrees with the app's own day/minute reading of the same message",
+    ON.map((on) => groqErrors.classifyGroqFailure({ status: 429, message: `429 ${JSON.stringify(body(on))}`, retryAfter: "62" }).kind),
+    ["minute", "day", "minute", "day"]
+  );
+  const tpd = groqErrors.readRefusal({ status: 429, body: body(ON[1]), headers: { "retry-after": "62", "x-ratelimit-remaining-tokens": "7840", "x-request-id": "req_1", "content-type": "application/json", "set-cookie": "x" } });
+  eq("the whole body is kept, word for word", tpd.text, JSON.stringify(body(ON[1])));
+  eq("…and every rate-limit header, retry-after and the request id, none other", tpd.headers, { "retry-after": "62", "x-ratelimit-remaining-tokens": "7840", "x-request-id": "req_1" });
+  const fetchHeaders = new Headers({ "X-RateLimit-Remaining-Requests": "0", "X-RateLimit-Remaining-Tokens": "5120", "Retry-After": "300" });
+  const unlabelled = { error: { message: "Too many requests. Please slow down.", type: "requests", code: "rate_limit_exceeded" } };
+  eq(
+    "a message that names no limit: Groq's headers name it when exactly one counter is at 0 (x-ratelimit-*-requests is per DAY; a fetch Headers, as groq-sdk gives)",
+    (({ kind, kindFrom, headers }) => [kind, kindFrom, headers])(groqErrors.readRefusal({ status: 429, body: unlabelled, headers: fetchHeaders })),
+    ["requests per day", "headers", { "retry-after": "300", "x-ratelimit-remaining-requests": "0", "x-ratelimit-remaining-tokens": "5120" }]
+  );
+  eq(
+    "…x-ratelimit-*-tokens is per MINUTE",
+    groqErrors.readRefusal({ status: 429, body: unlabelled, headers: { "x-ratelimit-remaining-requests": "14", "x-ratelimit-remaining-tokens": "0" } }).kind,
+    "tokens per minute"
+  );
+  eq(
+    "…neither counter at 0, both, or no headers: unknown — never guessed",
+    [
+      groqErrors.readRefusal({ status: 429, body: unlabelled, headers: { "x-ratelimit-remaining-requests": "14", "x-ratelimit-remaining-tokens": "300" } }),
+      groqErrors.readRefusal({ status: 429, body: unlabelled, headers: { "x-ratelimit-remaining-requests": "0", "x-ratelimit-remaining-tokens": "0" } }),
+      groqErrors.readRefusal({ status: 413, body: "Request Entity Too Large" }),
+    ].map(({ kind, kindFrom }) => [kind, kindFrom]),
+    [
+      ["unknown", null],
+      ["unknown", null],
+      ["unknown", null],
+    ]
+  );
+  eq("…a message that names two limits is not read as either", groqErrors.readRefusal({ status: 429, body: { error: { message: "on tokens per minute (TPM) and tokens per day (TPD)" } } }).kind, "unknown");
+  eq("…a body that is not JSON is kept as its text", groqErrors.readRefusal({ status: 413, body: "Request Entity Too Large" }).text, "Request Entity Too Large");
+  const jobSrc = readFileSync(path.join(root, "lib", "learning", "job.ts"), "utf8");
+  const groqSrc = readFileSync(path.join(root, "lib", "learning", "groq.ts"), "utf8");
+  ok("groq.ts reads every 429 and 413 with readRefusal, from the SDK's body and headers", /err\.status === 429 \|\| err\.status === 413\) \? readRefusal\(\{ status: err\.status, body: err\.error, headers: err\.headers \}\)/.test(groqSrc));
+  ok("job.ts: every refusal goes to the trace, waited out or not (withShortWait notes it on each path)", (jobSrc.match(/noteRefusal\(ctx, /g) ?? []).length === 3 && /refusals: ctx\.refusals/.test(jobSrc));
+  ok("…every Groq call in the job goes through withShortWait", (jobSrc.match(/await withShortWait\(ctx, stepId, /g) ?? []).length === 5 && !/await (?:copySource|searchForStep|writeExplanation|judgeWords|writeFix)\(/.test(jobSrc));
+  ok("…a step handed back writes the trace: release() is called only by handBack, which dumps it", (jobSrc.match(/await release\(ctx, stepId, claimedAt\)/g) ?? []).length === 1 && /const handBack = async[\s\S]{0,200}await release\(ctx, stepId, claimedAt\);\s*trace\.stages\.outcome = \{ handedBack: wait[\s\S]{0,60}await debugDump\(stepId, trace\)/.test(jobSrc));
 }
 
 // ─────────────────────────────────────────────────────────────────────────
