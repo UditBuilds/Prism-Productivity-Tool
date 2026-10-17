@@ -36,6 +36,10 @@ import {
   updateWorkoutSetMutationOptions,
 } from "@/hooks/useWorkouts";
 import { updateWorkoutSessionMutationOptions } from "@/hooks/useWorkoutSessions";
+import {
+  DAILY_PLAN_KEY,
+  updateDailyPlanMutationOptions,
+} from "@/hooks/useDailyPlan";
 
 /**
  * Mutations paused while offline are persisted to IndexedDB alongside the
@@ -100,6 +104,10 @@ const RESUMABLE_MUTATION_KEYS: ReadonlyArray<MutationKey> = [
   // Unregistered it would be dropped on reload, leaving a session that reads
   // as still in progress the next morning.
   updateWorkoutSessionMutationOptions.mutationKey,
+  // Accept / move / drop on today's plan. The plan is read on a phone in the
+  // morning, wherever the signal is; an edit made in a dead zone must replay,
+  // not vanish on reload. One key carries all three edits.
+  updateDailyPlanMutationOptions.mutationKey,
 ];
 
 const RESUMABLE_KEY_HASHES: ReadonlySet<string> = new Set(
@@ -494,6 +502,28 @@ export function registerResumableMutations(qc: QueryClient): void {
       });
     },
   });
+  // ── daily plan ─────────────────────────────────────────────────────
+  // A replayed move changed a task's due date server-side, so the task cache
+  // and its read models are stale as well as the plan.
+  qc.setMutationDefaults(updateDailyPlanMutationOptions.mutationKey, {
+    mutationFn: updateDailyPlanMutationOptions.mutationFn,
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: [DAILY_PLAN_KEY] });
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+      invalidateDerivedCaches(qc, "tasks");
+    },
+    onError: (err, variables) => {
+      console.error(
+        "[offline-replay] daily plan edit failed",
+        { variables },
+        err
+      );
+      toast.error("Couldn't sync a change to today's plan made while offline", {
+        id: replayToastId("daily-plan", "update"),
+      });
+    },
+  });
+
   // Session bookkeeping, not a set — so it invalidates ["workout-sessions"]
   // (via invalidateDerivedCaches) but has no reason to refetch ["workouts"].
   qc.setMutationDefaults(updateWorkoutSessionMutationOptions.mutationKey, {

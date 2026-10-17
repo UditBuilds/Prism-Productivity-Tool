@@ -99,6 +99,9 @@
     --accent-rgb: 67 80 217; /* Iris, light */
     --accent-hover-rgb: 52 64 184;
     --accent-soft-rgb: 67 80 217;
+    /* DESIGN.md accent-tint (#EEF0FE): icon circles and the one filled panel
+       per screen. New with the daily plan, its first user. */
+    --accent-tint-rgb: 238 240 254;
   }
 
   /* DARK (the default). Unchanged values. A bare `.dark`, not `html.dark`,
@@ -151,6 +154,7 @@
     --accent-rgb: 91 103 238; /* Iris */
     --accent-hover-rgb: 111 121 240;
     --accent-soft-rgb: 148 156 244;
+    --accent-tint-rgb: 28 31 58; /* DESIGN.md accent-tint, dark (#1C1F3A) */
   }
 
   /* ── Pre-redesign literals ──────────────────────────────────────────
@@ -259,72 +263,92 @@
    of falling back to the Iris in the bare `.dark` block above.
 
    Light values: Iris from DESIGN.md; the other five are Tailwind 700 with
-   800 for hover. Each clears 4.5:1 as text on background and on surface. */
+   800 for hover. Each clears 4.5:1 as text on background and on surface.
+
+   accent-tint: Iris is DESIGN.md's literal (#EEF0FE light, #1C1F3A dark).
+   DESIGN.md names no tint for the other five. Light: the light accent at 9%
+   over white. Dark: the dark accent over the dark background (#0F1012) at the
+   STRONGEST mix that keeps danger text (#E45A53, the "N days overdue" line) at
+   4.6:1 or better — 10% to 15.5% depending on the hue. A flat 17%, which is
+   where Iris sits, measured 4.01-4.41:1 on four of the five, under the 4.5:1
+   floor; Iris itself measures 4.51:1. Muted text clears 6.8:1 on all five. */
 html.theme-violet {
   --accent-rgb: 67 80 217; /* legacy "violet" slot now carries brand Iris */
   --accent-hover-rgb: 52 64 184;
   --accent-soft-rgb: 67 80 217;
+  --accent-tint-rgb: 238 240 254;
 }
 html.theme-violet.dark,
 html.theme-violet .dark {
   --accent-rgb: 91 103 238;
   --accent-hover-rgb: 111 121 240;
   --accent-soft-rgb: 148 156 244;
+  --accent-tint-rgb: 28 31 58;
 }
 html.theme-blue {
   --accent-rgb: 29 78 216;
   --accent-hover-rgb: 30 64 175;
   --accent-soft-rgb: 29 78 216;
+  --accent-tint-rgb: 235 239 251;
 }
 html.theme-blue.dark,
 html.theme-blue .dark {
   --accent-rgb: 59 130 246;
   --accent-hover-rgb: 37 99 235;
   --accent-soft-rgb: 96 165 250;
+  --accent-tint-rgb: 21 31 49;
 }
 html.theme-emerald {
   --accent-rgb: 4 120 87;
   --accent-hover-rgb: 6 95 70;
   --accent-soft-rgb: 4 120 87;
+  --accent-tint-rgb: 232 243 240;
 }
 html.theme-emerald.dark,
 html.theme-emerald .dark {
   --accent-rgb: 16 185 129;
   --accent-hover-rgb: 5 150 105;
   --accent-soft-rgb: 52 211 153;
+  --accent-tint-rgb: 15 35 30;
 }
 html.theme-amber {
   --accent-rgb: 180 83 9;
   --accent-hover-rgb: 146 64 14;
   --accent-soft-rgb: 180 83 9;
+  --accent-tint-rgb: 248 240 233;
 }
 html.theme-amber.dark,
 html.theme-amber .dark {
   --accent-rgb: 245 158 11;
   --accent-hover-rgb: 217 119 6;
   --accent-soft-rgb: 251 191 36;
+  --accent-tint-rgb: 38 30 17;
 }
 html.theme-rose {
   --accent-rgb: 190 18 60;
   --accent-hover-rgb: 159 18 57;
   --accent-soft-rgb: 190 18 60;
+  --accent-tint-rgb: 249 234 237;
 }
 html.theme-rose.dark,
 html.theme-rose .dark {
   --accent-rgb: 244 63 94;
   --accent-hover-rgb: 225 29 72;
   --accent-soft-rgb: 251 113 133;
+  --accent-tint-rgb: 50 23 30;
 }
 html.theme-cyan {
   --accent-rgb: 14 116 144;
   --accent-hover-rgb: 21 94 117;
   --accent-soft-rgb: 14 116 144;
+  --accent-tint-rgb: 233 242 245;
 }
 html.theme-cyan.dark,
 html.theme-cyan .dark {
   --accent-rgb: 6 182 212;
   --accent-hover-rgb: 8 145 178;
   --accent-soft-rgb: 34 211 238;
+  --accent-tint-rgb: 14 34 39;
 }
 
 /* iPhone home-screen app: statusBarStyle "black-translucent" draws WHITE

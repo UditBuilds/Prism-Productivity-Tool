@@ -18,6 +18,7 @@ import type { Countdown, Note, Reminder, Task } from "@/types/database";
 import { NotificationNudge } from "@/components/dashboard/NotificationNudge";
 import { PushHealthBanner } from "@/components/dashboard/PushHealthBanner";
 import { CaptureField } from "@/components/dashboard/CaptureField";
+import { DailyPlanPanel } from "@/components/dashboard/DailyPlanPanel";
 import { TrainingPanel } from "@/components/dashboard/TrainingPanel";
 import { AgendaTaskRow } from "@/components/dashboard/AgendaTaskRow";
 import { UpcomingTaskRow } from "@/components/dashboard/UpcomingTaskRow";
@@ -77,6 +78,7 @@ export default async function DashboardHome() {
     railSetsRes,
     lastSetRes,
     revisitRes,
+    anchorsRes,
   ] = await Promise.all([
     // THE OVERDUE FIX. Nothing on this page previously selected below the start
     // of today, so a task that slipped its date matched no query and vanished
@@ -155,7 +157,19 @@ export default async function DashboardHome() {
       .from("notes")
       .select("*", { count: "exact", head: true })
       .eq("kind", "revisit"),
+    // Is the daily planner ON for this account? It is opt-in by data — at
+    // least one active anchor — so every other account's dashboard renders
+    // exactly as before, with no skeleton flashing in and out. COUNT ONLY.
+    supabase
+      .from("plan_anchors")
+      .select("*", { count: "exact", head: true })
+      .eq("is_active", true),
   ]);
+
+  // A failed count still mounts the panel: it fetches on its own and can say
+  // it failed. Hiding it would make a broken planner look like a switched-off
+  // one, which is the silent-failure shape this project keeps paying for.
+  const showDailyPlan = (anchorsRes.count ?? 0) > 0 || anchorsRes.error !== null;
 
   const overdueCount = overdueRes.count ?? 0;
   const openCount = openRes.count ?? 0;
@@ -325,6 +339,16 @@ export default async function DashboardHome() {
 
       {/* Notification permission nudge (renders only while undecided) */}
       <NotificationNudge />
+
+      {/* Today's plan — what the 11:00 push opens onto, so it is the first
+          content on the page, above the capture field by decision: "what do
+          I do today" is the question the morning visit is for.
+
+          THE COST, MEASURED at 375x812 as the installed app (no banners): a
+          6-item plan spans y=88-630 and the capture field sits at 662-706,
+          above the tab bar at 746. Each further row is ~50-60px, so from 7
+          items the capture field needs a scroll. */}
+      {showDailyPlan && <DailyPlanPanel />}
 
       {/* The one input on the page. Above the band because capture is the
           cheapest action here and should never require scrolling to find —

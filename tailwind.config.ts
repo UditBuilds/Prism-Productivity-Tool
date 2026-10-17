@@ -93,6 +93,8 @@ const config: Config = {
         "border-col": "hsl(var(--border-col))",
         "accent-hover": "rgb(var(--accent-hover-rgb) / <alpha-value>)",
         "accent-soft": "rgb(var(--accent-soft-rgb) / <alpha-value>)",
+        // DESIGN.md "accent-tint": icon circles and the one filled panel.
+        "accent-tint": "rgb(var(--accent-tint-rgb) / <alpha-value>)",
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         danger: "hsl(var(--danger))",
