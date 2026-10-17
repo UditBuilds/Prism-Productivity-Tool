@@ -23,7 +23,16 @@ type ActivitySource =
 
 // ["calendar"] prefix-matches every ["calendar", month] query.
 const DERIVED_KEYS: Record<ActivitySource, string[][]> = {
-  tasks: [["calendar"], ["productivity-analytics"], ["weekly-review"]],
+  // ["daily-plan"] is joined to the LIVE task rows (lib/daily-plan/server.ts
+  // buildView): completing, re-dating or deleting a task anywhere in the app
+  // changes what today's plan shows, and without this the dashboard kept the
+  // old row for up to its 60s staleTime.
+  tasks: [
+    ["calendar"],
+    ["productivity-analytics"],
+    ["weekly-review"],
+    ["daily-plan"],
+  ],
   reminders: [["calendar"]],
   // Plans have a target_date; the calendar doesn't query them YET, but the
   // wiring is in place so it's already correct when that feature lands.
