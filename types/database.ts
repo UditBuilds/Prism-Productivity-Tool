@@ -49,6 +49,18 @@ export type ReminderDeliveryStatus =
   | "delivered"
   | "skipped_no_device";
 
+/** Mirrors daily_plans_source_check: who ordered the plan. */
+export type DailyPlanSource = "ai" | "fallback";
+/** Mirrors daily_plan_items_kind_check. */
+export type DailyPlanItemKind = "anchor" | "task";
+/**
+ * Mirrors daily_plan_items_status_check. Drop is never a delete: a dropped
+ * TASK is 'dropped' and a dropped ANCHOR is 'skipped' (the record a later
+ * version reads for accountability). daily_plan_items_drop_word_check enforces
+ * which word goes with which kind.
+ */
+export type DailyPlanItemStatus = "planned" | "moved" | "dropped" | "skipped";
+
 export interface Database {
   public: {
     Tables: {
@@ -828,9 +840,153 @@ export interface Database {
         };
         Relationships: [];
       };
+      // Daily planner (supabase/migrations/2026-10-17-daily-planner.sql).
+      // The fixed daily items. days_of_week is IST weekdays, 0=Sun … 6=Sat —
+      // the same numbering as recurring_tasks and istWeekday().
+      plan_anchors: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          days_of_week: number[];
+          position: number;
+          // "Place me directly after this anchor" — the Instagram post after
+          // the gym. NULL for everything else.
+          follows_anchor_id: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          days_of_week: number[];
+          position?: number;
+          follows_anchor_id?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          days_of_week?: number[];
+          position?: number;
+          follows_anchor_id?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // One per user per IST day (unique on user_id, plan_date). Created only
+      // through the create_daily_plan function, so a plan never exists
+      // without its items.
+      daily_plans: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan_date: string; // DATE, IST civil "YYYY-MM-DD"
+          source: DailyPlanSource;
+          reason: string;
+          accepted_at: string | null;
+          // The 11:00 push: claimed (set) before sending, so a re-run never
+          // pushes twice; the counts are what the push service accepted.
+          notified_at: string | null;
+          push_sent: number | null;
+          push_failed: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          plan_date: string;
+          source: DailyPlanSource;
+          reason: string;
+          accepted_at?: string | null;
+          notified_at?: string | null;
+          push_sent?: number | null;
+          push_failed?: number | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          plan_date?: string;
+          source?: DailyPlanSource;
+          reason?: string;
+          accepted_at?: string | null;
+          notified_at?: string | null;
+          push_sent?: number | null;
+          push_failed?: number | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      daily_plan_items: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan_id: string;
+          position: number;
+          kind: DailyPlanItemKind;
+          // Either id goes NULL when its source row is deleted; the title is
+          // a snapshot so the history still reads.
+          anchor_id: string | null;
+          task_id: string | null;
+          title: string;
+          status: DailyPlanItemStatus;
+          // The IST date the item was moved to. Set exactly when
+          // status = 'moved' (daily_plan_items_moved_check).
+          moved_to: string | null;
+          status_changed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          plan_id: string;
+          position: number;
+          kind: DailyPlanItemKind;
+          anchor_id?: string | null;
+          task_id?: string | null;
+          title: string;
+          status?: DailyPlanItemStatus;
+          moved_to?: string | null;
+          status_changed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          plan_id?: string;
+          position?: number;
+          kind?: DailyPlanItemKind;
+          anchor_id?: string | null;
+          task_id?: string | null;
+          title?: string;
+          status?: DailyPlanItemStatus;
+          moved_to?: string | null;
+          status_changed_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      // Creates a plan and all its items in one transaction. Idempotent per
+      // (user, day): a caller that loses the race gets the winner's id back.
+      create_daily_plan: {
+        Args: {
+          p_user_id: string;
+          p_plan_date: string;
+          p_source: DailyPlanSource;
+          p_reason: string;
+          p_items: Json;
+        };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
@@ -874,3 +1030,7 @@ export type TemplateSet =
   Database["public"]["Tables"]["template_sets"]["Row"];
 export type YoutubeNoteJob =
   Database["public"]["Tables"]["youtube_note_jobs"]["Row"];
+export type PlanAnchor = Database["public"]["Tables"]["plan_anchors"]["Row"];
+export type DailyPlan = Database["public"]["Tables"]["daily_plans"]["Row"];
+export type DailyPlanItem =
+  Database["public"]["Tables"]["daily_plan_items"]["Row"];

@@ -600,3 +600,103 @@ Rules:
 
   return drafts;
 }
+
+/**
+ * Output cap for ordering the daily plan.
+ *
+ * Measured 2026-10-17 on 7 items at reasoning_effort "low": 149–151 completion
+ * tokens, 96 of them reasoning, against 445 prompt tokens. 1,000 is several
+ * times that, so a longer list (up to MAX_AI_ITEMS) still fits. Lowering it
+ * buys no TPM headroom — Groq admits on the prompt, not on max_tokens — and a
+ * truncated answer fails JSON.parse, which the caller turns into the fallback
+ * plan rather than a missing one.
+ */
+const MAX_TOKENS_DAILY_PLAN = 1000;
+
+/**
+ * This call can run inside a dashboard open (when the 11:00 cron did not make
+ * the plan first), so a slow or retrying Groq must become the fallback plan
+ * quickly instead of a spinner. Measured ~0.8s per call; 8s is the ceiling.
+ * maxRetries 0 for the same reason: the SDK's default retries a 429 with
+ * backoff, and the deterministic order is a better answer than a long wait.
+ */
+const DAILY_PLAN_TIMEOUT_MS = 8000;
+
+/**
+ * The model's raw answer for the daily plan. Deliberately UNVALIDATED here:
+ * lib/daily-plan/compose.ts owns the rules an order must satisfy (every item
+ * exactly once, "right after" pairs adjacent, a reason that names the first
+ * item), so the checks live next to the fallback they fall back to.
+ */
+export interface DailyPlanAiAnswer {
+  order: unknown;
+  reason: unknown;
+}
+
+/**
+ * Ask the model to order today's plan and explain the order in one line.
+ * SERVER-ONLY — touches GROQ_API_KEY.
+ *
+ * THROWS on any technical failure (network, 401/404/429, timeout, invalid
+ * JSON). The caller never lets that reach the user: every throw becomes the
+ * deterministic fallback plan.
+ */
+export async function orderDailyPlan(
+  items: Record<string, string>[],
+  planDate: string,
+  weekdayName: string
+): Promise<DailyPlanAiAnswer> {
+  const systemPrompt = `You order one person's plan for today in a productivity app. They read it on a low-energy morning, so the order should make the day easy to start and easy to keep going.
+
+Today is ${planDate} (${weekdayName}).
+
+You get a JSON list of items. Each has an "id", a "kind" ("anchor" = a fixed daily commitment, "task" = a to-do), a "title", and for tasks a "due" status and a "priority". An anchor may have "right_after": it must come IMMEDIATELY after the item with that title, with nothing in between.
+
+Return ONLY a JSON object of this exact shape:
+{"order":["a1","t2"],"reason":"Gym first while energy is fresh, then the quick overdue task."}
+
+Rules:
+- "order" contains every id exactly once and nothing else.
+- An item with "right_after" comes immediately after that item.
+- Order for a realistic day: something concrete to start with, overdue items before they slip further, focused work while energy is still fresh.
+- "reason" is ONE sentence of at most 20 words explaining the order you returned. It MUST begin by naming the first item of your order by its title. Never describe an item as first unless it is first in "order".
+- Plain, calm and encouraging. No emoji, no exclamation marks.
+- No prose outside the JSON object, no markdown fences.`;
+
+  let content: string;
+  try {
+    const completion = await groq.chat.completions.create(
+      {
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(items).slice(0, MAX_SOURCE_CHARS) },
+        ],
+        // The same list should come back in the same order twice.
+        temperature: 0,
+        max_tokens: MAX_TOKENS_DAILY_PLAN,
+        // Ordering a handful of items needs no deliberation, and reasoning
+        // tokens bill against max_tokens on this model (see summarizeNoteContent).
+        reasoning_effort: "low",
+        response_format: { type: "json_object" },
+      },
+      { timeout: DAILY_PLAN_TIMEOUT_MS, maxRetries: 0 }
+    );
+    content = (completion.choices[0]?.message?.content ?? "").trim();
+  } catch (err) {
+    console.error("Groq generate error (daily plan):", err);
+    throw err;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("AI returned invalid JSON.");
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("AI returned unexpected format.");
+  }
+  const answer = parsed as Record<string, unknown>;
+  return { order: answer.order, reason: answer.reason };
+}

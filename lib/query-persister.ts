@@ -30,6 +30,12 @@ function idbKeyForUser(userId: string): string {
  * row per training DAY, so six months of real training is single digits. It is
  * what tells a reloaded page there is a session in progress to finish; without
  * it, an offline reload mid-workout would offer to start the day over.
+ *
+ * "daily-plan" is today's plan (["daily-plan", <IST date>]). It is the first
+ * thing on the dashboard and it is tapped open from a push, often on a phone
+ * with poor signal; offline it must still render, and an offline drop or move
+ * must still show as done after a reload. The IST date in the key keeps a
+ * restored snapshot from ever passing yesterday's plan off as today's.
  */
 export const PERSISTED_QUERY_KEYS: ReadonlySet<string> = new Set([
   "tasks",
@@ -39,6 +45,7 @@ export const PERSISTED_QUERY_KEYS: ReadonlySet<string> = new Set([
   "focus-categories",
   "workouts",
   "workout-sessions",
+  "daily-plan",
 ]);
 
 /**
