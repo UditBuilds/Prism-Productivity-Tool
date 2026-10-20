@@ -1,27 +1,34 @@
 "use client";
 
 import { useIsRestoring } from "@tanstack/react-query";
-import { ArrowRight, CalendarCheck, Check, MoreHorizontal, X } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarCheck,
+  Check,
+  CheckCircle2,
+  Circle,
+  MoreHorizontal,
+  X,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatDueDate, istTimeValue, type DueTone } from "@/lib/date";
+import { formatDueDate, istDayLabel, istTimeValue } from "@/lib/date";
 import {
-  activePlanItems,
+  DAY_CAP,
+  planSections,
   type DailyPlanViewItem,
 } from "@/lib/daily-plan/view";
-import { useDailyPlan, useUpdateDailyPlan } from "@/hooks/useDailyPlan";
+import {
+  useCompletePlanTask,
+  useDailyPlan,
+  useUpdateDailyPlan,
+} from "@/hooks/useDailyPlan";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-const TONE_CLASS: Record<DueTone, string> = {
-  muted: "text-muted-foreground",
-  warning: "text-warning",
-  danger: "text-danger",
-};
 
 /**
  * Today's plan, first thing on the dashboard.
@@ -37,6 +44,12 @@ const TONE_CLASS: Record<DueTone, string> = {
  * a normal day is one tap on "Looks good". Changing a row is two taps (the ⋯
  * button, then Move or Drop). No questions, no typing.
  *
+ * LEFTOVERS FIRST, NO GUILT. Tasks from earlier days sit in their own group
+ * above the plan, each one tap from Done and two from Move or Drop, with one
+ * button to move them all. Nothing in this panel is red or amber: a planner
+ * that scolds a returning user is one they stop opening. The rest of the app's
+ * overdue styling is deliberately left as it is.
+ *
  * A client island, not part of the Server Component: making the plan can
  * include a Groq call, which must never hold up the page's own render, and
  * the edits need optimistic, offline-resumable state that a server-rendered
@@ -45,6 +58,7 @@ const TONE_CLASS: Record<DueTone, string> = {
 export function DailyPlanPanel() {
   const { data, isLoading, isError } = useDailyPlan();
   const edit = useUpdateDailyPlan();
+  const completeTask = useCompletePlanTask();
   // isLoading reads false throughout an IndexedDB restore, so it is paired
   // with useIsRestoring — the same gate every persisted-cache reader uses.
   const restoring = useIsRestoring() || isLoading;
@@ -71,7 +85,9 @@ export function DailyPlanPanel() {
   const plan = data.plan;
   if (!plan) return null;
 
-  const items = activePlanItems(data.items);
+  const { leftovers, openLeftovers, today, openTodayTasks, openTasks } =
+    planSections(data.items, plan.plan_date);
+  const onPlan = leftovers.length + today.length;
   const moved = data.items.filter((i) => i.status === "moved").length;
   const dropped = data.items.filter(
     (i) => i.status === "dropped" || i.status === "skipped"
@@ -81,23 +97,77 @@ export function DailyPlanPanel() {
     dropped > 0 ? `${dropped} dropped` : null,
   ].filter(Boolean);
 
+  // The stored reason describes the plan's own order, opening with its first
+  // item — which may now sit below a leftover. A plain count is true instead.
+  const line =
+    openLeftovers.length > 0
+      ? [
+          `${openLeftovers.length} left over`,
+          openTodayTasks > 0 ? `${openTodayTasks} for today` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : plan.reason;
+
   return (
     <PlanShell>
-      <PlanHeader line={plan.reason} />
+      <PlanHeader line={line} />
 
-      {items.length > 0 ? (
-        <ol className="mt-3">
-          {items.map((item, index) => (
-            <PlanRow
-              key={item.id}
-              item={item}
-              number={index + 1}
-              onMove={() => edit.mutate({ action: "move", item_id: item.id })}
-              onDrop={() => edit.mutate({ action: "drop", item_id: item.id })}
-            />
-          ))}
-        </ol>
-      ) : (
+      {/* A warning only: it never blocks, hides or removes anything. */}
+      {openTasks > DAY_CAP && (
+        <p className="mt-3 text-[13px] leading-[18px] text-foreground">
+          {openTasks} tasks today. A realistic day is about {DAY_CAP}.
+        </p>
+      )}
+
+      {leftovers.length > 0 && (
+        <div className="mt-3">
+          <GroupLabel>Left over</GroupLabel>
+          <ul>
+            {leftovers.map((item) => (
+              <LeftoverRow
+                key={item.id}
+                item={item}
+                onDone={() => item.task_id && completeTask(item.task_id)}
+                onMove={() => edit.mutate({ action: "move", item_id: item.id })}
+                onDrop={() => edit.mutate({ action: "drop", item_id: item.id })}
+              />
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() =>
+              edit.mutate({
+                action: "move_all",
+                item_ids: openLeftovers.map((i) => i.id),
+              })
+            }
+            className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-input text-[15px] font-semibold text-foreground transition-colors hover:bg-background active:bg-background"
+          >
+            <ArrowRight aria-hidden className="h-4 w-4" />
+            Move all leftovers to tomorrow
+          </button>
+        </div>
+      )}
+
+      {today.length > 0 && (
+        <div className={cn(leftovers.length > 0 ? "mt-4" : "mt-3")}>
+          {leftovers.length > 0 && <GroupLabel>Today</GroupLabel>}
+          <ol>
+            {today.map((item, index) => (
+              <PlanRow
+                key={item.id}
+                item={item}
+                number={index + 1}
+                onMove={() => edit.mutate({ action: "move", item_id: item.id })}
+                onDrop={() => edit.mutate({ action: "drop", item_id: item.id })}
+              />
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {onPlan === 0 && (
         <p className="mt-3 text-base font-medium leading-[22px] text-foreground">
           Nothing left on today&apos;s plan.
         </p>
@@ -115,7 +185,7 @@ export function DailyPlanPanel() {
           Plan accepted at {istTimeValue(plan.accepted_at)}
         </p>
       ) : (
-        items.length > 0 && (
+        onPlan > 0 && (
           <button
             type="button"
             onClick={() => edit.mutate({ action: "accept", plan_id: plan.id })}
@@ -172,15 +242,29 @@ function PlanHeader({ line, pulsing }: { line: string; pulsing?: boolean }) {
   );
 }
 
+/** DESIGN.md's eyebrow: 11/16, capitals, bold, 0.08em. */
+function GroupLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="pb-1 text-[11px] font-bold uppercase leading-4 tracking-[0.08em] text-muted-foreground">
+      {children}
+    </h3>
+  );
+}
+
+/**
+ * Grey on every row, on purpose: inside the planner a date is information,
+ * not a warning. A past date is a literal day ("Due Sat, Oct 17"), never a
+ * count of days overdue.
+ */
 function rowMeta(item: DailyPlanViewItem): { text: string; className: string } | null {
   if (item.kind === "task") {
     if (item.task_done) return { text: "Done", className: "text-success" };
     const due = formatDueDate(item.task_due_date);
-    if (!due) return null;
-    return {
-      text: due.label === "Today" ? "Due today" : due.label,
-      className: TONE_CLASS[due.tone],
-    };
+    if (!due || !item.task_due_date) return null;
+    let text = due.label;
+    if (due.label === "Today") text = "Due today";
+    else if (due.tone === "danger") text = `Due ${istDayLabel(item.task_due_date)}`;
+    return { text, className: "text-muted-foreground" };
   }
   if (item.after_title) {
     return { text: `Right after ${item.after_title}`, className: "text-muted-foreground" };
@@ -189,6 +273,66 @@ function rowMeta(item: DailyPlanViewItem): { text: string; className: string } |
     return { text: "Moved from yesterday", className: "text-muted-foreground" };
   }
   return null;
+}
+
+function RowText({ item }: { item: DailyPlanViewItem }) {
+  const meta = rowMeta(item);
+  return (
+    <div className="min-w-0 flex-1 py-1.5">
+      <p
+        className={cn(
+          "text-base font-medium leading-[22px] text-foreground",
+          item.task_done && "text-muted-foreground line-through"
+        )}
+      >
+        {item.title}
+      </p>
+      {meta && (
+        <p className={cn("text-[13px] leading-[18px]", meta.className)}>
+          {meta.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RowMenu({
+  title,
+  dropLabel,
+  onMove,
+  onDrop,
+}: {
+  title: string;
+  dropLabel: string;
+  onMove: () => void;
+  onDrop: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Change “${title}”`}
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-background data-[state=open]:text-foreground"
+      >
+        <MoreHorizontal aria-hidden className="h-5 w-5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem
+          onSelect={onMove}
+          className="min-h-11 cursor-pointer text-[15px]"
+        >
+          <ArrowRight aria-hidden className="mr-2 h-4 w-4" />
+          Move to tomorrow
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={onDrop}
+          className="min-h-11 cursor-pointer text-[15px]"
+        >
+          <X aria-hidden className="mr-2 h-4 w-4" />
+          {dropLabel}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function PlanRow({
@@ -202,7 +346,6 @@ function PlanRow({
   onMove: () => void;
   onDrop: () => void;
 }) {
-  const meta = rowMeta(item);
   return (
     <li className="flex items-center gap-3 py-1">
       <span
@@ -211,47 +354,58 @@ function PlanRow({
       >
         {number}
       </span>
-      <div className="min-w-0 flex-1 py-1.5">
-        <p
-          className={cn(
-            "text-base font-medium leading-[22px] text-foreground",
-            item.task_done && "text-muted-foreground line-through"
-          )}
-        >
-          {item.title}
-        </p>
-        {meta && (
-          <p className={cn("text-[13px] leading-[18px]", meta.className)}>
-            {meta.text}
-          </p>
-        )}
-      </div>
+      <RowText item={item} />
       {/* A finished task has nothing left to move or drop. */}
       {!item.task_done && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label={`Change “${item.title}”`}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-background data-[state=open]:text-foreground"
-          >
-            <MoreHorizontal aria-hidden className="h-5 w-5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuItem
-              onSelect={onMove}
-              className="min-h-11 cursor-pointer text-[15px]"
-            >
-              <ArrowRight aria-hidden className="mr-2 h-4 w-4" />
-              Move to tomorrow
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={onDrop}
-              className="min-h-11 cursor-pointer text-[15px]"
-            >
-              <X aria-hidden className="mr-2 h-4 w-4" />
-              Drop from today
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <RowMenu title={item.title} dropLabel="Drop from today" onMove={onMove} onDrop={onDrop} />
+      )}
+    </li>
+  );
+}
+
+/**
+ * A task from an earlier day. Done is the round button in the number's place
+ * (one tap, as on the agenda); Move and Drop are in the ⋯ menu. Drop here also
+ * clears the task's date — it stays in Tasks, undated, instead of coming back
+ * every morning — so the menu says so.
+ */
+function LeftoverRow({
+  item,
+  onDone,
+  onMove,
+  onDrop,
+}: {
+  item: DailyPlanViewItem;
+  onDone: () => void;
+  onMove: () => void;
+  onDrop: () => void;
+}) {
+  const done = item.task_done;
+  return (
+    <li className="flex items-center gap-3 py-1">
+      {/* 44px target; the negative margin lines the 20px circle up with the
+          number column of the rows below. */}
+      <button
+        type="button"
+        onClick={onDone}
+        disabled={done || !item.task_id}
+        aria-label={done ? `${item.title} marked done` : `Mark “${item.title}” done`}
+        className="-mx-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {done ? (
+          <CheckCircle2 aria-hidden className="h-5 w-5 animate-pop text-success" />
+        ) : (
+          <Circle aria-hidden className="h-5 w-5" />
+        )}
+      </button>
+      <RowText item={item} />
+      {!done && (
+        <RowMenu
+          title={item.title}
+          dropLabel="Drop and clear its date"
+          onMove={onMove}
+          onDrop={onDrop}
+        />
       )}
     </li>
   );

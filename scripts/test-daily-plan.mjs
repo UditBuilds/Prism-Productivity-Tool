@@ -38,16 +38,24 @@ function eq(label, actual, expected) {
   }
 }
 
-function compile() {
-  // compose.ts imports "@/lib/date"; rewrite the alias to a sibling specifier.
-  const srcs = ["lib/date.ts", "lib/daily-plan/compose.ts"];
+async function compile() {
+  // compose.ts and view.ts import "@/lib/date"; view.ts also imports three
+  // unions from "@/types/database", which would drag in the whole schema type.
+  // The aliases become sibling specifiers, and database.ts is just those three
+  // lines, lifted from the real file so they cannot drift.
+  const srcs = ["lib/date.ts", "lib/daily-plan/compose.ts", "lib/daily-plan/view.ts"];
   for (const rel of srcs) {
-    const text = readFileSync(path.join(root, rel), "utf8").replace(
-      /["']@\/lib\/date["']/g,
-      '"./date.js"'
-    );
+    const text = readFileSync(path.join(root, rel), "utf8")
+      .replace(/["']@\/lib\/date["']/g, '"./date.js"')
+      .replace(/["']@\/types\/database["']/g, '"./database.js"');
     writeFileSync(path.join(out, path.basename(rel)), text);
   }
+  const unions = readFileSync(path.join(root, "types/database.ts"), "utf8")
+    .split("\n")
+    .filter((l) => /^export type DailyPlan(Source|ItemKind|ItemStatus) = /.test(l));
+  if (unions.length !== 3) throw new Error("daily-plan unions not found in types/database.ts");
+  writeFileSync(path.join(out, "database.ts"), unions.join("\n") + "\n");
+  srcs.push("database.ts");
   execFileSync(
     process.execPath,
     [
@@ -62,7 +70,10 @@ function compile() {
     { stdio: "inherit" }
   );
   writeFileSync(path.join(out, "package.json"), JSON.stringify({ type: "module" }));
-  return import(pathToFileURL(path.join(out, "compose.js")).href);
+  return {
+    ...(await import(pathToFileURL(path.join(out, "compose.js")).href)),
+    ...(await import(pathToFileURL(path.join(out, "view.js")).href)),
+  };
 }
 
 const {
@@ -75,6 +86,9 @@ const {
   followsSatisfied,
   toPlanItemsPayload,
   validateAiOrder,
+  DAY_CAP,
+  isLeftover,
+  planSections,
 } = await compile();
 
 // Udit's four anchors, as the seed SQL creates them.
@@ -244,6 +258,74 @@ eq(
   [payload[0], payload[4]].map((p) => [p.kind, p.anchor_id, p.task_id]),
   [["anchor", "gym", null], ["task", null, "overdue"]]
 );
+
+console.log("\nLeftovers and the day cap (view.ts) — plan for Tue 10-20");
+const TUE = "2026-10-20";
+const row = (id, over = {}) => ({
+  id,
+  position: 0,
+  kind: "task",
+  title: id,
+  status: "planned",
+  moved_to: null,
+  task_id: "task-" + id,
+  task_due_date: "2026-10-20T06:30:00+00:00",
+  task_done: false,
+  after_title: null,
+  carried: false,
+  gone: false,
+  ...over,
+});
+const due = (iso) => row("x", { task_due_date: iso });
+
+eq("due yesterday noon → leftover", isLeftover(due("2026-10-19T06:30:00+00:00"), TUE), true);
+eq("due 3 days ago → leftover", isLeftover(due("2026-10-17T06:30:00+00:00"), TUE), true);
+eq("due on the plan's day → not a leftover", isLeftover(due("2026-10-20T06:30:00+00:00"), TUE), false);
+eq("cron instance 00:00 UTC (05:30 IST) on the plan's day → not a leftover", isLeftover(due("2026-10-20T00:00:00+00:00"), TUE), false);
+eq("23:59:59 IST the day before → leftover", isLeftover(due("2026-10-19T18:29:59+00:00"), TUE), true);
+eq("00:00 IST on the plan's day → not a leftover", isLeftover(due("2026-10-19T18:30:00+00:00"), TUE), false);
+eq("an anchor is never a leftover", isLeftover(row("a", { kind: "anchor", task_id: null, task_due_date: null }), TUE), false);
+eq("a task with no date (dropped leftover) → not a leftover", isLeftover(due(null), TUE), false);
+eq("an unparseable date → not a leftover", isLeftover(due("not a date"), TUE), false);
+
+// The verification seed: 3 leftovers + 6 for today + 1 anchor.
+const seeded = [
+  row("gym", { kind: "anchor", task_id: null, task_due_date: null }),
+  row("l-yday-1", { task_due_date: "2026-10-19T06:30:00+00:00" }),
+  row("t1"), row("t2"), row("t3"),
+  row("l-3days", { task_due_date: "2026-10-17T06:30:00+00:00" }),
+  row("t4"), row("t5"), row("t6"),
+  row("l-yday-2", { task_due_date: "2026-10-19T06:30:00+00:00" }),
+];
+const s = planSections(seeded, TUE);
+eq("leftovers keep the plan's order", s.leftovers.map((i) => i.id), ["l-yday-1", "l-3days", "l-yday-2"]);
+eq("today keeps the plan's order, anchor included", s.today.map((i) => i.id), ["gym", "t1", "t2", "t3", "t4", "t5", "t6"]);
+eq("'N for today' counts tasks only (the anchor is not one)", s.openTodayTasks, 6);
+eq("cap count: 3 leftovers + 6 today = 9, anchor not counted", s.openTasks, 9);
+eq("DAY_CAP is 5", DAY_CAP, 5);
+
+const worked = seeded.map((i) =>
+  i.id === "l-yday-1" ? { ...i, task_done: true }
+  : i.id === "t1" ? { ...i, task_done: true }
+  : i.id === "t2" ? { ...i, status: "moved", moved_to: "2026-10-21" }
+  : i.id === "t3" ? { ...i, status: "dropped" }
+  : i.id === "t4" ? { ...i, gone: true }
+  : i
+);
+const w = planSections(worked, TUE);
+eq("a done leftover stays in its group, struck through", w.leftovers.map((i) => i.id), ["l-yday-1", "l-3days", "l-yday-2"]);
+eq("…but is not open: Move all and the header skip it", w.openLeftovers.map((i) => i.id), ["l-3days", "l-yday-2"]);
+eq("moved, dropped and deleted rows leave today's list; done stays", w.today.map((i) => i.id), ["gym", "t1", "t5", "t6"]);
+eq("done, moved, dropped and deleted tasks are not load", [w.openTodayTasks, w.openTasks], [2, 4]);
+
+const allDone = seeded.map((i) => (i.id.startsWith("l-") ? { ...i, task_done: true } : i));
+const d = planSections(allDone, TUE);
+eq("every leftover done → the group closes", [d.leftovers.length, d.openLeftovers.length], [0, 0]);
+eq("…and its done rows do not move down into today's list", d.today.some((i) => i.id.startsWith("l-")), false);
+
+const atCap = planSections([row("a1"), row("a2"), row("a3"), row("a4"), row("a5")], TUE).openTasks;
+const overCap = planSections([row("a1"), row("a2"), row("a3"), row("a4"), row("a5"), row("a6")], TUE).openTasks;
+eq("5 open tasks is not over the cap, 6 is", [atCap > DAY_CAP, overCap > DAY_CAP], [false, true]);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) process.exit(1);

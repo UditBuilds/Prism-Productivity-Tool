@@ -1,15 +1,22 @@
 import { json } from "@/lib/api/response";
 import { createClient } from "@/lib/supabase/server";
-import { istCivilDateToNoonIso, istDateString } from "@/lib/date";
+import { istCivilDateToNoonIso, istCivilDayRange, istDateString } from "@/lib/date";
 import { addCivilDays } from "@/lib/daily-plan/compose";
 import { ensureDailyPlan } from "@/lib/daily-plan/server";
-import type { DailyPlanEditResult, DailyPlanView } from "@/lib/daily-plan/view";
+import type {
+  DailyPlanEditResponse,
+  DailyPlanEditResult,
+  DailyPlanView,
+} from "@/lib/daily-plan/view";
 
 /** Creating today's plan can include one Groq call (8s timeout, ~0.8s measured). */
 export const maxDuration = 30;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A plan holds at most 200 tasks (lib/daily-plan/server.ts), plus anchors. */
+const MAX_MOVE_ALL = 250;
 
 /**
  * POST /api/daily-plan — today's plan for the signed-in user, created on first
@@ -43,9 +50,14 @@ export async function POST() {
  *   { action: "accept", plan_id }  → accepted_at = now (first accept wins)
  *   { action: "move",   item_id }  → item moved to the plan's NEXT day; a task
  *                                    item also gets its due_date moved there
+ *   { action: "move_all", item_ids } → "move" for every listed item still
+ *                                    'planned' ("Move all leftovers")
  *   { action: "drop",   item_id }  → item off today's plan: 'dropped' for a
- *                                    task, 'skipped' for an anchor. The task
- *                                    itself is never touched.
+ *                                    task, 'skipped' for an anchor. A LEFTOVER
+ *                                    task (due on an earlier day than the
+ *                                    plan's) also has its due_date cleared;
+ *                                    any other task is not touched. No task
+ *                                    is ever deleted.
  *
  * Every edit is IDEMPOTENT, because the offline queue replays it: an item that
  * is no longer 'planned' answers with its current state instead of an error,
@@ -92,6 +104,20 @@ export async function PATCH(request: Request) {
     return json<DailyPlanEditResult>({ data: plan, error: null });
   }
 
+  if (body.action === "move_all") {
+    const itemIds = Array.isArray(body.item_ids)
+      ? Array.from(new Set<unknown>(body.item_ids))
+      : [];
+    if (
+      itemIds.length === 0 ||
+      itemIds.length > MAX_MOVE_ALL ||
+      !itemIds.every((id): id is string => typeof id === "string" && UUID_RE.test(id))
+    ) {
+      return json({ data: null, error: "Invalid item_ids" }, 400);
+    }
+    return moveAll(supabase, user.id, itemIds, now);
+  }
+
   if (body.action !== "move" && body.action !== "drop") {
     return json({ data: null, error: "Unknown action" }, 400);
   }
@@ -117,6 +143,33 @@ export async function PATCH(request: Request) {
   }
 
   if (body.action === "drop") {
+    // A leftover loses its date as well, or tomorrow's plan picks it straight
+    // back up as overdue. The leftover rule is in the WHERE clause rather than
+    // a read-then-write, so a replay finds the date already null and matches
+    // nothing, and a task finished or re-dated elsewhere since the tap is left
+    // alone. Task first, item second, for the same reason as move below.
+    if (item.kind === "task" && item.task_id) {
+      const { data: plan, error: planError } = await supabase
+        .from("daily_plans")
+        .select("plan_date")
+        .eq("id", item.plan_id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (planError) return json({ data: null, error: planError.message }, 500);
+      if (!plan) return json({ data: null, error: "Plan not found" }, 404);
+      const planDay = istCivilDayRange(plan.plan_date);
+      if (!planDay) return json({ data: null, error: "Bad plan date" }, 500);
+
+      const { error } = await supabase
+        .from("tasks")
+        .update({ due_date: null })
+        .eq("id", item.task_id)
+        .eq("user_id", user.id)
+        .neq("status", "done")
+        .lt("due_date", planDay.start);
+      if (error) return json({ data: null, error: error.message }, 500);
+    }
+
     const status = item.kind === "anchor" ? "skipped" : "dropped";
     const { error } = await supabase
       .from("daily_plan_items")
@@ -166,6 +219,79 @@ export async function PATCH(request: Request) {
 
   return json<DailyPlanEditResult>({
     data: { id: item.id, status: "moved", moved_to: tomorrow },
+    error: null,
+  });
+}
+
+/**
+ * "Move" for many items at once: per plan, one bulk task write then one bulk
+ * item write — the same order as a single move, so a failure between the two
+ * leaves the items 'planned' and the retry rewrites the same due dates.
+ * Items already off the plan (a replay, a double tap) are reported as they are.
+ */
+async function moveAll(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  itemIds: string[],
+  now: string
+) {
+  const { data: items, error: itemsError } = await supabase
+    .from("daily_plan_items")
+    .select("id, plan_id, kind, task_id, status, moved_to")
+    .in("id", itemIds)
+    .eq("user_id", userId);
+  if (itemsError) return json({ data: null, error: itemsError.message }, 500);
+
+  const results = new Map<string, DailyPlanEditResult>(
+    (items ?? []).map((i) => [i.id, { id: i.id, status: i.status, moved_to: i.moved_to }])
+  );
+  const planned = (items ?? []).filter((i) => i.status === "planned");
+  const planIds = Array.from(new Set(planned.map((i) => i.plan_id)));
+
+  if (planIds.length > 0) {
+    const { data: plans, error: plansError } = await supabase
+      .from("daily_plans")
+      .select("id, plan_date")
+      .in("id", planIds)
+      .eq("user_id", userId);
+    if (plansError) return json({ data: null, error: plansError.message }, 500);
+
+    for (const plan of plans ?? []) {
+      const tomorrow = addCivilDays(plan.plan_date, 1);
+      const group = planned.filter((i) => i.plan_id === plan.id);
+      // A NULL task_id is a deleted task: nothing to re-date, the item still moves.
+      const taskIds = group.flatMap((i) =>
+        i.kind === "task" && i.task_id ? [i.task_id] : []
+      );
+
+      if (taskIds.length > 0) {
+        const { error } = await supabase
+          .from("tasks")
+          .update({ due_date: istCivilDateToNoonIso(tomorrow) })
+          .in("id", taskIds)
+          .eq("user_id", userId);
+        if (error) return json({ data: null, error: error.message }, 500);
+      }
+
+      const { error: moveError } = await supabase
+        .from("daily_plan_items")
+        .update({ status: "moved", moved_to: tomorrow, status_changed_at: now })
+        .in(
+          "id",
+          group.map((i) => i.id)
+        )
+        .eq("user_id", userId)
+        .eq("status", "planned");
+      if (moveError) return json({ data: null, error: moveError.message }, 500);
+
+      for (const i of group) {
+        results.set(i.id, { id: i.id, status: "moved", moved_to: tomorrow });
+      }
+    }
+  }
+
+  return json<DailyPlanEditResponse>({
+    data: { items: Array.from(results.values()) },
     error: null,
   });
 }

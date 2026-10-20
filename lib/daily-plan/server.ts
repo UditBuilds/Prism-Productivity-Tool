@@ -259,6 +259,7 @@ async function buildView(
       title: item.title,
       status: item.status,
       moved_to: item.moved_to,
+      task_id: task ? task.id : null,
       task_due_date: task?.due_date ?? null,
       task_done: task?.status === "done",
       after_title: leader?.title ?? null,
