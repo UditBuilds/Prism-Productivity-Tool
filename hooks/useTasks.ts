@@ -275,10 +275,17 @@ export function useSplitTasks(meta?: MutationMeta) {
   });
 }
 
-export function useUpdateTask() {
+/**
+ * `meta`: the same opt-in as useCreateTask's. Its one user is Done on the daily
+ * plan's leftover rows (hooks/useDailyPlan.ts), whose task also sits in the
+ * dashboard's server-rendered agenda and Overdue counter — a call-site
+ * router.refresh() would not survive an offline replay, the meta flag does.
+ */
+export function useUpdateTask(meta?: MutationMeta) {
   const qc = useQueryClient();
   return useMutation({
     ...updateTaskMutationOptions,
+    meta,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: TASKS_KEY });
       const previous = qc.getQueryData<Task[]>(TASKS_KEY) ?? [];
