@@ -23,8 +23,28 @@ const withPWA = withPWAInit({
   fallbacks: {
     document: "/offline",
   },
+  // Our rules below go IN FRONT of next-pwa's defaults (resolveRuntimeCaching
+  // puts custom entries first), and Workbox uses the first route that
+  // matches. Without this flag a custom array would REPLACE the defaults.
+  extendDefaultRuntimeCaching: true,
   workboxOptions: {
     disableDevLogs: true,
+    runtimeCaching: [
+      // The OAuth approval page shows who is signed in and which app is
+      // asking, for one short-lived request. It must never be stored: the
+      // defaults would keep it in "pages" (navigations) and "pages-rsc"
+      // (soft navigations). NetworkOnly matches all three request kinds.
+      // `options` must exist — next-pwa only attaches the /offline fallback
+      // to rules that have one. (The front-end-navigation Worker caches
+      // pages outside the service worker; see the beforeFiles rewrite
+      // below for how that one is stopped.)
+      {
+        urlPattern: ({ sameOrigin, url: { pathname } }) =>
+          sameOrigin && pathname.startsWith("/oauth/"),
+        handler: "NetworkOnly",
+        options: { cacheName: "oauth-never-cached" },
+      },
+    ],
   },
 });
 
@@ -35,6 +55,47 @@ const nextConfig = {
     // Bundling triggers its index.js debug branch (module.parent undefined →
     // fs.readFileSync of a test PDF → ENOENT) and pulls in pdfjs needlessly.
     serverComponentsExternalPackages: ["pdf-parse"],
+  },
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          // next-pwa's front-end-navigation Worker (sw-entry-worker.js)
+          // re-fetches every URL passed to history.pushState/replaceState and
+          // writes the response into the "pages" cache — from OUTSIDE the
+          // service worker, so no service-worker rule can stop it. Its fetch
+          // is the only request to /oauth/* that carries neither Next's `RSC`
+          // header (every soft navigation sends it) nor "text/html" in Accept
+          // (every browser navigation sends it). Those requests go to a path
+          // that does not exist, the 404 makes the Worker skip the put
+          // (`if (!s.ok) return;`), and the approval page is never stored.
+          //
+          // It lives HERE, not in the page: Next deletes `RSC` from the
+          // headers a page can read, so a page-level check cannot tell a soft
+          // navigation from the Worker — tried, and it turned the sign-in
+          // return trip into a 404. The router still sees the raw header.
+          source: "/oauth/:path*",
+          missing: [
+            { type: "header", key: "rsc" },
+            { type: "header", key: "accept", value: ".*text/html.*" },
+          ],
+          destination: "/_oauth-background-fetch",
+        },
+      ],
+    };
+  },
+  async headers() {
+    return [
+      {
+        // An Allow button is the classic clickjacking target: no other site
+        // may frame the approval page.
+        source: "/oauth/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+    ];
   },
 };
 
