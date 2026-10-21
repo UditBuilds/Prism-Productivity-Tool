@@ -586,6 +586,21 @@ CREATE UNIQUE INDEX "idx_tasks_recurring_unique_per_day" ON "public"."tasks" USI
 
 
 
+-- These five exist in the live database but were missing from this file, so a
+-- rebuild from it produced a database without them. Copied verbatim from
+-- pg_indexes on 2026-10-05; IF NOT EXISTS keeps a re-run harmless.
+CREATE INDEX IF NOT EXISTS "idx_notes_user_updated_at" ON "public"."notes" USING "btree" ("user_id", "updated_at");
+
+CREATE INDEX IF NOT EXISTS "idx_reminders_user_remind_at" ON "public"."reminders" USING "btree" ("user_id", "remind_at");
+
+CREATE INDEX IF NOT EXISTS "idx_srs_cards_user_next_review" ON "public"."srs_cards" USING "btree" ("user_id", "next_review");
+
+CREATE INDEX IF NOT EXISTS "idx_tasks_user_due_date" ON "public"."tasks" USING "btree" ("user_id", "due_date");
+
+CREATE INDEX IF NOT EXISTS "idx_tasks_user_status_completed" ON "public"."tasks" USING "btree" ("user_id", "status", "completed_at");
+
+
+
 CREATE INDEX "workout_sets_user_performed_idx" ON "public"."workout_sets" USING "btree" ("user_id", "performed_at" DESC);
 
 
