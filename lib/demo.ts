@@ -23,3 +23,12 @@
  */
 export const DEMO_EMAIL = "demo@prismapp.dev";
 export const DEMO_PASSWORD = "PrismDemo2026!";
+
+/**
+ * The same account's user id — `demo_id` in supabase/demo-seed.sql.
+ *
+ * For checks that must hold even if the account's email were changed: the
+ * password is public, so the email is not a reliable way to recognise this
+ * account. The id never changes. Used by the MCP server to refuse it.
+ */
+export const DEMO_USER_ID = "eac085cc-54df-4414-9c43-08a6ce84ecea";
