@@ -15,7 +15,10 @@ import { cn } from "@/lib/utils";
 import { formatDueDate, istDayLabel, istTimeValue } from "@/lib/date";
 import {
   DAY_CAP,
+  isPlanCleared,
+  planCounts,
   planSections,
+  planSubline,
   type DailyPlanViewItem,
 } from "@/lib/daily-plan/view";
 import {
@@ -85,33 +88,16 @@ export function DailyPlanPanel() {
   const plan = data.plan;
   if (!plan) return null;
 
-  const { leftovers, openLeftovers, today, openTodayTasks, openTasks } =
-    planSections(data.items, plan.plan_date);
+  const { leftovers, openLeftovers, today, openTasks } = planSections(
+    data.items,
+    plan.plan_date
+  );
   const onPlan = leftovers.length + today.length;
-  const moved = data.items.filter((i) => i.status === "moved").length;
-  const dropped = data.items.filter(
-    (i) => i.status === "dropped" || i.status === "skipped"
-  ).length;
-  const offPlan = [
-    moved > 0 ? `${moved} moved to tomorrow` : null,
-    dropped > 0 ? `${dropped} dropped` : null,
-  ].filter(Boolean);
-
-  // The stored reason describes the plan's own order, opening with its first
-  // item — which may now sit below a leftover. A plain count is true instead.
-  const line =
-    openLeftovers.length > 0
-      ? [
-          `${openLeftovers.length} left over`,
-          openTodayTasks > 0 ? `${openTodayTasks} for today` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : plan.reason;
+  const cleared = isPlanCleared(data.items);
 
   return (
     <PlanShell>
-      <PlanHeader line={line} />
+      <PlanHeader line={planSubline(plan, data.items)} />
 
       {/* A warning only: it never blocks, hides or removes anything. */}
       {openTasks > DAY_CAP && (
@@ -167,16 +153,16 @@ export function DailyPlanPanel() {
         </div>
       )}
 
-      {onPlan === 0 && (
+      {cleared && !plan.accepted_at ? (
         <p className="mt-3 text-base font-medium leading-[22px] text-foreground">
-          Nothing left on today&apos;s plan.
+          Plan cleared
         </p>
-      )}
-
-      {offPlan.length > 0 && (
-        <p className="mt-2 text-[13px] leading-[18px] text-muted-foreground">
-          {offPlan.join(" · ")}
-        </p>
+      ) : (
+        onPlan === 0 && (
+          <p className="mt-3 text-base font-medium leading-[22px] text-foreground">
+            Nothing left on today&apos;s plan.
+          </p>
+        )
       )}
 
       {plan.accepted_at ? (
@@ -185,7 +171,7 @@ export function DailyPlanPanel() {
           Plan accepted at {istTimeValue(plan.accepted_at)}
         </p>
       ) : (
-        onPlan > 0 && (
+        planCounts(data.items).left > 0 && (
           <button
             type="button"
             onClick={() => edit.mutate({ action: "accept", plan_id: plan.id })}
@@ -210,7 +196,13 @@ function PlanShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PlanHeader({ line, pulsing }: { line: string; pulsing?: boolean }) {
+function PlanHeader({
+  line,
+  pulsing,
+}: {
+  line: string | null;
+  pulsing?: boolean;
+}) {
   return (
     <div className="flex items-start gap-3">
       {/* The panel itself is the accent-tint fill, so the round icon sits on
@@ -229,14 +221,16 @@ function PlanHeader({ line, pulsing }: { line: string; pulsing?: boolean }) {
         >
           Today&apos;s plan
         </h2>
-        <p
-          className={cn(
-            "mt-0.5 text-[13px] leading-[18px] text-muted-foreground",
-            pulsing && "animate-pulse"
-          )}
-        >
-          {line}
-        </p>
+        {line && (
+          <p
+            className={cn(
+              "mt-0.5 text-[13px] leading-[18px] text-muted-foreground",
+              pulsing && "animate-pulse"
+            )}
+          >
+            {line}
+          </p>
+        )}
       </div>
     </div>
   );

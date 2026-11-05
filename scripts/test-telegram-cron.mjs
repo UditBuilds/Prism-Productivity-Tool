@@ -119,6 +119,7 @@ console.log("\nPLAN_NOTIFY_CHANNEL unset (= both)");
   eq("owner outcome", [u.owner.telegram, u.owner.push_sent], ["sent", 1]);
   eq("other user: web push only, outcome has no telegram key", [w.pushes.includes(OTHER), "telegram" in u.other], [true, false]);
   eq("the message is the plan, with its buttons", w.tgSends[0].keyboard.at(-1)[0].text, "Looks good");
+  eq("an untouched first send carries the stored summary", w.tgSends[0].text.split("\n")[1], "Gym first.");
 
   const again = byUser(await runCron(w));
   eq("re-run: notified_at claim → nothing sent twice", [w.tgSends.length, w.pushes.length, again.owner.skipped, again.other.skipped], [1, 2, "already_notified", "already_notified"]);

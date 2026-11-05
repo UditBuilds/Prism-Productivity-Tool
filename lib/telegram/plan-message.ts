@@ -6,7 +6,10 @@ import {
 } from "@/lib/date";
 import {
   DAY_CAP,
+  isPlanCleared,
+  planCounts,
   planSections,
+  planSubline,
   type DailyPlanView,
   type DailyPlanViewItem,
 } from "@/lib/daily-plan/view";
@@ -30,8 +33,13 @@ const MAX_TITLE_CHARS = 80;
  * does (plan-level accept). There is no per-row "looks good": the app has no
  * such state.
  *
+ * Once nothing is left to decide the message reads "Plan cleared" with no
+ * buttons (isPlanCleared). That is worked out from the rows and writes
+ * nothing: accepted_at still means only that Looks good was tapped.
+ *
  * Pure: it reads only the view (and, through formatDueDate, today's IST
- * date), so a redraw after a tap is always the database's truth.
+ * date), so a redraw after a tap is always the database's truth, and a double
+ * tap cannot count anything twice.
  */
 export function renderPlanMessage(view: DailyPlanView): {
   text: string;
@@ -40,25 +48,17 @@ export function renderPlanMessage(view: DailyPlanView): {
   const plan = view.plan;
   if (!plan) return { text: "There's no plan for today.", keyboard: [] };
 
-  const { leftovers, openLeftovers, today, openTodayTasks, openTasks } =
-    planSections(view.items, plan.plan_date);
-
-  // The card's header line, word for word.
-  const line =
-    openLeftovers.length > 0
-      ? [
-          `${openLeftovers.length} left over`,
-          openTodayTasks > 0 ? `${openTodayTasks} for today` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : plan.reason;
+  const { leftovers, today, openTasks } = planSections(view.items, plan.plan_date);
+  const cleared = isPlanCleared(view.items);
 
   const dateIso = istCivilDateToNoonIso(plan.plan_date);
   const lines: string[] = [
     `<b>Today's plan</b>${dateIso ? ` · ${istDayLabel(dateIso)}` : ""}`,
-    clip(line, 300),
   ];
+
+  // The card's header line, word for word.
+  const line = planSubline(plan, view.items);
+  if (line) lines.push(clip(line, 300));
 
   if (openTasks > DAY_CAP) {
     lines.push("", `${openTasks} tasks today. A realistic day is about ${DAY_CAP}.`);
@@ -87,19 +87,11 @@ export function renderPlanMessage(view: DailyPlanView): {
   if (onPlan > shown.length) {
     lines.push("", `+${onPlan - shown.length} more in Prism`);
   }
-  if (onPlan === 0) {
+  if (cleared && !plan.accepted_at) {
+    lines.push("", "<b>Plan cleared</b>");
+  } else if (onPlan === 0) {
     lines.push("", "Nothing left on today's plan.");
   }
-
-  const moved = view.items.filter((i) => i.status === "moved").length;
-  const dropped = view.items.filter(
-    (i) => i.status === "dropped" || i.status === "skipped"
-  ).length;
-  const offPlan = [
-    moved > 0 ? `${moved} moved to tomorrow` : null,
-    dropped > 0 ? `${dropped} dropped` : null,
-  ].filter(Boolean);
-  if (offPlan.length > 0) lines.push("", `<i>${offPlan.join(" · ")}</i>`);
 
   if (plan.accepted_at) {
     lines.push("", `✓ Plan accepted at ${istTimeValue(plan.accepted_at)}`);
@@ -114,7 +106,7 @@ export function renderPlanMessage(view: DailyPlanView): {
       { text: `${number} · Drop`, callback_data: planCallbackData("d", item.id) },
     ]);
   }
-  if (!plan.accepted_at && onPlan > 0) {
+  if (!plan.accepted_at && planCounts(view.items).left > 0) {
     keyboard.push([{ text: "Looks good", callback_data: planCallbackData("a", plan.id) }]);
   }
 

@@ -129,3 +129,80 @@ export function planSections(
     openTasks: openLeftovers.length + openTodayTasks,
   };
 }
+
+export interface PlanCounts {
+  /** On the plan, source not deleted, not done. Anchors count: on most days
+   *  they are the whole plan. */
+  left: number;
+  moved: number;
+  /** Dropped tasks and skipped anchors. The two words differ only in the
+   *  database; to the person reading, both are off today's plan. */
+  dropped: number;
+  /** Tasks still on the plan that were completed since it was made. */
+  done: number;
+}
+
+export function planCounts(items: DailyPlanViewItem[]): PlanCounts {
+  const active = activePlanItems(items);
+  const done = active.filter((i) => i.task_done).length;
+  return {
+    left: active.length - done,
+    moved: items.filter((i) => i.status === "moved").length,
+    dropped: items.filter((i) => i.status === "dropped" || i.status === "skipped")
+      .length,
+    done,
+  };
+}
+
+/** "3 left · 1 moved · 1 dropped", leaving out the parts that are zero. */
+export function planCountLine({ left, moved, dropped }: PlanCounts): string {
+  return [
+    left > 0 ? `${left} left` : null,
+    moved > 0 ? `${moved} moved` : null,
+    dropped > 0 ? `${dropped} dropped` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * Nothing is left to decide, and something happened to get there.
+ *
+ * DERIVED, NEVER STORED, and deliberately not `accepted_at`: that column means
+ * only "the person tapped Looks good", so no edit ever writes it. Because this
+ * reads the rows, it holds however the plan got here — Move or Drop in the app
+ * or the bot, or a task completed through the tasks route, which never sees
+ * the plan at all.
+ */
+export function isPlanCleared(items: DailyPlanViewItem[]): boolean {
+  const { left, moved, dropped, done } = planCounts(items);
+  return left === 0 && moved + dropped + done > 0;
+}
+
+/**
+ * The line under "Today's plan", the same on the dashboard card and in the
+ * Telegram message. null means no line.
+ *
+ * The stored reason describes the plan's order as it was made, opening with
+ * its first item, so it is only shown while that is still true: any Move or
+ * Drop replaces it with plain counts, and a leftover that now sits above the
+ * first item replaces it with the leftover count. A plan cleared by Done alone
+ * has no count to show and an out-of-date reason, so it gets no line.
+ */
+export function planSubline(
+  plan: { plan_date: string; reason: string },
+  items: DailyPlanViewItem[]
+): string | null {
+  const counts = planCounts(items);
+  if (counts.moved + counts.dropped > 0) return planCountLine(counts);
+  if (isPlanCleared(items)) return null;
+
+  const { openLeftovers, openTodayTasks } = planSections(items, plan.plan_date);
+  if (openLeftovers.length === 0) return plan.reason;
+  return [
+    `${openLeftovers.length} left over`,
+    openTodayTasks > 0 ? `${openTodayTasks} for today` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}

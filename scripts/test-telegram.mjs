@@ -467,9 +467,12 @@ function viewItem(over) {
   };
   const { text, keyboard } = renderPlanMessage(view);
   ok("titles are HTML-escaped", text.includes("Write &lt;b&gt;report&lt;/b&gt; &amp; send"));
-  ok("the reason is escaped too", text.includes("Gym first &lt;today&gt;."));
+  ok(
+    "the reason is escaped too",
+    renderPlanMessage({ ...view, items: view.items.filter((i) => i.status === "planned") }).text.includes("Gym first &lt;today&gt;.")
+  );
   ok("a done task is struck through", text.includes("<s>Paid rent</s> — Done"));
-  ok("moved rows are counted, not listed", text.includes("1 moved to tomorrow") && !text.includes("Moved one"));
+  ok("moved rows are counted, not listed", text.includes("2 left · 1 moved") && !text.includes("Moved one"));
   eq(
     "buttons: Move/Drop per open row, then one Looks good",
     keyboard.map((row) => row.map((b) => b.text)),
@@ -494,6 +497,276 @@ function viewItem(over) {
   eq(`13 rows → ${MAX_PLAN_ROWS} with buttons`, big.keyboard.length - 1, MAX_PLAN_ROWS);
   ok("… and the rest counted", big.text.includes("+3 more in Prism"));
   ok("over the day cap → the card's plain note", big.text.includes("13 tasks today. A realistic day is about 5."));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+section("plan message: the count line and Plan cleared");
+
+const REASON = "Gym first, then the rest.";
+const planOf = (items, over = {}) => ({
+  plan: { id: P, plan_date: "2026-11-05", source: "ai", reason: REASON, accepted_at: null, ...over },
+  items,
+});
+const anchorRow = (n, over = {}) =>
+  viewItem({ id: uuid(600 + n), kind: "anchor", title: `Anchor ${n}`, task_id: null, task_due_date: null, ...over });
+const taskRow = (n, over = {}) => viewItem({ id: uuid(620 + n), title: `Task ${n}`, ...over });
+const AS_MOVED = { status: "moved", moved_to: "2026-11-06" };
+const AS_LEFTOVER = { task_due_date: "2026-11-03T06:30:00.000Z" };
+const AT_1104 = "2026-11-05T05:34:00.000Z";
+const subline = (m) => m.text.split("\n")[1];
+const buttonText = (m) => m.keyboard.flat().map((b) => b.text);
+
+{
+  const first = renderPlanMessage(planOf([anchorRow(1), anchorRow(2), taskRow(1)]));
+  eq("untouched: the stored summary stays", subline(first), REASON);
+  ok("untouched: Looks good is there", buttonText(first).includes("Looks good"));
+  ok("untouched: not cleared", !first.text.includes("Plan cleared"));
+
+  const tapped = renderPlanMessage(planOf([anchorRow(1), anchorRow(2)], { accepted_at: AT_1104 }));
+  eq("Looks good alone is not an edit: the summary stays", subline(tapped), REASON);
+
+  const leftovers = renderPlanMessage(planOf([taskRow(1, AS_LEFTOVER), taskRow(2)]));
+  eq("untouched with a leftover: PR #90's header stays", subline(leftovers), "1 left over · 1 for today");
+
+  const moved = renderPlanMessage(planOf([anchorRow(1, AS_MOVED), anchorRow(2), taskRow(1)]));
+  eq("after a Move: counts", subline(moved), "2 left · 1 moved");
+  ok("after a Move: the summary is gone", !moved.text.includes(REASON));
+  ok("the old footer is gone", !moved.text.includes("moved to tomorrow"));
+
+  eq(
+    "a skipped anchor reads as dropped",
+    subline(renderPlanMessage(planOf([anchorRow(1, { status: "skipped" }), anchorRow(2)]))),
+    "1 left · 1 dropped"
+  );
+  eq(
+    "all three parts",
+    subline(renderPlanMessage(planOf([anchorRow(1, AS_MOVED), anchorRow(2, { status: "skipped" }), taskRow(1)]))),
+    "1 left · 1 moved · 1 dropped"
+  );
+  eq(
+    "an edit replaces the leftover header too",
+    subline(renderPlanMessage(planOf([taskRow(1, AS_LEFTOVER), taskRow(2, AS_MOVED)]))),
+    "1 left · 1 moved"
+  );
+}
+
+{
+  // The shape of the real plan of 2026-11-05: two anchors, both off the plan.
+  const cleared = renderPlanMessage(planOf([anchorRow(1, AS_MOVED), anchorRow(2, { status: "skipped" })]));
+  ok("every item off → Plan cleared", cleared.text.includes("<b>Plan cleared</b>"));
+  eq("… with the count line", subline(cleared), "1 moved · 1 dropped");
+  eq("… and no buttons at all", cleared.keyboard, []);
+  ok("… and no claim it was accepted", !cleared.text.includes("Plan accepted"));
+  ok("… and not the older wording", !cleared.text.includes("Nothing left"));
+  ok("… and no summary", !cleared.text.includes(REASON));
+
+  const doneRow = renderPlanMessage(planOf([taskRow(1, { task_done: true }), taskRow(2, AS_MOVED)]));
+  ok("a done row does not block Plan cleared", doneRow.text.includes("Plan cleared"));
+  ok("… and is still shown, struck through", doneRow.text.includes("<s>Task 1</s>"));
+  eq("… with no buttons", doneRow.keyboard, []);
+
+  const doneOnly = renderPlanMessage(planOf([taskRow(1, { task_done: true }), taskRow(2, { task_done: true })]));
+  ok("cleared by Done alone → Plan cleared", doneOnly.text.includes("Plan cleared"));
+  ok("… with no summary, and no empty count line", !doneOnly.text.includes(REASON) && subline(doneOnly) === "");
+  eq("… with no buttons", doneOnly.keyboard, []);
+
+  const doneLeftover = renderPlanMessage(planOf([taskRow(1, { ...AS_LEFTOVER, task_done: true }), taskRow(2, AS_MOVED)]));
+  ok("a done leftover (its group closed) + a move → Plan cleared", doneLeftover.text.includes("Plan cleared"));
+  eq("… with no buttons", doneLeftover.keyboard, []);
+
+  const accepted = renderPlanMessage(
+    planOf([anchorRow(1, AS_MOVED), anchorRow(2, { status: "skipped" })], { accepted_at: AT_1104 })
+  );
+  ok("cleared AND accepted → says when it was accepted", accepted.text.includes("Plan accepted at 11:04"));
+  ok("… not Plan cleared", !accepted.text.includes("Plan cleared"));
+  eq("… keeps the count line", subline(accepted), "1 moved · 1 dropped");
+  eq("… with no buttons", accepted.keyboard, []);
+
+  const deletedOnly = renderPlanMessage(planOf([taskRow(1, { gone: true })]));
+  ok("only a deleted row, no edit → not cleared", !deletedOnly.text.includes("Plan cleared") && deletedOnly.text.includes("Nothing left"));
+  ok("… and no Looks good", !buttonText(deletedOnly).includes("Looks good"));
+  ok(
+    "a deleted row + an open row → still open",
+    buttonText(renderPlanMessage(planOf([taskRow(1, { gone: true }), anchorRow(1)]))).includes("Looks good")
+  );
+  ok(
+    "a deleted row + a move → cleared (the deleted row stays 'planned' forever)",
+    renderPlanMessage(planOf([taskRow(1, { gone: true, task_id: null }), anchorRow(1, AS_MOVED)])).text.includes("Plan cleared")
+  );
+
+  // Rows past the first ten have no button until the rows above leave.
+  const rows = Array.from({ length: 12 }, (_, i) => taskRow(i, i < 11 ? AS_MOVED : {}));
+  const lastOne = renderPlanMessage(planOf(rows));
+  eq("row 12 of 12 reaches a button once the others have gone", buttonText(lastOne), ["1 · Move to tomorrow", "1 · Drop", "Looks good"]);
+  const allOff = renderPlanMessage(planOf(rows.map((r) => ({ ...r, ...AS_MOVED }))));
+  ok("… so a long plan can still be cleared", allOff.text.includes("Plan cleared") && allOff.keyboard.length === 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+section("plan buttons: what a tap does to the message and the database");
+
+/** readDailyPlanView's result, read from the fake tables (server.ts is stubbed here). */
+function viewFromDb(db) {
+  return async (_db, userId, planId) => {
+    const plan = db.tables.daily_plans.find((p) => p.id === planId && p.user_id === userId);
+    if (!plan) return null;
+    const items = db.tables.daily_plan_items
+      .filter((i) => i.plan_id === planId && i.user_id === userId)
+      .sort((a, b) => a.position - b.position)
+      .map((i) => {
+        const task = i.task_id ? db.tables.tasks.find((t) => t.id === i.task_id) : undefined;
+        return {
+          id: i.id,
+          position: i.position,
+          kind: i.kind,
+          title: i.title,
+          status: i.status,
+          moved_to: i.moved_to,
+          task_id: task ? task.id : null,
+          task_due_date: task?.due_date ?? null,
+          task_done: task?.status === "done",
+          after_title: null,
+          carried: false,
+          gone: i.kind === "task" ? !task : !i.anchor_id,
+        };
+      });
+    const { id, plan_date, source, reason, accepted_at } = plan;
+    return { plan: { id, plan_date, source, reason, accepted_at }, items };
+  };
+}
+const botDeps = (db, now = NOW) =>
+  makeDeps({ db, now, plan: { applyEdit: applyDailyPlanEdit, readView: viewFromDb(db) } });
+/** Writes to daily_plans that actually changed a row. */
+const planWrites = (db) => db.log.filter((l) => l.table === "daily_plans" && l.ids?.length);
+const acceptedAt = (db) => db.tables.daily_plans.find((p) => p.id === P).accepted_at;
+
+async function captureErrors(fn) {
+  const original = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+  try {
+    await fn();
+  } finally {
+    console.error = original;
+  }
+  return logged;
+}
+
+{
+  // The fixture opens with one row already moved, and three still planned.
+  const db = planDb();
+  const f = botDeps(db);
+  await hook(f.deps, callbackUpdate("p:d:" + I_ANCHOR));
+  eq("drop an anchor → counts", subline(f.edits.at(-1)), "2 left · 1 moved · 1 dropped");
+  await hook(f.deps, callbackUpdate("p:m:" + I_TODAY));
+  eq("move a task → counts", subline(f.edits.at(-1)), "1 left · 2 moved · 1 dropped");
+  ok("the last open row still has its buttons", f.edits.at(-1).keyboard.length === 2);
+
+  await hook(f.deps, callbackUpdate("p:d:" + I_LEFT));
+  const last = f.edits.at(-1);
+  ok("the last row off → Plan cleared", last.text.includes("Plan cleared"));
+  eq("… with the count line", subline(last), "2 moved · 2 dropped");
+  eq("… and every button removed", last.keyboard, []);
+  eq("… and the tap answered as usual", f.answers.at(-1).text, "Dropped from today");
+  eq("accepted_at stays NULL: clearing is not accepting", acceptedAt(db), null);
+  eq("nothing wrote to daily_plans", planWrites(db), []);
+
+  const rows = JSON.stringify(db.tables);
+  const writes = db.log.length;
+  const again = botDeps(db, NOW + 60_000);
+  await hook(again.deps, callbackUpdate("p:d:" + I_LEFT));
+  await hook(again.deps, callbackUpdate("p:d:" + I_LEFT));
+  await hook(again.deps, callbackUpdate("p:m:" + I_TODAY));
+  eq("repeated callbacks: no row changes, not even a timestamp", JSON.stringify(db.tables), rows);
+  eq("repeated callbacks: no writes", db.log.length, writes);
+  eq("repeated callbacks: the same message each time", again.edits.map((e) => e.text), [last.text, last.text, last.text]);
+  eq("repeated callbacks: each one answered", again.answers.length, 3);
+}
+
+{
+  // Pass 2 of the live test: Looks good first, then clear the rest an hour later.
+  const db = planDb();
+  const tap = Date.parse(AT_1104);
+  await hook(botDeps(db, tap).deps, callbackUpdate("p:a:" + P));
+  eq("Looks good stamps the tap's time", acceptedAt(db), AT_1104);
+
+  const later = botDeps(db, tap + 3_600_000);
+  for (const data of ["p:m:" + I_TODAY, "p:d:" + I_LEFT, "p:d:" + I_ANCHOR]) {
+    await hook(later.deps, callbackUpdate(data));
+  }
+  eq("clearing afterwards keeps the Looks good time", acceptedAt(db), AT_1104);
+  eq("the accept is the only write to daily_plans", planWrites(db).length, 1);
+  ok("the message says when it was accepted", later.edits.at(-1).text.includes("Plan accepted at 11:04"));
+  eq("… and has no buttons", later.edits.at(-1).keyboard, []);
+
+  await hook(later.deps, callbackUpdate("p:a:" + P));
+  eq("a second accept changes nothing", acceptedAt(db), AT_1104);
+}
+
+{
+  // The app's own path, including the one action only the card has.
+  const db = planDb();
+  globalThis.__fakeDb = db;
+  const res = await PATCH(
+    new Request("http://prism.test/api/daily-plan", {
+      method: "PATCH",
+      body: JSON.stringify({ action: "move_all", item_ids: [I_TODAY, I_LEFT, I_ANCHOR] }),
+    })
+  );
+  eq("the card's Move all clears the plan", res.status, 200);
+  ok(
+    "… every row off",
+    db.tables.daily_plan_items.filter((i) => i.user_id === OWNER).every((i) => i.status === "moved")
+  );
+  eq("… and accepted_at stays NULL", acceptedAt(db), null);
+  eq("… with no write to daily_plans", planWrites(db), []);
+}
+
+{
+  // A leftover finished in the app: the tasks route changes the task and knows
+  // nothing about the plan, so this is the only way the message can learn of it.
+  const db = planDb();
+  const f = botDeps(db);
+  await hook(f.deps, callbackUpdate("p:m:" + I_TODAY));
+  await hook(f.deps, callbackUpdate("p:d:" + I_ANCHOR));
+  eq("one leftover still open", subline(f.edits.at(-1)), "1 left · 2 moved · 1 dropped");
+
+  db.tables.tasks.find((t) => t.id === T_LEFT).status = "done";
+  const redrawn = renderPlanMessage(await viewFromDb(db)(db, OWNER, P));
+  ok("marked Done in the app → the next draw reads Plan cleared", redrawn.text.includes("Plan cleared"));
+  eq("… with no buttons", redrawn.keyboard, []);
+  eq("… and accepted_at still NULL", acceptedAt(db), null);
+
+  await hook(f.deps, callbackUpdate("p:a:" + P));
+  ok("the message's old Looks good is still a real accept", acceptedAt(db));
+  ok("… and the redraw says so", f.edits.at(-1).text.includes("Plan accepted at"));
+}
+
+{
+  const db = planDb();
+  const f = botDeps(db);
+  f.deps.telegram.editMessageText = async () => {
+    throw new Error("Telegram editMessageText failed (400): message to edit not found");
+  };
+  const logged = await captureErrors(() => hook(f.deps, callbackUpdate("p:m:" + I_TODAY)));
+  eq("Telegram edit fails → the move stands", db.tables.daily_plan_items.find((i) => i.id === I_TODAY).status, "moved");
+  eq("… the task is re-dated", db.tables.tasks.find((t) => t.id === T_TODAY).due_date, "2026-11-06T06:30:00.000Z");
+  ok("… the failure is logged with Telegram's reason", logged.some((l) => l.includes("redraw failed") && l.includes("message to edit not found")));
+  eq("… and the tap is still answered", f.answers.map((a) => a.text), ["Moved to tomorrow"]);
+
+  const g = makeDeps({
+    db,
+    plan: {
+      applyEdit: applyDailyPlanEdit,
+      readView: async () => {
+        throw new Error("daily plan by id: boom");
+      },
+    },
+  });
+  const readLogged = await captureErrors(() => hook(g.deps, callbackUpdate("p:d:" + I_ANCHOR)));
+  eq("the re-read fails → the drop stands", db.tables.daily_plan_items.find((i) => i.id === I_ANCHOR).status, "skipped");
+  ok("… and that is logged too", readLogged.some((l) => l.includes("redraw failed") && l.includes("boom")));
+  eq("… and the tap is still answered", g.answers.map((a) => a.text), ["Dropped from today"]);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

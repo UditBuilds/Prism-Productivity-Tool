@@ -88,7 +88,11 @@ const {
   validateAiOrder,
   DAY_CAP,
   isLeftover,
+  isPlanCleared,
+  planCountLine,
+  planCounts,
   planSections,
+  planSubline,
 } = await compile();
 
 // Udit's four anchors, as the seed SQL creates them.
@@ -326,6 +330,63 @@ eq("…and its done rows do not move down into today's list", d.today.some((i) =
 const atCap = planSections([row("a1"), row("a2"), row("a3"), row("a4"), row("a5")], TUE).openTasks;
 const overCap = planSections([row("a1"), row("a2"), row("a3"), row("a4"), row("a5"), row("a6")], TUE).openTasks;
 eq("5 open tasks is not over the cap, 6 is", [atCap > DAY_CAP, overCap > DAY_CAP], [false, true]);
+
+console.log("\nThe count line (view.ts)");
+const countLine = (over) => planCountLine({ left: 0, moved: 0, dropped: 0, done: 0, ...over });
+eq("all three parts, in order", countLine({ left: 3, moved: 1, dropped: 1 }), "3 left · 1 moved · 1 dropped");
+eq("zero left is left out", countLine({ moved: 2, dropped: 1 }), "2 moved · 1 dropped");
+eq("zero moved is left out", countLine({ left: 3, dropped: 1 }), "3 left · 1 dropped");
+eq("zero dropped is left out", countLine({ left: 2, moved: 1 }), "2 left · 1 moved");
+eq("one part alone", countLine({ dropped: 2 }), "2 dropped");
+eq("nothing at all → empty, never a stray separator", countLine({}), "");
+eq("done is not a part of the line", countLine({ left: 1, done: 4 }), "1 left");
+
+const anchorOf = (id, over = {}) => row(id, { kind: "anchor", task_id: null, task_due_date: null, ...over });
+const MOVED = { status: "moved", moved_to: "2026-10-21" };
+const OLD = { task_due_date: "2026-10-17T06:30:00+00:00" };
+eq(
+  "counts: anchors are left, a skipped anchor is dropped, done and deleted rows are not left",
+  planCounts([
+    anchorOf("a1"),
+    anchorOf("a2", { status: "skipped" }),
+    row("t1"),
+    row("t2", { task_done: true }),
+    row("t3", MOVED),
+    row("t4", { status: "dropped" }),
+    row("t5", { gone: true }),
+  ]),
+  { left: 2, moved: 1, dropped: 2, done: 1 }
+);
+
+console.log("\nThe cleared state (view.ts)");
+for (const [label, items, expected] of [
+  ["nothing edited", [anchorOf("a"), row("t")], false],
+  ["one row open, one moved", [anchorOf("a"), row("t", MOVED)], false],
+  ["an open anchor keeps the plan open: anchors count", [anchorOf("a"), row("t", { status: "dropped" })], false],
+  ["an open task with a done one beside it", [row("t1"), row("t2", { task_done: true })], false],
+  ["the real plan of 2026-11-05: one anchor moved, one skipped", [anchorOf("a1", MOVED), anchorOf("a2", { status: "skipped" })], true],
+  ["every row moved", [row("t1", MOVED), row("t2", MOVED)], true],
+  ["a done row does not block it", [row("t1", { task_done: true }), row("t2", MOVED)], true],
+  ["done alone is enough", [row("t1", { task_done: true })], true],
+  ["a done leftover, its group closed", [row("t1", { ...OLD, task_done: true }), row("t2", MOVED)], true],
+  ["a deleted row stays 'planned' forever and must not block it", [row("t1", { gone: true }), anchorOf("a", MOVED)], true],
+  ["only a deleted row: nothing happened", [row("t1", { gone: true })], false],
+  ["no rows at all", [], false],
+]) {
+  eq(label, isPlanCleared(items), expected);
+}
+
+console.log("\nThe line under the title (view.ts)");
+const PLAN = { plan_date: TUE, reason: "Gym first." };
+eq("untouched → the stored reason", planSubline(PLAN, [anchorOf("a"), row("t")]), "Gym first.");
+eq("a done row is not an edit → the stored reason", planSubline(PLAN, [row("t1", { task_done: true }), row("t2")]), "Gym first.");
+eq("untouched with a leftover → the leftover count", planSubline(PLAN, [row("t1", OLD), row("t2")]), "1 left over · 1 for today");
+eq("leftovers only", planSubline(PLAN, [row("t1", OLD)]), "1 left over");
+eq("a Move → counts", planSubline(PLAN, [anchorOf("a"), row("t", MOVED)]), "1 left · 1 moved");
+eq("a Drop → counts", planSubline(PLAN, [anchorOf("a"), row("t", { status: "dropped" })]), "1 left · 1 dropped");
+eq("an edit beats the leftover count", planSubline(PLAN, [row("t1", OLD), row("t2", MOVED)]), "1 left · 1 moved");
+eq("cleared by edits → counts, without a zero", planSubline(PLAN, [anchorOf("a1", MOVED), anchorOf("a2", { status: "skipped" })]), "1 moved · 1 dropped");
+eq("cleared by Done alone → no line", planSubline(PLAN, [row("t1", { task_done: true })]), null);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) process.exit(1);
