@@ -141,6 +141,28 @@ export async function ensureDailyPlan(
 }
 
 /**
+ * One EXISTING plan as the dashboard shows it, by plan id, or null when this
+ * user has no such plan. Never creates anything and never calls the AI — the
+ * Telegram bot uses it to redraw its plan message from the database after a
+ * button tap, instead of guessing what the tap changed.
+ */
+export async function readDailyPlanView(
+  supabase: Db,
+  userId: string,
+  planId: string
+): Promise<DailyPlanView | null> {
+  const { data: plan, error } = await supabase
+    .from("daily_plans")
+    .select("*")
+    .eq("id", planId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`daily plan by id: ${error.message}`);
+  if (!plan) return null;
+  return buildView(supabase, userId, plan);
+}
+
+/**
  * The AI's order when it passes every check, the fixed order otherwise. Never
  * throws — the plan must exist whatever Groq does.
  */
