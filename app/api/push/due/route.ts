@@ -2,6 +2,14 @@ import webpush, { type WebPushError } from "web-push";
 
 import { json } from "@/lib/api/response";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createTelegramApi, TelegramApiError } from "@/lib/telegram/client";
+import { readNotifyChannel, readTelegramEnv, wantsTelegram } from "@/lib/telegram/env";
+import {
+  claimReminder,
+  recordTelegramDelivery,
+  releaseClaim,
+  renderReminderMessage,
+} from "@/lib/telegram/reminder-claims";
 
 function isExpiredError(err: unknown): boolean {
   const status = (err as WebPushError)?.statusCode;
@@ -34,6 +42,9 @@ const PUSH_SEND_TIMEOUT_MS = 5000;
  */
 const AUTH_FAIL_LOG_INTERVAL_MS = 60_000;
 let lastAuthFailLoggedAt = 0;
+
+/** Config warnings are logged once per warm instance, not every minute. */
+let reminderConfigWarned = false;
 
 // Thin wrapper: write a log row but never throw — a logging failure must not
 // break or slow delivery.
@@ -138,102 +149,195 @@ export async function POST(request: Request) {
   let sent = 0;
   let skipped = 0;
 
+  // TELEGRAM, FOR THE OWNER ONLY. REMINDER_NOTIFY_CHANNEL = webpush |
+  // telegram | both (unset = both) decides where PRISM_OWNER_USER_ID's
+  // reminders go. Every other user's reminder takes exactly the path below
+  // it always took. The owner's go through a claim first
+  // (lib/telegram/reminder-claims.ts) so overlapping runs, or a run that
+  // crashed after Telegram accepted the message, never send one twice.
+  const reminderChannel = readNotifyChannel(process.env.REMINDER_NOTIFY_CHANNEL);
+  const bot = readTelegramEnv();
+  if (!reminderConfigWarned) {
+    if (!reminderChannel.valid) {
+      console.warn("[push-due] REMINDER_NOTIFY_CHANNEL is not webpush|telegram|both; using both");
+    }
+    if (reminderChannel.channel === "telegram" && !bot) {
+      console.warn("[push-due] REMINDER_NOTIFY_CHANNEL=telegram but the bot is not configured; using web push");
+    }
+    reminderConfigWarned = true;
+  }
+  const telegram =
+    bot && wantsTelegram(reminderChannel.channel) ? createTelegramApi(bot.botToken) : null;
+
   for (const reminder of dueReminders ?? []) {
-    const { data: subs } = await supabase
-      .from("push_subscriptions")
-      .select("endpoint, p256dh, auth")
-      .eq("user_id", reminder.user_id);
+    let delivered = false;
+    // Set only while this run holds the owner's claim on this reminder.
+    let claim: { claimId: string; telegramMessageId: number | null } | null = null;
+    let telegramFailed = false;
 
-    // No registered device: the per-subscription loop below would not run a
-    // single iteration, so nothing succeeds, nothing fails, and `delivered`
-    // stays false — which used to leave the row exactly as it was found and
-    // hand it straight back to the next tick. Measured before this branch
-    // existed: one reminder re-matched every minute for seven weeks with zero
-    // rows in push_delivery_log.
-    //
-    // Resolve it to a terminal status instead. `is_sent` stays false because
-    // nothing was sent; only the retry stops. The reminder is not lost — it
-    // still lists and still fires in-app if the user opens Prism, and
-    // registering a device does not resurrect a delivery that is already
-    // weeks stale.
-    if ((subs ?? []).length === 0) {
-      await supabase
-        .from("reminders")
-        .update({ delivery_status: "skipped_no_device" })
-        .eq("id", reminder.id);
-
-      await logRow(supabase, {
-        invocation_id: invocationId,
-        event: "skip_no_device",
-        reminder_id: reminder.id,
-        ok: true,
-      });
-
-      skipped += 1;
-      continue;
+    if (telegram && bot && reminder.user_id === bot.ownerUserId) {
+      const claimed = await claimReminder(supabase, reminder, Date.now());
+      // Another run is delivering it right now: not ours to touch.
+      if (claimed.kind === "busy") continue;
+      if (claimed.kind === "unavailable") {
+        // Without a claim, a double send can't be ruled out — so no Telegram
+        // this time; the reminder takes the web-push path below, as today.
+        console.error(`[push-due] reminder ${reminder.id}: ${claimed.reason}; using web push`);
+      } else {
+        claim = claimed;
+        if (claimed.telegramMessageId !== null) {
+          // A run that crashed AFTER Telegram accepted this reminder left the
+          // claim behind. It was delivered: mark it, send nothing.
+          delivered = true;
+        } else {
+          try {
+            const message = await telegram.sendMessage(
+              bot.allowedChatId,
+              renderReminderMessage(reminder.title, reminder.body)
+            );
+            delivered = true;
+            await recordTelegramDelivery(supabase, claimed.claimId, reminder.user_id, message.message_id);
+            await logRow(supabase, {
+              invocation_id: invocationId,
+              event: "attempt",
+              reminder_id: reminder.id,
+              subscription_endpoint: "telegram",
+              status_code: 200,
+              ok: true,
+            });
+          } catch (err) {
+            telegramFailed = true;
+            const reason =
+              err instanceof TelegramApiError
+                ? err.description
+                : err instanceof Error
+                  ? err.message
+                  : String(err);
+            console.error(
+              `[push-due] Telegram reminder ${reminder.id} failed: ${reason}${
+                reminderChannel.channel === "telegram" ? " — trying web push instead" : ""
+              }`
+            );
+            await logRow(supabase, {
+              invocation_id: invocationId,
+              event: "attempt",
+              reminder_id: reminder.id,
+              subscription_endpoint: "telegram",
+              status_code: err instanceof TelegramApiError ? err.code : null,
+              ok: false,
+              error_text: reason.slice(0, 500),
+            });
+          }
+        }
+      }
     }
 
-    const payload = JSON.stringify({
-      title: reminder.title,
-      body: reminder.body || "Prism reminder",
-      url: "/dashboard/reminders",
-    });
+    // Web push: always for everyone else; for the owner, on "both", or as
+    // the fallback when Telegram failed. Never after a takeover that found
+    // Telegram already delivered.
+    const pushWanted =
+      claim === null ||
+      (claim.telegramMessageId === null &&
+        (reminderChannel.channel === "both" || telegramFailed));
 
-    let delivered = false;
-    for (const sub of subs ?? []) {
-      try {
-        await webpush.sendNotification(
-          {
-            endpoint: sub.endpoint,
-            keys: { p256dh: sub.p256dh, auth: sub.auth },
-          },
-          payload,
-          { timeout: PUSH_SEND_TIMEOUT_MS },
-        );
-        delivered = true;
+    if (pushWanted) {
+      const { data: subs } = await supabase
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth")
+        .eq("user_id", reminder.user_id);
 
-        // Log successful attempt. AWAITED on purpose (despite the cost to the
-        // loop): an un-awaited insert can be dropped when the serverless
-        // instance freezes after the response is sent.
+      // No registered device: the per-subscription loop below would not run a
+      // single iteration, so nothing succeeds, nothing fails, and `delivered`
+      // stays false — which used to leave the row exactly as it was found and
+      // hand it straight back to the next tick. Measured before this branch
+      // existed: one reminder re-matched every minute for seven weeks with zero
+      // rows in push_delivery_log.
+      //
+      // Resolve it to a terminal status instead. `is_sent` stays false because
+      // nothing was sent; only the retry stops. The reminder is not lost — it
+      // still lists and still fires in-app if the user opens Prism, and
+      // registering a device does not resurrect a delivery that is already
+      // weeks stale.
+      // (A Telegram delivery already made is not "no device": skip the push.)
+      if ((subs ?? []).length === 0 && !delivered) {
+        await supabase
+          .from("reminders")
+          .update({ delivery_status: "skipped_no_device" })
+          .eq("id", reminder.id);
+
         await logRow(supabase, {
           invocation_id: invocationId,
-          event: "attempt",
+          event: "skip_no_device",
           reminder_id: reminder.id,
-          subscription_endpoint: logSafeEndpoint(sub.endpoint),
-          status_code: 201,
           ok: true,
         });
-      } catch (err) {
-        const status = (err as WebPushError)?.statusCode;
-        const body =
-          (err as WebPushError)?.body ?? (err as Error)?.message ?? String(err);
-        const errorText =
-          typeof body === "string" ? body.slice(0, 500) : String(body).slice(0, 500);
 
-        // Log failed attempt.
-        await logRow(supabase, {
-          invocation_id: invocationId,
-          event: "attempt",
-          reminder_id: reminder.id,
-          subscription_endpoint: logSafeEndpoint(sub.endpoint),
-          status_code: status ?? null,
-          ok: false,
-          error_text: errorText,
-        });
+        if (claim) await releaseClaim(supabase, claim.claimId, reminder.user_id);
+        skipped += 1;
+        continue;
+      }
 
-        // Expired/invalid subscription → prune it + log the prune event.
-        if (isExpiredError(err)) {
-          await supabase
-            .from("push_subscriptions")
-            .delete()
-            .eq("endpoint", sub.endpoint);
+      const payload = JSON.stringify({
+        title: reminder.title,
+        body: reminder.body || "Prism reminder",
+        url: "/dashboard/reminders",
+      });
 
+      for (const sub of subs ?? []) {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: { p256dh: sub.p256dh, auth: sub.auth },
+            },
+            payload,
+            { timeout: PUSH_SEND_TIMEOUT_MS },
+          );
+          delivered = true;
+
+          // Log successful attempt. AWAITED on purpose (despite the cost to the
+          // loop): an un-awaited insert can be dropped when the serverless
+          // instance freezes after the response is sent.
           await logRow(supabase, {
             invocation_id: invocationId,
-            event: "prune",
+            event: "attempt",
+            reminder_id: reminder.id,
             subscription_endpoint: logSafeEndpoint(sub.endpoint),
+            status_code: 201,
             ok: true,
           });
+        } catch (err) {
+          const status = (err as WebPushError)?.statusCode;
+          const body =
+            (err as WebPushError)?.body ?? (err as Error)?.message ?? String(err);
+          const errorText =
+            typeof body === "string" ? body.slice(0, 500) : String(body).slice(0, 500);
+
+          // Log failed attempt.
+          await logRow(supabase, {
+            invocation_id: invocationId,
+            event: "attempt",
+            reminder_id: reminder.id,
+            subscription_endpoint: logSafeEndpoint(sub.endpoint),
+            status_code: status ?? null,
+            ok: false,
+            error_text: errorText,
+          });
+
+          // Expired/invalid subscription → prune it + log the prune event.
+          if (isExpiredError(err)) {
+            await supabase
+              .from("push_subscriptions")
+              .delete()
+              .eq("endpoint", sub.endpoint);
+
+            await logRow(supabase, {
+              invocation_id: invocationId,
+              event: "prune",
+              subscription_endpoint: logSafeEndpoint(sub.endpoint),
+              ok: true,
+            });
+          }
         }
       }
     }
@@ -242,6 +346,11 @@ export async function POST(request: Request) {
     // we leave the row untouched (is_sent stays false) so the next cron tick
     // retries it. Delivered reminders stay visible in the Sent tab with a
     // "Sent" status, consistent with the client-side NotificationChecker path.
+    if (!delivered && claim) {
+      // Nothing reached the owner: give the claim back so the next tick
+      // retries both channels, exactly as an undelivered push is retried.
+      await releaseClaim(supabase, claim.claimId, reminder.user_id);
+    }
     if (delivered) {
       await supabase
         .from("reminders")

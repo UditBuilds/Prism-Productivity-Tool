@@ -1023,6 +1023,38 @@ export interface Database {
         };
         Relationships: [];
       };
+      // One row per reminder the cron is delivering to Telegram (owner
+      // only). Inserted BEFORE any send — unique on reminder_id, so of two
+      // overlapping cron runs only one holds it. telegram_message_id is set
+      // the moment Telegram accepts the message, so a run that takes over a
+      // stale claim (lib/telegram/reminder-claims.ts) never sends it twice.
+      reminder_send_claims: {
+        Row: {
+          id: string;
+          user_id: string;
+          reminder_id: string;
+          claimed_at: string;
+          telegram_message_id: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          reminder_id: string;
+          claimed_at?: string;
+          telegram_message_id?: number | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          reminder_id?: string;
+          claimed_at?: string;
+          telegram_message_id?: number | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

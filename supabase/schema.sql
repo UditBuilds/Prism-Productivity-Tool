@@ -1508,3 +1508,31 @@ CREATE POLICY telegram_captures_delete_own ON public.telegram_captures
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.telegram_captures TO authenticated;
 GRANT ALL ON public.telegram_captures TO service_role;
+
+-- ─── Reminder send claims (2026-11-05) ─────────────────────────────
+--
+-- Same shape as supabase/migrations/2026-11-05-reminder-send-claims.sql, the
+-- apply-once file run in the SQL Editor; this copy is for a from-scratch
+-- rebuild.
+
+CREATE TABLE IF NOT EXISTS public.reminder_send_claims (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  reminder_id uuid REFERENCES public.reminders(id) ON DELETE CASCADE NOT NULL,
+  claimed_at timestamptz NOT NULL DEFAULT now(),
+  telegram_message_id bigint,
+  created_at timestamptz DEFAULT now(),
+  CONSTRAINT reminder_send_claims_reminder_key UNIQUE (reminder_id)
+);
+CREATE INDEX IF NOT EXISTS reminder_send_claims_user_idx ON public.reminder_send_claims (user_id);
+ALTER TABLE public.reminder_send_claims ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS reminder_send_claims_select_own ON public.reminder_send_claims;
+DROP POLICY IF EXISTS reminder_send_claims_insert_own ON public.reminder_send_claims;
+DROP POLICY IF EXISTS reminder_send_claims_update_own ON public.reminder_send_claims;
+DROP POLICY IF EXISTS reminder_send_claims_delete_own ON public.reminder_send_claims;
+CREATE POLICY reminder_send_claims_select_own ON public.reminder_send_claims FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY reminder_send_claims_insert_own ON public.reminder_send_claims FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY reminder_send_claims_update_own ON public.reminder_send_claims FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY reminder_send_claims_delete_own ON public.reminder_send_claims FOR DELETE USING (auth.uid() = user_id);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.reminder_send_claims TO authenticated;
+GRANT ALL ON public.reminder_send_claims TO service_role;
