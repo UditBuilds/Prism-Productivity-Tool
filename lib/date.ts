@@ -270,6 +270,52 @@ export function formatDueDate(dueIso: string | null): DueDateDisplay | null {
   };
 }
 
+/**
+ * An IST civil date ("YYYY-MM-DD") plus an IST wall-clock time ("HH:MM", 24h)
+ * as one ISO instant — what reminders.remind_at stores.
+ *
+ * The civil-string twin of istDateTimeToIso below, which reads a Date's LOCAL
+ * fields and so is only right where the process runs in UTC. This reads no
+ * clock and no timezone, so a server route gets the same instant anywhere.
+ * IST has no DST, so the offset is the same on every date.
+ *
+ * null for anything that is not a real calendar date and a real 00:00–23:59
+ * time (Date.UTC would silently roll 2026-02-30 or 24:10 into the next day).
+ */
+export function istCivilDateTimeToIso(dateStr: string, time: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const t = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+  if (!t) return null;
+  const [y, m, d] = dateStr.split("-").map((n) => Number.parseInt(n, 10));
+  const utcMidnight = Date.UTC(y, m - 1, d, 0, 0, 0);
+  const back = new Date(utcMidnight);
+  if (
+    back.getUTCFullYear() !== y ||
+    back.getUTCMonth() !== m - 1 ||
+    back.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  const minutes = Number.parseInt(t[1], 10) * 60 + Number.parseInt(t[2], 10);
+  return new Date(utcMidnight + minutes * 60_000 - IST_OFFSET_MS).toISOString();
+}
+
+/**
+ * 12-hour IST clock for an instant — "8:00 PM". For bot messages, where a
+ * time reads as speech. Newer ICU puts a narrow no-break space before AM/PM;
+ * it is normalised to a plain space so the text is the same on every runtime.
+ */
+export function istClock12(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  })
+    .format(new Date(iso))
+    .replace(/[  ]/g, " ");
+}
+
 /** Literal IST date with weekday for an ISO instant — e.g. "Fri, Jul 11".
  *  Used for the recurring-backlog catch-up rows. */
 export function istDayLabel(iso: string): string {

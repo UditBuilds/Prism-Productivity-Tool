@@ -61,6 +61,13 @@ export type DailyPlanItemKind = "anchor" | "task";
  */
 export type DailyPlanItemStatus = "planned" | "moved" | "dropped" | "skipped";
 
+/**
+ * Mirrors telegram_captures_status_check. A capture is 'pending' from the
+ * moment the bot shows what it understood until Save ('saved') or Cancel
+ * ('cancelled'); resolved_at is set exactly when it leaves 'pending'.
+ */
+export type TelegramCaptureStatus = "pending" | "saved" | "cancelled";
+
 export interface Database {
   public: {
     Tables: {
@@ -971,6 +978,51 @@ export interface Database {
         };
         Relationships: [];
       };
+      // One row per Telegram text message the bot read and found something
+      // in. `items` holds the resolved operations (lib/telegram/capture.ts),
+      // with the ids of the rows Save will create already chosen, so a
+      // double Save writes nothing new. Nothing reaches tasks or reminders
+      // until Save. Unique on (chat_id, source_message_id): a redelivered
+      // update is read once.
+      telegram_captures: {
+        Row: {
+          id: string;
+          user_id: string;
+          chat_id: number;
+          source_message_id: number;
+          reply_message_id: number | null;
+          raw_text: string;
+          items: Json;
+          status: TelegramCaptureStatus;
+          resolved_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          chat_id: number;
+          source_message_id: number;
+          reply_message_id?: number | null;
+          raw_text: string;
+          items: Json;
+          status?: TelegramCaptureStatus;
+          resolved_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          chat_id?: number;
+          source_message_id?: number;
+          reply_message_id?: number | null;
+          raw_text?: string;
+          items?: Json;
+          status?: TelegramCaptureStatus;
+          resolved_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -1034,3 +1086,5 @@ export type PlanAnchor = Database["public"]["Tables"]["plan_anchors"]["Row"];
 export type DailyPlan = Database["public"]["Tables"]["daily_plans"]["Row"];
 export type DailyPlanItem =
   Database["public"]["Tables"]["daily_plan_items"]["Row"];
+export type TelegramCapture =
+  Database["public"]["Tables"]["telegram_captures"]["Row"];

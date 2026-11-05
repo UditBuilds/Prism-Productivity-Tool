@@ -2,6 +2,14 @@ import Groq from "groq-sdk";
 
 import { MAX_SPLIT_TASKS } from "@/lib/task-split";
 import { buildSummarySource, clampSummary } from "@/lib/notes/revisit-summary";
+import {
+  MAX_CAPTURE_INPUT_CHARS,
+  MAX_CAPTURE_ITEMS,
+  validateCaptureAnswer,
+  type CaptureAiItem,
+  type CapturePromptAnchor,
+  type CapturePromptTask,
+} from "@/lib/telegram/capture-schema";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 
@@ -699,4 +707,113 @@ Rules:
   }
   const answer = parsed as Record<string, unknown>;
   return { order: answer.order, reason: answer.reason };
+}
+
+/**
+ * Output cap for reading one Telegram capture. A 10-item answer is roughly
+ * 60 tokens per item plus low-effort reasoning; 1,000 is several times that.
+ * A truncated answer fails JSON.parse, which the bot reports honestly
+ * ("couldn't read that") and saves nothing.
+ */
+const MAX_TOKENS_TELEGRAM_CAPTURE = 1000;
+
+/**
+ * Runs inside the Telegram webhook, so a slow Groq must become an honest
+ * "try again" quickly rather than a long silence. Same bound and same
+ * no-retry rule as the daily plan above.
+ */
+const TELEGRAM_CAPTURE_TIMEOUT_MS = 8000;
+
+/**
+ * Read one message sent to the Prism Telegram bot: what it asks to remember,
+ * which existing task or plan item it is about, and which day and clock time
+ * it names. SERVER-ONLY — touches GROQ_API_KEY.
+ *
+ * The model answers in WORDS ONLY: a named day as "YYYY-MM-DD", a named time
+ * as "HH:MM", a match as one of the short refs it was given. It never
+ * produces an instant or an id. lib/telegram/capture-schema.ts checks every
+ * field and lib/telegram/capture.ts does all the date maths with the IST
+ * helpers — the same split splitCaptureIntoTasks draws, extended with times,
+ * which that function's prompt forbids by design.
+ *
+ * Returns [] when the message holds nothing to remember ("lol ok"). THROWS on
+ * a technical failure (network, 401/404/429, timeout, invalid JSON).
+ */
+export async function parseTelegramCapture(
+  text: string,
+  ctx: {
+    today: string;
+    weekday: string;
+    clock: string;
+    tasks: CapturePromptTask[];
+    anchors: CapturePromptAnchor[];
+  }
+): Promise<CaptureAiItem[]> {
+  const message = text.trim().slice(0, MAX_CAPTURE_INPUT_CHARS);
+  if (!message) return [];
+
+  const systemPrompt = `You read one short message someone sent to their productivity app's Telegram bot, and list what they want to do or remember.
+
+Right now it is ${ctx.today} (${ctx.weekday}), ${ctx.clock} in India (IST).
+
+You get the message, the person's open tasks and their fixed daily plan items. Each task and plan item has a short "ref".
+
+Return ONLY a JSON object of this exact shape:
+{"items":[{"title":"Dinner","match":null,"similar":[],"date":null,"time":"20:00","time_ambiguous":false}]}
+
+Rules:
+- ONE item per distinct thing to do or remember. A message with nothing to do or remember ("lol ok", "thanks", a greeting) returns {"items":[]}.
+- title: a short task name in sentence case, without the day or time words. "dinner at 8" has the title "Dinner".
+- match: the ref of a listed task or plan item ONLY when the message is clearly about that exact one ("gym moved to 7pm" when a plan item is "Gym"; "move the dentist call to friday" when a task is "Call dentist"). Otherwise null. Never guess.
+- similar: up to 3 refs the message MIGHT mean when you are not sure; [] otherwise. Never repeat the match ref here.
+- date: "YYYY-MM-DD" ONLY when the message names a day ("today", "tonight", "tomorrow", "friday", "the 12th"). Resolve it against today (${ctx.today}); a bare weekday is its NEXT occurrence. null when no day is named. Never default to today and never guess.
+- time: "HH:MM" in 24-hour time ONLY when the message names a clock time ("at 8", "7pm", "19:30", "noon"). null for "morning", "evening", "later" or no time.
+- Choose am or pm from context when it is clear: "dinner at 8" is "20:00", "breakfast at 8" is "08:00".
+- time_ambiguous: true only when an hour has no am/pm and nothing in the message settles it ("call at 8"). Still give your best guess in "time".
+- Never output a timezone or a full timestamp.
+- At most ${MAX_CAPTURE_ITEMS} items.
+- Return the JSON object only. No prose, no markdown fences.`;
+
+  const userContent = JSON.stringify({
+    message,
+    tasks: ctx.tasks,
+    plan_items: ctx.anchors,
+  }).slice(0, MAX_SOURCE_CHARS);
+
+  let content: string;
+  try {
+    const completion = await groq.chat.completions.create(
+      {
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+        // An extraction: the same message should read the same way twice.
+        temperature: 0,
+        max_tokens: MAX_TOKENS_TELEGRAM_CAPTURE,
+        // Reasoning tokens bill against max_tokens on this model.
+        reasoning_effort: "low",
+        response_format: { type: "json_object" },
+      },
+      { timeout: TELEGRAM_CAPTURE_TIMEOUT_MS, maxRetries: 0 }
+    );
+    content = (completion.choices[0]?.message?.content ?? "").trim();
+  } catch (err) {
+    console.error("Groq generate error (telegram capture):", err);
+    throw err;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("AI returned invalid JSON.");
+  }
+
+  const refs = new Set<string>([
+    ...ctx.tasks.map((t) => t.ref),
+    ...ctx.anchors.map((a) => a.ref),
+  ]);
+  return validateCaptureAnswer(parsed, refs, ctx.today);
 }

@@ -1458,3 +1458,53 @@ REVOKE ALL ON FUNCTION public.create_daily_plan(uuid, date, text, text, jsonb)
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.create_daily_plan(uuid, date, text, text, jsonb)
   TO authenticated, service_role;
+
+-- ─── Telegram captures (2026-11-05) ─────────────────────────────────
+--
+-- Same shape as supabase/migrations/2026-11-05-telegram-captures.sql, the
+-- apply-once file run in the SQL Editor; this copy is for a from-scratch
+-- rebuild.
+
+CREATE TABLE IF NOT EXISTS public.telegram_captures (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  chat_id bigint NOT NULL,
+  source_message_id bigint NOT NULL,
+  reply_message_id bigint,
+  raw_text text NOT NULL,
+  items jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  resolved_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  CONSTRAINT telegram_captures_status_check
+    CHECK (status IN ('pending', 'saved', 'cancelled')),
+  CONSTRAINT telegram_captures_resolved_check
+    CHECK ((status = 'pending') = (resolved_at IS NULL)),
+  CONSTRAINT telegram_captures_raw_text_check
+    CHECK (char_length(raw_text) BETWEEN 1 AND 4096),
+  CONSTRAINT telegram_captures_items_check
+    CHECK (jsonb_typeof(items) = 'array' AND jsonb_array_length(items) BETWEEN 1 AND 10),
+  -- A redelivered Telegram update is read once.
+  CONSTRAINT telegram_captures_source_key UNIQUE (chat_id, source_message_id)
+);
+
+CREATE INDEX IF NOT EXISTS telegram_captures_user_idx
+  ON public.telegram_captures (user_id);
+
+ALTER TABLE public.telegram_captures ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS telegram_captures_select_own ON public.telegram_captures;
+DROP POLICY IF EXISTS telegram_captures_insert_own ON public.telegram_captures;
+DROP POLICY IF EXISTS telegram_captures_update_own ON public.telegram_captures;
+DROP POLICY IF EXISTS telegram_captures_delete_own ON public.telegram_captures;
+CREATE POLICY telegram_captures_select_own ON public.telegram_captures
+  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY telegram_captures_insert_own ON public.telegram_captures
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY telegram_captures_update_own ON public.telegram_captures
+  FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY telegram_captures_delete_own ON public.telegram_captures
+  FOR DELETE USING (auth.uid() = user_id);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.telegram_captures TO authenticated;
+GRANT ALL ON public.telegram_captures TO service_role;
