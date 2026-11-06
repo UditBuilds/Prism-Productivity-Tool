@@ -57,6 +57,8 @@ const { load } = compileTs(
     "lib/telegram/capture-handlers.ts",
     "lib/telegram/plan-message.ts",
     "lib/telegram/messages.ts",
+    "lib/telegram/client.ts",
+    "lib/telegram/tap-timing.ts",
     "lib/daily-plan/edit.ts",
     "lib/date.ts",
     "app/api/daily-plan/route.ts",
@@ -71,6 +73,15 @@ const { load } = compileTs(
   }
 );
 
+// The real plan read, for the redraw. Its AI imports are never reached here.
+const { load: loadPlanServer } = compileTs(["lib/daily-plan/server.ts"], {
+  label: "telegram-plan-server",
+  stubs: {
+    "@/lib/ai/client": `export async function orderDailyPlan() { throw new Error("no AI in a plan read"); }`,
+    "@/lib/ai/rateLimit": `export function checkAiRateLimit() { throw new Error("no AI in a plan read"); }`,
+  },
+});
+
 const { readTelegramEnv, missingTelegramEnv, readNotifyChannel } = await load("lib/telegram/env.ts");
 const { isAuthorizedUpdate, chatIdOf } = await load("lib/telegram/auth.ts");
 const { handleWebhook } = await load("lib/telegram/webhook.ts");
@@ -83,6 +94,9 @@ const { saveCapture, cancelCapture, loadCaptureContext } = await load("lib/teleg
 const { handleCaptureMessage } = await load("lib/telegram/capture-handlers.ts");
 const { renderPlanMessage, MAX_PLAN_ROWS } = await load("lib/telegram/plan-message.ts");
 const messages = await load("lib/telegram/messages.ts");
+const { createTelegramApi, TelegramApiError } = await load("lib/telegram/client.ts");
+const { createTapTimer } = await load("lib/telegram/tap-timing.ts");
+const { readDailyPlanView } = await loadPlanServer("lib/daily-plan/server.ts");
 const { applyDailyPlanEdit } = await load("lib/daily-plan/edit.ts");
 const { istCivilDateTimeToIso, istClock12 } = await load("lib/date.ts");
 const { PATCH } = await load("app/api/daily-plan/route.ts");
@@ -165,6 +179,12 @@ function planDb() {
   );
 }
 
+/** A plan read that succeeds, for tests that are not about the redraw's content. */
+const emptyView = async (_db, _userId, planId) => ({
+  plan: { id: planId, plan_date: "2026-11-05", source: "ai", reason: "r", accepted_at: null },
+  items: [],
+});
+
 function makeDeps({ db, now = NOW, ai, allow = () => true, plan } = {}) {
   const sent = [];
   const edits = [];
@@ -187,7 +207,7 @@ function makeDeps({ db, now = NOW, ai, allow = () => true, plan } = {}) {
     env: ENV,
     db,
     telegram,
-    plan: plan ?? { applyEdit: applyDailyPlanEdit, readView: async () => null },
+    plan: plan ?? { applyEdit: applyDailyPlanEdit, readView: emptyView },
     ai: {
       allow,
       async parseCapture(text, ctx) {
@@ -339,15 +359,15 @@ eq("namespaces registered", Object.keys(CALLBACK_HANDLERS).sort(), ["c", "p"]);
   const spyPlan = {
     applyEdit: async (_db, userId, body) => {
       calls.push({ userId, body });
-      return { status: 200, body: { data: { id: "x", status: body.action === "move" ? "moved" : "dropped", accepted_at: "t" }, error: null } };
+      return { status: 200, planId: P, body: { data: { id: "x", status: body.action === "move" ? "moved" : "dropped", accepted_at: "t" }, error: null } };
     },
-    readView: async () => null,
+    readView: emptyView,
   };
   const db = planDb();
   for (const [data, expected, toast] of [
     ["p:a:" + P, { action: "accept", plan_id: P }, "Plan accepted"],
     ["p:m:" + I_TODAY, { action: "move", item_id: I_TODAY }, "Moved to tomorrow"],
-    ["p:d:" + I_TODAY, { action: "drop", item_id: I_TODAY }, "Dropped from today"],
+    ["p:d:" + I_TODAY, { action: "drop", item_id: I_TODAY }, "Dropped"],
   ]) {
     const f = makeDeps({ db, plan: spyPlan });
     await routeCallback(callbackUpdate(data).callback_query, f.deps);
@@ -362,12 +382,19 @@ eq("namespaces registered", Object.keys(CALLBACK_HANDLERS).sort(), ["c", "p"]);
   const g = makeDeps({ db, plan: spyPlan });
   await routeCallback({ id: "q", data: "garbage", message: { message_id: 1, chat: { id: CHAT } } }, g.deps);
   eq("garbage data → still answered", g.answers.map((a) => a.text), [messages.BUTTON_EXPIRED]);
+  const x = makeDeps({ db, plan: spyPlan });
+  const beforeUnknown = calls.length;
+  await routeCallback(callbackUpdate("p:z:" + P).callback_query, x.deps);
+  eq("unknown action letter → no handler runs", calls.length, beforeUnknown);
+  eq("unknown action letter → 'expired' toast", x.answers.map((a) => a.text), [messages.BUTTON_EXPIRED]);
   const h = makeDeps({
     db,
-    plan: { applyEdit: async () => { throw new Error("boom"); }, readView: async () => null },
+    plan: { applyEdit: async () => { throw new Error("boom"); }, readView: emptyView },
   });
-  await routeCallback(callbackUpdate("p:m:" + I_TODAY).callback_query, h.deps);
-  eq("a handler that throws → answered, never left spinning", h.answers.map((a) => a.text), [messages.TAP_AGAIN]);
+  const thrown = await captureErrors(() => routeCallback(callbackUpdate("p:m:" + I_TODAY).callback_query, h.deps));
+  eq("a handler that throws → already answered, never left spinning", h.answers.map((a) => a.text), ["Moved to tomorrow"]);
+  eq("… and the chat is told", h.sent.map((s) => s.text), [messages.COULDNT_SAVE]);
+  ok("… and it is logged", thrown.some((l) => l.includes("boom")));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -424,7 +451,7 @@ for (const [label, data, body] of PLAN_CASES) {
   eq(`${label}: button answered`, f.answers.length, 1);
   if (label === "another user's item") {
     eq(`${label}: app says 404`, res.status, 404);
-    eq(`${label}: bot says so`, f.answers[0].text, "That item isn't on a plan any more.");
+    eq(`${label}: bot says so`, f.sent.map((s) => s.text), ["That item isn't on a plan any more."]);
     eq(`${label}: their rows untouched`, botDb.log.length, 0);
   }
 }
@@ -667,7 +694,7 @@ async function captureErrors(fn) {
   ok("the last row off → Plan cleared", last.text.includes("Plan cleared"));
   eq("… with the count line", subline(last), "2 moved · 2 dropped");
   eq("… and every button removed", last.keyboard, []);
-  eq("… and the tap answered as usual", f.answers.at(-1).text, "Dropped from today");
+  eq("… and the tap answered as usual", f.answers.at(-1).text, "Dropped");
   eq("accepted_at stays NULL: clearing is not accepting", acceptedAt(db), null);
   eq("nothing wrote to daily_plans", planWrites(db), []);
 
@@ -752,7 +779,8 @@ async function captureErrors(fn) {
   eq("Telegram edit fails → the move stands", db.tables.daily_plan_items.find((i) => i.id === I_TODAY).status, "moved");
   eq("… the task is re-dated", db.tables.tasks.find((t) => t.id === T_TODAY).due_date, "2026-11-06T06:30:00.000Z");
   ok("… the failure is logged with Telegram's reason", logged.some((l) => l.includes("redraw failed") && l.includes("message to edit not found")));
-  eq("… and the tap is still answered", f.answers.map((a) => a.text), ["Moved to tomorrow"]);
+  eq("… the tap was answered", f.answers.map((a) => a.text), ["Moved to tomorrow"]);
+  eq("… and the chat hears the truth: saved, not redrawn", f.sent.map((s) => s.text), ["Saved, but I couldn't update this message."]);
 
   const g = makeDeps({
     db,
@@ -766,7 +794,8 @@ async function captureErrors(fn) {
   const readLogged = await captureErrors(() => hook(g.deps, callbackUpdate("p:d:" + I_ANCHOR)));
   eq("the re-read fails → the drop stands", db.tables.daily_plan_items.find((i) => i.id === I_ANCHOR).status, "skipped");
   ok("… and that is logged too", readLogged.some((l) => l.includes("redraw failed") && l.includes("boom")));
-  eq("… and the tap is still answered", g.answers.map((a) => a.text), ["Dropped from today"]);
+  eq("… the tap was answered", g.answers.map((a) => a.text), ["Dropped"]);
+  eq("… and the chat hears the same truth", g.sent.map((s) => s.text), ["Saved, but I couldn't update this message."]);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -952,16 +981,16 @@ function captureDb(extra = {}) {
     [[OWNER, "2026-11-06T14:30:00.000Z", newTasks[0].id, false, "pending"]]
   );
   eq("Save → capture saved", db.tables.telegram_captures[0].status, "saved");
-  eq("Save → toast", f.answers.at(-1).text, "Saved");
+  eq("Save → the spinner stops with no toast", f.answers.at(-1).text, undefined);
   ok("Save → message redrawn, buttons removed", f.edits.at(-1).text.startsWith("<b>Saved.</b>") && f.edits.at(-1).keyboard === null);
 
   await hook(f.deps, callbackUpdate("c:s:" + capId));
   eq("double tap → still one task", db.tables.tasks.filter((t) => t.title === "Dinner").length, 1);
   eq("double tap → still one reminder", db.tables.reminders.filter((r) => r.title === "Dinner").length, 1);
-  eq("double tap → 'Already saved'", f.answers.at(-1).text, "Already saved");
+  ok("double tap → the message still reads Saved", f.edits.at(-1).text.startsWith("<b>Saved.</b>"));
 
   await hook(f.deps, callbackUpdate("c:x:" + capId));
-  eq("Cancel after Save → says so, changes nothing", [f.answers.at(-1).text, db.tables.telegram_captures[0].status], ["Already saved — change it in Prism if you need to.", "saved"]);
+  eq("Cancel after Save → still reads Saved, changes nothing", [f.edits.at(-1).text.startsWith("<b>Saved.</b>"), db.tables.telegram_captures[0].status], [true, "saved"]);
 }
 
 async function pendingCapture(db, ai, { now = NOW, messageId = 21 } = {}) {
@@ -988,7 +1017,7 @@ async function pendingCapture(db, ai, { now = NOW, messageId = 21 } = {}) {
   } catch {
     threw = true;
   }
-  ok("a Save that dies at the last step throws (the user gets 'tap again')", threw);
+  ok("a Save that dies at the last step throws (the user gets 'Couldn't save that')", threw);
   eq("… the capture is still pending", db.tables.telegram_captures.at(-1).status, "pending");
   await saveCapture(db, OWNER, id, NOW);
   eq("retry → still one task", db.tables.tasks.filter((t) => t.title === "Dinner").length, 1);
@@ -1077,6 +1106,392 @@ async function pendingCapture(db, ai, { now = NOW, messageId = 21 } = {}) {
   const f = makeDeps({ db, ai: DINNER });
   await hook(f.deps, textUpdate("x".repeat(2001), { messageId: 36 }));
   eq("over 2,000 characters → asks for shorter pieces, no AI call", [f.aiCalls.length, f.sent.map((s) => s.text)], [0, [messages.TOO_LONG]]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+section("a tap is answered FIRST, before any database work");
+
+for (const [label, data] of [
+  ["Looks good", "p:a:" + P],
+  ["Move", "p:m:" + I_TODAY],
+  ["Drop", "p:d:" + I_TODAY],
+]) {
+  const db = planDb();
+  const f = makeDeps({ db });
+  let queriesAtAck = null;
+  const answer = f.deps.telegram.answerCallbackQuery;
+  f.deps.telegram.answerCallbackQuery = async (id, text) => {
+    queriesAtAck = db.calls;
+    return answer(id, text);
+  };
+  await hook(f.deps, callbackUpdate(data));
+  eq(`${label}: no query had run when it was answered`, queriesAtAck, 0);
+  ok(`${label}: the work still ran after it`, db.calls > 0);
+  eq(`${label}: the message was still redrawn`, f.edits.length, 1);
+}
+
+for (const [label, make] of [
+  [
+    "Save",
+    async (db) => {
+      const { f, id } = await pendingCapture(db, DINNER);
+      return { f, data: "c:s:" + id };
+    },
+  ],
+  [
+    "Cancel",
+    async (db) => {
+      const { f, id } = await pendingCapture(db, DINNER);
+      return { f, data: "c:x:" + id };
+    },
+  ],
+]) {
+  const db = captureDb();
+  const { f, data } = await make(db);
+  let queriesAtAck = null;
+  let textAtAck = "unset";
+  const queriesBefore = db.calls;
+  f.deps.telegram.answerCallbackQuery = async (_id, text) => {
+    queriesAtAck = db.calls - queriesBefore;
+    textAtAck = text;
+  };
+  await hook(f.deps, callbackUpdate(data));
+  eq(`${label}: no query had run when it was answered`, queriesAtAck, 0);
+  eq(`${label}: answered with no text, because the outcome isn't known yet`, textAtAck, undefined);
+  ok(`${label}: the redraw says what happened`, f.edits.length === 1);
+}
+
+{
+  // A failed answer must never cost the tap its work.
+  const db = planDb();
+  const f = botDeps(db);
+  f.deps.telegram.answerCallbackQuery = async () => {
+    throw new TelegramApiError("answerCallbackQuery", null, "request failed (TimeoutError)");
+  };
+  const logged = await captureErrors(() => hook(f.deps, callbackUpdate("p:m:" + I_TODAY)));
+  eq("the answer fails → the move still lands", db.tables.daily_plan_items.find((i) => i.id === I_TODAY).status, "moved");
+  eq("… the message is still redrawn", f.edits.length, 1);
+  ok("… the failure is logged", logged.some((l) => l.includes("answerCallbackQuery") && l.includes("TimeoutError")));
+  eq("… and the chat is not told anything false", f.sent, []);
+}
+
+{
+  const db = planDb();
+  const f = botDeps(db);
+  f.deps.telegram.answerCallbackQuery = async () => {
+    throw new TelegramApiError(
+      "answerCallbackQuery",
+      400,
+      "Bad Request: query is too old and response timeout expired or query ID is invalid"
+    );
+  };
+  const logged = await captureErrors(() => hook(f.deps, callbackUpdate("p:m:" + I_TODAY)));
+  eq("'query is too old' (a repeat delivery) → the work still runs", db.tables.daily_plan_items.find((i) => i.id === I_TODAY).status, "moved");
+  eq("… and it is not reported as a failure", logged, []);
+  eq("… to anyone", f.sent, []);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+section("a failure after the answer is told to the chat");
+
+{
+  const db = planDb();
+  const f = botDeps(db);
+  db.failOn("daily_plan_items", "update", "network blip");
+  const logged = await captureErrors(() => hook(f.deps, callbackUpdate("p:m:" + I_TODAY)));
+  eq("the write fails → 'Couldn't save that'", f.sent.map((s) => s.text), ["Couldn't save that — try again."]);
+  eq("… to the chat the button is in", f.sent[0].chatId, CHAT);
+  eq("… the message is not redrawn", f.edits, []);
+  eq("… the item is still planned", db.tables.daily_plan_items.find((i) => i.id === I_TODAY).status, "planned");
+  ok("… and the reason is logged", logged.some((l) => l.includes("network blip")));
+
+  const retry = botDeps(db);
+  await hook(retry.deps, callbackUpdate("p:m:" + I_TODAY));
+  eq("trying again works", db.tables.daily_plan_items.find((i) => i.id === I_TODAY).status, "moved");
+  eq("… with nothing further said", retry.sent, []);
+}
+
+{
+  // Through the real client, so the "not modified" rule itself is what's tested.
+  const realTelegram = (edit) =>
+    createTelegramApi("test-token", async (url) => {
+      const method = url.split("/").pop();
+      if (method === "editMessageText") return Response.json(edit);
+      if (method === "sendMessage") throw new Error("nothing should be sent");
+      return Response.json({ ok: true, result: true });
+    });
+
+  const db = planDb();
+  const f = botDeps(db);
+  f.deps.telegram = realTelegram({
+    ok: false,
+    error_code: 400,
+    description: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same",
+  });
+  const logged = await captureErrors(() => hook(f.deps, callbackUpdate("p:m:" + I_TODAY)));
+  eq("'message is not modified' → silent in the log", logged, []);
+  eq("… the move stands", db.tables.daily_plan_items.find((i) => i.id === I_TODAY).status, "moved");
+
+  const g = botDeps(planDb());
+  const sent = [];
+  g.deps.telegram = {
+    ...realTelegram({ ok: false, error_code: 400, description: "Bad Request: message to edit not found" }),
+    sendMessage: async (_c, text) => {
+      sent.push(text);
+      return { message_id: 1 };
+    },
+  };
+  const otherLogged = await captureErrors(() => hook(g.deps, callbackUpdate("p:m:" + I_TODAY)));
+  eq("any other edit failure → the honest sentence", sent, ["Saved, but I couldn't update this message."]);
+  ok("… with Telegram's reason in the log", otherLogged.some((l) => l.includes("message to edit not found")));
+
+  // The token is in every Bot API URL, so no failure may ever repeat one.
+  const secretish = createTelegramApi("SECRET-TOKEN-VALUE", async () => {
+    throw new TypeError("fetch failed for https://api.telegram.org/botSECRET-TOKEN-VALUE/editMessageText");
+  });
+  let message = "";
+  try {
+    await secretish.editMessageText(CHAT, 1, "x");
+  } catch (err) {
+    message = err.message;
+  }
+  ok("a network failure's message never carries the token", message && !message.includes("SECRET-TOKEN-VALUE"), message);
+}
+
+{
+  const db = planDb();
+  const f = makeDeps({
+    db,
+    plan: { applyEdit: async () => ({ status: 500, body: { data: null, error: "boom" } }), readView: emptyView },
+  });
+  await captureErrors(() => hook(f.deps, callbackUpdate("p:a:" + P)));
+  eq("a failed accept → 'Couldn't save that'", f.sent.map((s) => s.text), [messages.COULDNT_SAVE]);
+
+  const gone = makeDeps({ db });
+  await hook(gone.deps, callbackUpdate("p:a:" + uuid(999)));
+  eq("a plan that no longer exists → says so", gone.sent.map((s) => s.text), [messages.PLAN_GONE]);
+  eq("… after the optimistic toast", gone.answers.map((a) => a.text), ["Plan accepted"]);
+}
+
+{
+  // Capture: the toast can't carry these any more, and each says what is true.
+  const db = captureDb();
+  const f = makeDeps({ db });
+  await hook(f.deps, callbackUpdate("c:s:" + uuid(888)));
+  eq("Save on a capture that's gone → the chat is told", f.sent.map((s) => s.text), [messages.CAPTURE_GONE]);
+  const c = makeDeps({ db });
+  await hook(c.deps, callbackUpdate("c:x:" + uuid(888)));
+  eq("Cancel on a capture that's gone → the chat is told", c.sent.map((s) => s.text), [messages.CAPTURE_GONE]);
+
+  const failDb = captureDb();
+  const { id: failId } = await pendingCapture(failDb, DINNER);
+  failDb.failOn("telegram_captures", "update", "network blip");
+  const s = makeDeps({ db: failDb });
+  await captureErrors(() => hook(s.deps, callbackUpdate("c:s:" + failId)));
+  eq("a Save that fails → 'Couldn't save that'", s.sent.map((m) => m.text), [messages.COULDNT_SAVE]);
+  eq("… and it stays pending, so trying again works", failDb.tables.telegram_captures.at(-1).status, "pending");
+
+  const cancelDb = captureDb();
+  const { id: cancelId } = await pendingCapture(cancelDb, DINNER);
+  cancelDb.failOn("telegram_captures", "update", "network blip");
+  const x = makeDeps({ db: cancelDb });
+  await captureErrors(() => hook(x.deps, callbackUpdate("c:x:" + cancelId)));
+  eq("a Cancel that fails → doesn't claim anything about saving", x.sent.map((m) => m.text), [messages.COULDNT_CANCEL]);
+
+  for (const [label, data, expected, after] of [
+    ["Save", "c:s:", messages.REDRAW_FAILED, "saved"],
+    ["Cancel", "c:x:", messages.CANCELLED_REDRAW_FAILED, "cancelled"],
+  ]) {
+    const rDb = captureDb();
+    const { id } = await pendingCapture(rDb, DINNER);
+    const r = makeDeps({ db: rDb });
+    r.deps.telegram.editMessageText = async () => {
+      throw new Error("Telegram editMessageText failed (400): message to edit not found");
+    };
+    await captureErrors(() => hook(r.deps, callbackUpdate(data + id)));
+    eq(`${label} lands but the redraw fails → says exactly that`, [r.sent.at(-1).text, rDb.tables.telegram_captures.at(-1).status], [expected, after]);
+  }
+
+  const oldDb = captureDb();
+  const { id: oldId } = await pendingCapture(oldDb, DINNER);
+  const o = makeDeps({ db: oldDb, now: NOW + 25 * 3600_000 });
+  await hook(o.deps, callbackUpdate("c:s:" + oldId));
+  ok("Save on an old capture → the message says it's too old", o.edits.at(-1).text.includes("more than a day old"));
+  eq("… and nothing else needs saying", o.sent, []);
+  o.deps.telegram.editMessageText = async () => {
+    throw new Error("Telegram editMessageText failed (400): message to edit not found");
+  };
+  await captureErrors(() => hook(o.deps, callbackUpdate("c:s:" + oldId)));
+  eq("… unless that redraw fails too", o.sent.map((m) => m.text), [messages.EXPIRED_REDRAW_FAILED]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+section("the same tap delivered twice cannot apply twice");
+
+for (const [label, data, itemId, itemStatus] of [
+  ["Move", "p:m:" + I_TODAY, I_TODAY, "moved"],
+  ["Drop of a leftover", "p:d:" + I_LEFT, I_LEFT, "dropped"],
+  ["Drop of an anchor", "p:d:" + I_ANCHOR, I_ANCHOR, "skipped"],
+]) {
+  const db = planDb();
+  const first = botDeps(db, NOW);
+  const second = botDeps(db, NOW + 1000);
+  await Promise.all([hook(first.deps, callbackUpdate(data)), hook(second.deps, callbackUpdate(data))]);
+
+  const item = db.tables.daily_plan_items.find((i) => i.id === itemId);
+  const itemWrites = db.log.filter((l) => l.table === "daily_plan_items" && l.op === "update");
+  eq(`${label} at the same moment: both deliveries reached the write`, itemWrites.length, 2);
+  eq(`${label}: only one matched the row`, itemWrites.filter((l) => l.ids.length > 0).length, 1);
+  eq(`${label}: the row reads as one tap`, item.status, itemStatus);
+  eq(`${label}: the first delivery's time stands`, item.status_changed_at, new Date(NOW).toISOString());
+  eq(`${label}: both were answered`, first.answers.length + second.answers.length, 2);
+  eq(`${label}: neither reported a failure`, first.sent.length + second.sent.length, 0);
+}
+
+{
+  const db = planDb();
+  const first = botDeps(db, NOW);
+  const second = botDeps(db, NOW + 1000);
+  await Promise.all([hook(first.deps, callbackUpdate("p:a:" + P)), hook(second.deps, callbackUpdate("p:a:" + P))]);
+  eq("Looks good at the same moment: the first accept stands", db.tables.daily_plans.find((p) => p.id === P).accepted_at, new Date(NOW).toISOString());
+}
+
+{
+  const db = planDb();
+  const f = botDeps(db);
+  await hook(f.deps, callbackUpdate("p:m:" + I_TODAY));
+  const task = db.tables.tasks.find((t) => t.id === T_TODAY).due_date;
+  const writes = db.log.length;
+  const redelivered = botDeps(db, NOW + 60_000);
+  await hook(redelivered.deps, callbackUpdate("p:m:" + I_TODAY));
+  eq("redelivered later: no write at all", db.log.length, writes);
+  eq("… the task's date is untouched", db.tables.tasks.find((t) => t.id === T_TODAY).due_date, task);
+  eq("… and the message is redrawn the same", redelivered.edits[0].text, f.edits[0].text);
+}
+
+{
+  const db = captureDb();
+  const { id } = await pendingCapture(db, DINNER);
+  const a = makeDeps({ db });
+  const b = makeDeps({ db });
+  await Promise.all([hook(a.deps, callbackUpdate("c:s:" + id)), hook(b.deps, callbackUpdate("c:s:" + id))]);
+  eq("Save delivered twice at once → one task", db.tables.tasks.filter((t) => t.title === "Dinner").length, 1);
+  eq("… one reminder", db.tables.reminders.filter((r) => r.title === "Dinner").length, 1);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+section("the redraw's read, and what the app still receives");
+
+{
+  const db = planDb();
+  let started = 0;
+  const counting = { ...db, from: (t) => { started += 1; return db.from(t); } };
+  const reading = readDailyPlanView(counting, OWNER, P);
+  eq("the plan and its items are asked for together", started, 2);
+  const view = await reading;
+  eq("the plan comes back", view.plan.id, P);
+  eq("its items, in plan order", view.items.map((i) => i.id), [I_TODAY, I_LEFT, I_ANCHOR, I_MOVED]);
+  eq("joined to the live task", view.items[1].task_due_date, "2026-11-03T06:30:00.000Z");
+  eq("another user's plan id reads as nothing", await readDailyPlanView(db, OTHER, P), null);
+  ok("a plan read never reaches the AI (its stubs throw)", view);
+}
+
+{
+  const db = planDb();
+  globalThis.__fakeDb = db;
+  const res = await PATCH(
+    new Request("http://prism.test/api/daily-plan", {
+      method: "PATCH",
+      body: JSON.stringify({ action: "move", item_id: I_TODAY }),
+    })
+  );
+  eq("the app's PATCH response is unchanged by planId", Object.keys(res.body).sort(), ["data", "error"]);
+  eq("… and so is its data", Object.keys(res.body.data).sort(), ["id", "moved_to", "status"]);
+  eq("the edit tells the bot which plan to redraw", (await applyDailyPlanEdit(planDb(), OWNER, { action: "drop", item_id: I_ANCHOR }, new Date(NOW).toISOString())).planId, P);
+  eq("… an accept too", (await applyDailyPlanEdit(planDb(), OWNER, { action: "accept", plan_id: P }, new Date(NOW).toISOString())).planId, P);
+  eq("… and a repeat of one", (await applyDailyPlanEdit(planDb(), OWNER, { action: "drop", item_id: I_MOVED }, new Date(NOW).toISOString())).planId, P);
+  eq("the redraw does not re-read the item's plan id", await (async () => {
+    const d = planDb();
+    const f = botDeps(d);
+    const queries = [];
+    const spy = { ...d, from: (t) => { queries.push(t); return d.from(t); } };
+    f.deps.db = spy;
+    await hook(f.deps, callbackUpdate("p:d:" + I_ANCHOR));
+    return queries;
+  })(), ["daily_plan_items", "daily_plan_items"]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+section("[tg-timing]: one line per delivery, and nothing it must not say");
+
+{
+  const realLog = console.log;
+  const lines = [];
+  console.log = (line) => lines.push(String(line));
+  const GATE = { webhookSecret: "SECRET-VALUE-XYZ", allowedChatId: String(CHAT) };
+  const tapBody = JSON.stringify(callbackUpdate("p:d:" + I_ANCHOR));
+  const privateText = JSON.stringify(textUpdate("PRIVATE-MESSAGE-TEXT"));
+  const realFetch = globalThis.fetch;
+  try {
+    const t = createTapTimer(Date.now(), "ams1::abc-123");
+    t.identify(tapBody, GATE.webhookSecret, GATE);
+    await t.step("ack", async () => {})();
+    await t.step("apply", async () => ({ status: 200 }), (o) => (o.status === 200 ? "ok" : `status${o.status}`))();
+    await t.step("edit", async () => {
+      throw new Error("Telegram editMessageText failed (400): query   is\ntoo old");
+    })().catch(() => {});
+    globalThis.fetch = async () => new Response(null, { status: 204 });
+    await t.timedFetch("https://x.supabase.co/rest/v1/daily_plan_items?id=eq.SECRET-ROW", { method: "PATCH" });
+    await t.timedFetch("https://x.supabase.co/rest/v1/tasks?id=eq.SECRET-ROW");
+    t.finish();
+
+    const refused = createTapTimer(Date.now(), null);
+    refused.identify(tapBody, "wrong", GATE);
+    refused.finish();
+
+    const garbage = createTapTimer(Date.now(), null);
+    garbage.identify("not json", GATE.webhookSecret, GATE);
+    garbage.finish();
+
+    const text = createTapTimer(Date.now(), null);
+    text.identify(privateText, GATE.webhookSecret, GATE);
+    text.finish();
+
+    const off = createTapTimer(Date.now(), null);
+    off.note("env=missing");
+    off.finish();
+  } finally {
+    console.log = realLog;
+    globalThis.fetch = realFetch;
+  }
+  const all = lines.join("\n");
+  const [tap, refusedLine, garbageLine, textLine, offLine] = lines;
+  eq("one line per delivery", lines.length, 5);
+  ok("every line is tagged", lines.every((l) => l.startsWith("[tg-timing] ")));
+  ok("no line spans two", lines.every((l) => !l.includes("\n")));
+  ok("the absolute time, to set against the tap", /at=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/.test(tap), tap);
+  ok("who: update, query and button", tap.includes(`u=9077 q=cb-77 btn=p:d:${I_ANCHOR.slice(0, 8)}`), tap);
+  ok("where it entered Vercel, not the request id", tap.includes("via=ams1 "), tap);
+  ok("region and uptime are there", /region=\S+ via=\S+ cold=(true|false) uptime=\d+\.\ds/.test(tap), tap);
+  ok("the steps, in the order they ran", /ack=\+\d+ms:ok apply=\+\d+ms:ok edit=\+\d+ms:FAILED\(.*\) db=2\/\d+ms total=\+\d+ms$/.test(tap), tap);
+  ok("a failed step says why, on one line", tap.includes("query is too old"), tap);
+  ok("a refused request is marked", refusedLine.includes("gate=refused") && !refusedLine.includes("u="), refusedLine);
+  // The whole line, field by field: anything else on it came from the request.
+  ok(
+    "… and logs nothing from its body",
+    /^\[tg-timing\] at=\S+ gate=refused region=\S+ via=unknown cold=false uptime=\S+ sha=\S+ db=0\/0ms total=\+\d+ms$/.test(refusedLine),
+    refusedLine
+  );
+  ok(
+    "a garbage body is marked, and not repeated",
+    /^\[tg-timing\] at=\S+ gate=unparseable region=\S+ via=unknown cold=false uptime=\S+ sha=\S+ db=0\/0ms total=\+\d+ms$/.test(garbageLine),
+    garbageLine
+  );
+  ok("a text message is labelled, not quoted", textLine.includes("kind=message"), textLine);
+  ok("a misconfigured deployment says so", offLine.includes("env=missing"), offLine);
+  ok("the secret is never logged", !all.includes("SECRET-VALUE-XYZ"));
+  ok("message text is never logged", !all.includes("PRIVATE-MESSAGE-TEXT"));
+  ok("query strings are never logged", !all.includes("SECRET-ROW"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

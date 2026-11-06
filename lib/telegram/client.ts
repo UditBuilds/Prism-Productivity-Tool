@@ -30,6 +30,18 @@ export class TelegramApiError extends Error {
   }
 }
 
+/**
+ * Telegram no longer accepts an answer to this tap. That is what a redelivered
+ * update's ack gets back, and the first delivery already answered it, so the
+ * webhook treats it as expected rather than as a failure.
+ */
+export function isExpiredCallbackQuery(err: unknown): boolean {
+  return (
+    err instanceof TelegramApiError &&
+    /query is too old|query id is invalid/i.test(err.description)
+  );
+}
+
 export interface TelegramApi {
   sendMessage(
     chatId: number | string,

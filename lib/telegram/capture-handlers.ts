@@ -15,9 +15,19 @@ import {
   setReplyMessageId,
 } from "@/lib/telegram/capture-store";
 import { captureCallbackData } from "@/lib/telegram/callback-data";
-import type { CallbackContext } from "@/lib/telegram/callbacks";
+import type { CallbackContext, CallbackHandler } from "@/lib/telegram/callbacks";
 import type { BotDeps } from "@/lib/telegram/deps";
-import { AI_BUSY, BUTTON_EXPIRED, COULDNT_READ, TOO_LONG } from "@/lib/telegram/messages";
+import {
+  AI_BUSY,
+  CANCELLED_REDRAW_FAILED,
+  CAPTURE_GONE,
+  COULDNT_CANCEL,
+  COULDNT_READ,
+  EXPIRED_REDRAW_FAILED,
+  REDRAW_FAILED,
+  TOO_LONG,
+} from "@/lib/telegram/messages";
+import { tellChat } from "@/lib/telegram/tell-chat";
 import type { TgMessage } from "@/lib/telegram/types";
 
 /**
@@ -103,55 +113,64 @@ export async function handleCaptureMessage(
   await setReplyMessageId(deps.db, owner, captureId, sent.message_id);
 }
 
-/** [Save] / [Cancel] — namespace "c". Returns the toast text. */
-export async function handleCaptureCallback(
+/**
+ * [Save] / [Cancel] — namespace "c". The tap is answered with no text before
+ * this runs, because what happened is only known afterwards. The redrawn
+ * message says it; anything a redraw cannot say goes to the chat.
+ *
+ * A failed Save throws, and the router reports it as COULDNT_SAVE. Nothing here
+ * changes what Save or Cancel do (lib/telegram/capture-store.ts).
+ */
+async function runCaptureCallback(
   { action, id, query }: CallbackContext,
   deps: BotDeps
-): Promise<string> {
+): Promise<void> {
   const owner = deps.env.ownerUserId;
   const nowMs = deps.now();
 
-  const redraw = async (text: string) => {
+  /** `ifItFails` must be true of the rows, since only the message wasn't updated. */
+  const redraw = async (text: string, ifItFails: string) => {
     if (!query.message) return;
     try {
       await deps.telegram.editMessageText(query.message.chat.id, query.message.message_id, text, null);
     } catch (err) {
-      // What was saved stays saved; only the message wasn't updated.
       console.error(
         `[telegram] capture message redraw failed: ${err instanceof Error ? err.message : String(err)}`
       );
+      await tellChat(query, ifItFails, deps);
     }
   };
 
   if (action === "s") {
     const out = await saveCapture(deps.db, owner, id, nowMs);
-    if (out.kind === "not_found") return "That one isn't there any more.";
+    if (out.kind === "not_found") return tellChat(query, CAPTURE_GONE, deps);
     if (out.kind === "expired") {
-      await redraw(renderCaptureMessage(out.ops, "expired", nowMs));
-      return "Too old to save";
+      return redraw(renderCaptureMessage(out.ops, "expired", nowMs), EXPIRED_REDRAW_FAILED);
     }
     if (out.kind === "already") {
-      if (out.status === "cancelled") {
-        await redraw(renderCaptureMessage(out.ops, "cancelled", nowMs));
-        return "That one was cancelled — send it again to save it.";
-      }
-      await redraw(renderCaptureMessage(out.ops, "saved", nowMs));
-      return "Already saved";
+      return out.status === "cancelled"
+        ? redraw(renderCaptureMessage(out.ops, "cancelled", nowMs), CANCELLED_REDRAW_FAILED)
+        : redraw(renderCaptureMessage(out.ops, "saved", nowMs), REDRAW_FAILED);
     }
-    await redraw(renderCaptureMessage(out.ops, "saved", nowMs, out.notes));
-    return "Saved";
+    return redraw(renderCaptureMessage(out.ops, "saved", nowMs, out.notes), REDRAW_FAILED);
   }
 
-  if (action === "x") {
-    const out = await cancelCapture(deps.db, owner, id, nowMs);
-    if (out.kind === "not_found") return "That one isn't there any more.";
-    if (out.kind === "already") {
-      await redraw(renderCaptureMessage(out.ops, out.status === "saved" ? "saved" : "cancelled", nowMs));
-      return out.status === "saved" ? "Already saved — change it in Prism if you need to." : "Already cancelled";
-    }
-    await redraw(renderCaptureMessage(out.ops, "cancelled", nowMs));
-    return "Cancelled";
+  // Cancel: "action" can only be "s" or "x", because of the acks below.
+  let out;
+  try {
+    out = await cancelCapture(deps.db, owner, id, nowMs);
+  } catch (err) {
+    console.error(`[telegram] cancel failed: ${err instanceof Error ? err.message : String(err)}`);
+    return tellChat(query, COULDNT_CANCEL, deps);
   }
-
-  return BUTTON_EXPIRED;
+  if (out.kind === "not_found") return tellChat(query, CAPTURE_GONE, deps);
+  if (out.kind === "already" && out.status === "saved") {
+    return redraw(renderCaptureMessage(out.ops, "saved", nowMs), REDRAW_FAILED);
+  }
+  return redraw(renderCaptureMessage(out.ops, "cancelled", nowMs), CANCELLED_REDRAW_FAILED);
 }
+
+export const captureCallback: CallbackHandler = {
+  acks: { s: null, x: null },
+  run: runCaptureCallback,
+};

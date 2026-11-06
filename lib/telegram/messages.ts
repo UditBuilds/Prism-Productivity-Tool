@@ -28,4 +28,18 @@ export const SOMETHING_WRONG =
 
 export const BUTTON_EXPIRED = "That button has expired.";
 
-export const TAP_AGAIN = "Something went wrong on my side. Tap it again in a minute — it won't double up.";
+/**
+ * A button's toast goes out before its work runs (lib/telegram/callbacks.ts),
+ * so anything that goes wrong afterwards is said in the chat instead. Each one
+ * says only what is true of the rows: a redraw that failed after a good save
+ * must not read as a failed save.
+ */
+export const COULDNT_SAVE = "Couldn't save that — try again.";
+export const COULDNT_CANCEL = "Couldn't cancel that — try again.";
+export const REDRAW_FAILED = "Saved, but I couldn't update this message.";
+export const CANCELLED_REDRAW_FAILED = "Cancelled, but I couldn't update this message.";
+export const EXPIRED_REDRAW_FAILED =
+  "That one is more than a day old, so I didn't save it. Send it again and I'll read it fresh.";
+export const PLAN_GONE = "That plan isn't there any more.";
+export const ITEM_GONE = "That item isn't on a plan any more.";
+export const CAPTURE_GONE = "That one isn't there any more.";

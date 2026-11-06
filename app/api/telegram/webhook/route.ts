@@ -32,61 +32,68 @@ function emptyOk(): Response {
  * PRISM_OWNER_USER_ID, because this route has no user session.
  *
  * Every write and every Bot API call is awaited before this returns: an
- * un-awaited one can be dropped when the instance freezes.
+ * un-awaited one can be dropped when the instance freezes. A button is answered
+ * first (lib/telegram/callbacks.ts), so its spinner does not wait for any of it.
+ *
+ * Each delivery logs one [tg-timing] line (lib/telegram/tap-timing.ts).
  */
 export async function POST(request: Request) {
   const timer = createTapTimer(Date.now(), request.headers.get("x-vercel-id"));
-
-  const env = readTelegramEnv();
-  if (!env) {
-    // Names only — never a value.
-    console.warn(`[telegram] webhook off: missing ${missingTelegramEnv().join(", ")}`);
-    timer.mark("env missing");
-    return emptyOk();
-  }
-
-  let rawBody: string;
   try {
-    rawBody = await request.text();
-  } catch {
-    timer.mark("body unreadable");
+    const env = readTelegramEnv();
+    if (!env) {
+      // Names only — never a value.
+      console.warn(`[telegram] webhook off: missing ${missingTelegramEnv().join(", ")}`);
+      timer.note("env=missing");
+      return emptyOk();
+    }
+
+    let rawBody: string;
+    try {
+      rawBody = await request.text();
+    } catch {
+      timer.note("body=unreadable");
+      return emptyOk();
+    }
+
+    const secretHeader = request.headers.get("x-telegram-bot-api-secret-token");
+    timer.identify(rawBody, secretHeader, env);
+
+    const telegram = createTelegramApi(env.botToken);
+
+    try {
+      await handleWebhook(
+        { secretHeader, rawBody },
+        {
+          env,
+          db: createAdminClient({ fetch: timer.timedFetch }),
+          telegram: {
+            sendMessage: timer.step("send", telegram.sendMessage),
+            editMessageText: timer.step("edit", telegram.editMessageText),
+            answerCallbackQuery: timer.step("ack", telegram.answerCallbackQuery),
+          },
+          plan: {
+            applyEdit: timer.step("apply", applyDailyPlanEdit, (outcome) =>
+              outcome.status === 200 ? "ok" : `status${outcome.status}`
+            ),
+            readView: timer.step("view", readDailyPlanView),
+          },
+          ai: {
+            allow: (userId) => checkAiRateLimit(userId).allowed,
+            parseCapture: timer.step("ai", parseTelegramCapture),
+          },
+          now: () => Date.now(),
+          newId: () => crypto.randomUUID(),
+        }
+      );
+    } catch (err) {
+      // handleWebhook catches its own failures; this is the last line.
+      console.error(
+        `[telegram] webhook failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
     return emptyOk();
+  } finally {
+    timer.finish();
   }
-
-  const secretHeader = request.headers.get("x-telegram-bot-api-secret-token");
-  timer.identify(rawBody, secretHeader, env);
-
-  const telegram = createTelegramApi(env.botToken);
-
-  try {
-    await handleWebhook(
-      { secretHeader, rawBody },
-      {
-        env,
-        db: createAdminClient({ fetch: timer.timedFetch }),
-        telegram: {
-          sendMessage: timer.wrap("tg sendMessage", telegram.sendMessage),
-          editMessageText: timer.wrap("tg editMessageText", telegram.editMessageText),
-          answerCallbackQuery: timer.wrap("tg answerCallbackQuery", telegram.answerCallbackQuery),
-        },
-        plan: {
-          applyEdit: timer.wrap("applyEdit", applyDailyPlanEdit),
-          readView: timer.wrap("readView", readDailyPlanView),
-        },
-        ai: {
-          allow: (userId) => checkAiRateLimit(userId).allowed,
-          parseCapture: timer.wrap("ai parseCapture", parseTelegramCapture),
-        },
-        now: () => Date.now(),
-        newId: () => crypto.randomUUID(),
-      }
-    );
-  } catch (err) {
-    // handleWebhook catches its own failures; this is the last line.
-    console.error(
-      `[telegram] webhook failed: ${err instanceof Error ? err.message : String(err)}`
-    );
-  }
-  timer.mark("responding 200");
-  return emptyOk();
 }

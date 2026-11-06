@@ -12,8 +12,8 @@ import { routeUpdate } from "@/lib/telegram/router";
  * Unparseable or unauthorised: return before ANY other dependency is used —
  * no database read, no AI call, no message.
  *
- * After the gates, a failure is reported to the chat in one honest sentence
- * (button taps report through their own toast instead).
+ * After the gates, a failure is reported to the chat in one honest sentence.
+ * A button tap's toast is sent before its work runs, so it cannot carry this.
  */
 export async function handleWebhook(
   input: { secretHeader: string | null; rawBody: string },
@@ -34,7 +34,7 @@ export async function handleWebhook(
       `[telegram] update ${update.update_id} failed: ${err instanceof Error ? err.message : String(err)}`
     );
     const chatId = chatIdOf(update);
-    if (chatId === null || update.callback_query) return;
+    if (chatId === null) return;
     try {
       await deps.telegram.sendMessage(chatId, SOMETHING_WRONG);
     } catch (sendErr) {
