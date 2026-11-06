@@ -24,10 +24,15 @@ const MAX_MOVE_ALL = 250;
 export interface PlanEditOutcome {
   status: number;
   body: ApiResponse<DailyPlanEditResponse>;
+  /**
+   * The plan a single edit belongs to, so the bot can redraw it without reading
+   * the item again. Outside `body`: the app's response is unchanged.
+   */
+  planId?: string;
 }
 
-function ok(data: DailyPlanEditResponse): PlanEditOutcome {
-  return { status: 200, body: { data, error: null } };
+function ok(data: DailyPlanEditResponse, planId?: string): PlanEditOutcome {
+  return { status: 200, body: { data, error: null }, planId };
 }
 
 function fail(status: number, error: string): PlanEditOutcome {
@@ -91,7 +96,7 @@ export async function applyDailyPlanEdit(
       .maybeSingle();
     if (error) return fail(500, error.message);
     if (!plan) return fail(404, "Plan not found");
-    return ok(plan as DailyPlanEditResult);
+    return ok(plan as DailyPlanEditResult, plan.id);
   }
 
   if (body.action === "move_all") {
@@ -126,7 +131,7 @@ export async function applyDailyPlanEdit(
   // Already edited (a double tap, or the offline queue replaying): report the
   // state it is in. Not an error — the user's intent is already recorded.
   if (item.status !== "planned") {
-    return ok({ id: item.id, status: item.status, moved_to: item.moved_to });
+    return ok({ id: item.id, status: item.status, moved_to: item.moved_to }, item.plan_id);
   }
 
   if (body.action === "drop") {
@@ -165,7 +170,7 @@ export async function applyDailyPlanEdit(
       .eq("user_id", userId)
       .eq("status", "planned");
     if (error) return fail(500, error.message);
-    return ok({ id: item.id, status, moved_to: null });
+    return ok({ id: item.id, status, moved_to: null }, item.plan_id);
   }
 
   // move
@@ -201,7 +206,7 @@ export async function applyDailyPlanEdit(
     .eq("status", "planned");
   if (moveError) return fail(500, moveError.message);
 
-  return ok({ id: item.id, status: "moved", moved_to: tomorrow });
+  return ok({ id: item.id, status: "moved", moved_to: tomorrow }, item.plan_id);
 }
 
 /**

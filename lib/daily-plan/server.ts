@@ -68,7 +68,8 @@ export async function ensureDailyPlan(
 ): Promise<EnsureResult> {
   const existing = await readPlanRow(supabase, userId, planDate);
   if (existing) {
-    return { view: await buildView(supabase, userId, existing), plan: existing, created: false };
+    const items = await readPlanItems(supabase, userId, existing.id);
+    return { view: await buildView(supabase, userId, existing, items), plan: existing, created: false };
   }
 
   const { data: anchors, error: anchorsError } = await supabase
@@ -136,8 +137,9 @@ export async function ensureDailyPlan(
 
   const plan = await readPlanRow(supabase, userId, planDate);
   if (!plan) throw new Error("create_daily_plan returned but no plan row is readable");
+  const items = await readPlanItems(supabase, userId, plan.id);
   // `created` is best-effort: a concurrent winner's plan reads the same.
-  return { view: await buildView(supabase, userId, plan), plan, created: true };
+  return { view: await buildView(supabase, userId, plan, items), plan, created: true };
 }
 
 /**
@@ -145,21 +147,27 @@ export async function ensureDailyPlan(
  * user has no such plan. Never creates anything and never calls the AI — the
  * Telegram bot uses it to redraw its plan message from the database after a
  * button tap, instead of guessing what the tap changed.
+ *
+ * The plan and its items are read together, because each of these reads is a
+ * round trip the person is waiting on.
  */
 export async function readDailyPlanView(
   supabase: Db,
   userId: string,
   planId: string
 ): Promise<DailyPlanView | null> {
-  const { data: plan, error } = await supabase
-    .from("daily_plans")
-    .select("*")
-    .eq("id", planId)
-    .eq("user_id", userId)
-    .maybeSingle();
+  const [{ data: plan, error }, items] = await Promise.all([
+    supabase
+      .from("daily_plans")
+      .select("*")
+      .eq("id", planId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+    readPlanItems(supabase, userId, planId),
+  ]);
   if (error) throw new Error(`daily plan by id: ${error.message}`);
   if (!plan) return null;
-  return buildView(supabase, userId, plan);
+  return buildView(supabase, userId, plan, items);
 }
 
 /**
@@ -223,6 +231,17 @@ async function readPlanRow(
   return data;
 }
 
+async function readPlanItems(supabase: Db, userId: string, planId: string) {
+  const { data, error } = await supabase
+    .from("daily_plan_items")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("plan_id", planId)
+    .order("position", { ascending: true });
+  if (error) throw new Error(`plan items: ${error.message}`);
+  return data ?? [];
+}
+
 /**
  * The plan as the dashboard shows it: stored items joined to the LIVE task
  * and anchor rows, so a task completed or deleted since the plan was made is
@@ -231,18 +250,11 @@ async function readPlanRow(
 async function buildView(
   supabase: Db,
   userId: string,
-  plan: DailyPlan
+  plan: DailyPlan,
+  items: Awaited<ReturnType<typeof readPlanItems>>
 ): Promise<DailyPlanView> {
-  const { data: items, error } = await supabase
-    .from("daily_plan_items")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("plan_id", plan.id)
-    .order("position", { ascending: true });
-  if (error) throw new Error(`plan items: ${error.message}`);
-
-  const taskIds = (items ?? []).flatMap((i) => (i.task_id ? [i.task_id] : []));
-  const anchorIds = (items ?? []).flatMap((i) => (i.anchor_id ? [i.anchor_id] : []));
+  const taskIds = items.flatMap((i) => (i.task_id ? [i.task_id] : []));
+  const anchorIds = items.flatMap((i) => (i.anchor_id ? [i.anchor_id] : []));
 
   const [tasksRes, anchorsRes] = await Promise.all([
     taskIds.length
@@ -267,7 +279,7 @@ async function buildView(
   const anchorById = new Map((anchorsRes.data ?? []).map((a) => [a.id, a]));
   const weekday = civilWeekday(plan.plan_date);
 
-  const viewItems: DailyPlanViewItem[] = (items ?? []).map((item) => {
+  const viewItems: DailyPlanViewItem[] = items.map((item) => {
     const task = item.task_id ? taskById.get(item.task_id) : undefined;
     const anchor = item.anchor_id ? anchorById.get(item.anchor_id) : undefined;
     const leader =

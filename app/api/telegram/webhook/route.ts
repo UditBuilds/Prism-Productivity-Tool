@@ -5,10 +5,16 @@ import { readDailyPlanView } from "@/lib/daily-plan/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createTelegramApi } from "@/lib/telegram/client";
 import { missingTelegramEnv, readTelegramEnv } from "@/lib/telegram/env";
+import { createTapTimer } from "@/lib/telegram/tap-timing";
 import { handleWebhook } from "@/lib/telegram/webhook";
 
 /** One Groq call (8s timeout) plus a few Bot API calls (8s each, at most). */
 export const maxDuration = 30;
+
+// THE REGION IS IN vercel.json, NOT HERE: icn1 (Seoul), next to the database, for
+// this route only. `export const preferredRegion` would look right and do nothing:
+// Vercel's Next.js builder drops it for Node.js functions, and honours only the
+// `functions` entry in vercel.json (vercel/vercel, packages/next/src/utils.ts).
 
 /** An empty 200 — the only answer this route ever gives. */
 function emptyOk(): Response {
@@ -31,47 +37,68 @@ function emptyOk(): Response {
  * PRISM_OWNER_USER_ID, because this route has no user session.
  *
  * Every write and every Bot API call is awaited before this returns: an
- * un-awaited one can be dropped when the instance freezes.
+ * un-awaited one can be dropped when the instance freezes. A button is answered
+ * first (lib/telegram/callbacks.ts), so its spinner does not wait for any of it.
+ *
+ * Each delivery logs one [tg-timing] line (lib/telegram/tap-timing.ts).
  */
 export async function POST(request: Request) {
-  const env = readTelegramEnv();
-  if (!env) {
-    // Names only — never a value.
-    console.warn(`[telegram] webhook off: missing ${missingTelegramEnv().join(", ")}`);
-    return emptyOk();
-  }
-
-  let rawBody: string;
+  const timer = createTapTimer(Date.now(), request.headers.get("x-vercel-id"));
   try {
-    rawBody = await request.text();
-  } catch {
-    return emptyOk();
-  }
+    const env = readTelegramEnv();
+    if (!env) {
+      // Names only — never a value.
+      console.warn(`[telegram] webhook off: missing ${missingTelegramEnv().join(", ")}`);
+      timer.note("env=missing");
+      return emptyOk();
+    }
 
-  try {
-    await handleWebhook(
-      {
-        secretHeader: request.headers.get("x-telegram-bot-api-secret-token"),
-        rawBody,
-      },
-      {
-        env,
-        db: createAdminClient(),
-        telegram: createTelegramApi(env.botToken),
-        plan: { applyEdit: applyDailyPlanEdit, readView: readDailyPlanView },
-        ai: {
-          allow: (userId) => checkAiRateLimit(userId).allowed,
-          parseCapture: parseTelegramCapture,
-        },
-        now: () => Date.now(),
-        newId: () => crypto.randomUUID(),
-      }
-    );
-  } catch (err) {
-    // handleWebhook catches its own failures; this is the last line.
-    console.error(
-      `[telegram] webhook failed: ${err instanceof Error ? err.message : String(err)}`
-    );
+    let rawBody: string;
+    try {
+      rawBody = await request.text();
+    } catch {
+      timer.note("body=unreadable");
+      return emptyOk();
+    }
+
+    const secretHeader = request.headers.get("x-telegram-bot-api-secret-token");
+    timer.identify(rawBody, secretHeader, env);
+
+    const telegram = createTelegramApi(env.botToken);
+
+    try {
+      await handleWebhook(
+        { secretHeader, rawBody },
+        {
+          env,
+          db: createAdminClient({ fetch: timer.timedFetch }),
+          telegram: {
+            sendMessage: timer.step("send", telegram.sendMessage),
+            editMessageText: timer.step("edit", telegram.editMessageText),
+            answerCallbackQuery: timer.step("ack", telegram.answerCallbackQuery),
+          },
+          plan: {
+            applyEdit: timer.step("apply", applyDailyPlanEdit, (outcome) =>
+              outcome.status === 200 ? "ok" : `status${outcome.status}`
+            ),
+            readView: timer.step("view", readDailyPlanView),
+          },
+          ai: {
+            allow: (userId) => checkAiRateLimit(userId).allowed,
+            parseCapture: timer.step("ai", parseTelegramCapture),
+          },
+          now: () => Date.now(),
+          newId: () => crypto.randomUUID(),
+        }
+      );
+    } catch (err) {
+      // handleWebhook catches its own failures; this is the last line.
+      console.error(
+        `[telegram] webhook failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    return emptyOk();
+  } finally {
+    timer.finish();
   }
-  return emptyOk();
 }
