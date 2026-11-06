@@ -11,6 +11,11 @@ import { handleWebhook } from "@/lib/telegram/webhook";
 /** One Groq call (8s timeout) plus a few Bot API calls (8s each, at most). */
 export const maxDuration = 30;
 
+// THE REGION IS IN vercel.json, NOT HERE: icn1 (Seoul), next to the database, for
+// this route only. `export const preferredRegion` would look right and do nothing:
+// Vercel's Next.js builder drops it for Node.js functions, and honours only the
+// `functions` entry in vercel.json (vercel/vercel, packages/next/src/utils.ts).
+
 /** An empty 200 — the only answer this route ever gives. */
 function emptyOk(): Response {
   return new Response(null, { status: 200 });
