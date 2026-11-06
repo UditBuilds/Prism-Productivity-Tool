@@ -1495,6 +1495,129 @@ section("[tg-timing]: one line per delivery, and nothing it must not say");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+section("the real webhook route, with only its outside world stubbed");
+
+{
+  const { load: loadRoute } = compileTs(["app/api/telegram/webhook/route.ts"], {
+    label: "telegram-route",
+    stubs: {
+      "@/lib/ai/client": `export async function parseTelegramCapture() { return []; }`,
+      "@/lib/ai/rateLimit": `export function checkAiRateLimit() { return { allowed: true }; }`,
+      "@/lib/daily-plan/server": `export async function readDailyPlanView(...a) { return globalThis.__route.readView(...a); }`,
+      "@/lib/supabase/admin": `export function createAdminClient(o) { globalThis.__route.adminOptions = o; return globalThis.__route.db; }`,
+      "@/lib/telegram/client": `export function createTelegramApi(token) { globalThis.__route.token = token; return globalThis.__route.telegram; }
+export function isExpiredCallbackQuery() { return false; }`,
+    },
+  });
+  const { POST: routePost } = await loadRoute("app/api/telegram/webhook/route.ts");
+
+  const ROUTE_ENV = {
+    TELEGRAM_BOT_TOKEN: "ROUTE-TOKEN-VALUE",
+    TELEGRAM_ALLOWED_CHAT_ID: String(CHAT),
+    TELEGRAM_WEBHOOK_SECRET: "ROUTE-SECRET-VALUE",
+    PRISM_OWNER_USER_ID: OWNER,
+  };
+  const savedEnv = Object.fromEntries(Object.keys(ROUTE_ENV).map((k) => [k, process.env[k]]));
+  const setEnv = (values) => {
+    for (const k of Object.keys(ROUTE_ENV)) {
+      if (values[k] === undefined) delete process.env[k];
+      else process.env[k] = values[k];
+    }
+  };
+
+  /** One delivery through POST: its response, its log lines, and what it touched. */
+  async function deliver(update, { secret = ROUTE_ENV.TELEGRAM_WEBHOOK_SECRET, db = planDb(), tweak } = {}) {
+    const events = [];
+    const sent = [];
+    globalThis.__route = {
+      db,
+      readView: async (...args) => {
+        events.push("view");
+        return viewFromDb(db)(...args);
+      },
+      telegram: {
+        answerCallbackQuery: async () => {
+          events.push(`ack(queries so far: ${db.calls})`);
+        },
+        editMessageText: async () => {
+          events.push("edit");
+        },
+        sendMessage: async (_chat, text) => {
+          events.push("send");
+          sent.push(text);
+          return { message_id: 1 };
+        },
+      },
+    };
+    tweak?.(globalThis.__route);
+    const realLog = console.log;
+    const lines = [];
+    console.log = (line) => lines.push(String(line));
+    let res;
+    let logged;
+    try {
+      logged = await captureErrors(async () => {
+        res = await routePost(
+          new Request("http://prism.test/api/telegram/webhook", {
+            method: "POST",
+            headers: { "x-telegram-bot-api-secret-token": secret, "x-vercel-id": "ams1::abc-123" },
+            body: JSON.stringify(update),
+          })
+        );
+      });
+    } finally {
+      console.log = realLog;
+    }
+    return { res, lines, events, sent, db, logged, route: globalThis.__route };
+  }
+
+  try {
+    setEnv(ROUTE_ENV);
+
+    const tap = await deliver(callbackUpdate("p:d:" + I_ANCHOR));
+    eq("a tap → an empty 200", [tap.res.status, await tap.res.text()], [200, ""]);
+    eq("answered first, then re-read, then redrawn", tap.events, ["ack(queries so far: 0)", "view", "edit"]);
+    eq("the write landed", tap.db.tables.daily_plan_items.find((i) => i.id === I_ANCHOR).status, "skipped");
+    eq("exactly one timing line", tap.lines.length, 1);
+    ok("… with the steps in order", /ack=\+\d+ms:ok apply=\+\d+ms:ok view=\+\d+ms:ok edit=\+\d+ms:ok db=0\/0ms total=\+\d+ms$/.test(tap.lines[0]), tap.lines[0]);
+    ok("… and where it came in", tap.lines[0].includes("via=ams1 "), tap.lines[0]);
+    eq("the Bot API gets the real token", tap.route.token, ROUTE_ENV.TELEGRAM_BOT_TOKEN);
+    eq("the database client is timed", typeof tap.route.adminOptions.fetch, "function");
+    ok("neither secret reaches the line", !tap.lines[0].includes("ROUTE-TOKEN-VALUE") && !tap.lines[0].includes("ROUTE-SECRET-VALUE"));
+
+    const refused = await deliver(callbackUpdate("p:d:" + I_ANCHOR), { secret: "wrong" });
+    eq("a wrong secret → the same empty 200", [refused.res.status, await refused.res.text()], [200, ""]);
+    eq("… touches nothing", [refused.events, refused.db.calls], [[], 0]);
+    ok("… and the line says why", refused.lines.length === 1 && refused.lines[0].includes("gate=refused"), refused.lines[0]);
+
+    const blocked = planDb();
+    blocked.failOn("daily_plan_items", "update", "network blip");
+    const failedWrite = await deliver(callbackUpdate("p:d:" + I_ANCHOR), { db: blocked });
+    eq("a failed write → still a 200, so Telegram doesn't retry it", failedWrite.res.status, 200);
+    eq("… the chat is told", failedWrite.sent, [messages.COULDNT_SAVE]);
+    ok("… and the line shows it", /apply=\+\d+ms:status500 send=\+\d+ms:ok/.test(failedWrite.lines[0]), failedWrite.lines[0]);
+
+    const badAck = await deliver(callbackUpdate("p:d:" + I_ANCHOR), {
+      tweak: (r) => {
+        r.telegram.answerCallbackQuery = async () => {
+          throw new Error("Telegram answerCallbackQuery failed: request failed (TimeoutError)");
+        };
+      },
+    });
+    ok("a failed ack shows in the line, with why", /ack=\+\d+ms:FAILED\(.*TimeoutError\)\) apply=/.test(badAck.lines[0]), badAck.lines[0]);
+    eq("… and the work still ran", badAck.db.tables.daily_plan_items.find((i) => i.id === I_ANCHOR).status, "skipped");
+
+    setEnv({});
+    const off = await deliver(callbackUpdate("p:d:" + I_ANCHOR));
+    eq("no bot configured → still a 200", off.res.status, 200);
+    ok("… and the line says so", off.lines.length === 1 && off.lines[0].includes("env=missing"), off.lines[0]);
+  } finally {
+    setEnv(savedEnv);
+    delete globalThis.__route;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 section("tone");
 
 const ALL_COPY = [
