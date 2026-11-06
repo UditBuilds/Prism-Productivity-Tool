@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { DEFAULT_NEXT_PATH, safeNextPath } from "@/lib/auth/safe-next";
 import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/demo";
 import { AuthCard, AuthHeader } from "@/components/auth/AuthCard";
 import { Button } from "@/components/ui/button";
@@ -24,11 +25,17 @@ export default function LoginPage() {
    * The one place either button reaches Supabase.
    *
    * Try Demo is deliberately NOT a separate auth path — same client, same
-   * signInWithPassword call, same redirect. Nothing is minted server-side and
-   * no token is forged; the demo just arrives with its credentials already
-   * filled in.
+   * signInWithPassword call. Nothing is minted server-side and no token is
+   * forged; the demo just arrives with its credentials already filled in.
+   *
+   * Where each button lands is the caller's decision, passed in as
+   * `destination`.
    */
-  async function signIn(withEmail: string, withPassword: string) {
+  async function signIn(
+    withEmail: string,
+    withPassword: string,
+    destination: string
+  ) {
     const supabase = createClient();
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: withEmail,
@@ -40,7 +47,7 @@ export default function LoginPage() {
       return false;
     }
 
-    router.push("/dashboard");
+    router.push(destination);
     router.refresh();
     return true;
   }
@@ -50,16 +57,28 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
+    // A page that sent someone here to sign in (e.g. /oauth/consent) names
+    // itself in `next`. Read at submit time rather than via useSearchParams:
+    // this page is static, and the hook would need a Suspense boundary.
+    // safeNextPath falls back to /dashboard for anything off-site.
+    const destination = safeNextPath(
+      new URLSearchParams(window.location.search).get("next"),
+      window.location.origin
+    );
+
     // Left spinning on success: the redirect is what ends this state, so
     // clearing it early just flashes an enabled button over a leaving page.
-    if (!(await signIn(email, password))) setLoading(false);
+    if (!(await signIn(email, password, destination))) setLoading(false);
   }
 
   async function handleDemo() {
     setError(null);
     setDemoLoading(true);
 
-    if (!(await signIn(DEMO_EMAIL, DEMO_PASSWORD))) setDemoLoading(false);
+    // The demo always lands on the dashboard, `next` or not — unchanged.
+    if (!(await signIn(DEMO_EMAIL, DEMO_PASSWORD, DEFAULT_NEXT_PATH))) {
+      setDemoLoading(false);
+    }
   }
 
   const busy = loading || demoLoading;
