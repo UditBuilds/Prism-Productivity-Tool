@@ -5,6 +5,7 @@ import { readDailyPlanView } from "@/lib/daily-plan/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createTelegramApi } from "@/lib/telegram/client";
 import { missingTelegramEnv, readTelegramEnv } from "@/lib/telegram/env";
+import { createTapTimer } from "@/lib/telegram/tap-timing";
 import { handleWebhook } from "@/lib/telegram/webhook";
 
 /** One Groq call (8s timeout) plus a few Bot API calls (8s each, at most). */
@@ -34,10 +35,13 @@ function emptyOk(): Response {
  * un-awaited one can be dropped when the instance freezes.
  */
 export async function POST(request: Request) {
+  const timer = createTapTimer(Date.now(), request.headers.get("x-vercel-id"));
+
   const env = readTelegramEnv();
   if (!env) {
     // Names only — never a value.
     console.warn(`[telegram] webhook off: missing ${missingTelegramEnv().join(", ")}`);
+    timer.mark("env missing");
     return emptyOk();
   }
 
@@ -45,23 +49,33 @@ export async function POST(request: Request) {
   try {
     rawBody = await request.text();
   } catch {
+    timer.mark("body unreadable");
     return emptyOk();
   }
 
+  const secretHeader = request.headers.get("x-telegram-bot-api-secret-token");
+  timer.identify(rawBody, secretHeader, env);
+
+  const telegram = createTelegramApi(env.botToken);
+
   try {
     await handleWebhook(
-      {
-        secretHeader: request.headers.get("x-telegram-bot-api-secret-token"),
-        rawBody,
-      },
+      { secretHeader, rawBody },
       {
         env,
-        db: createAdminClient(),
-        telegram: createTelegramApi(env.botToken),
-        plan: { applyEdit: applyDailyPlanEdit, readView: readDailyPlanView },
+        db: createAdminClient({ fetch: timer.timedFetch }),
+        telegram: {
+          sendMessage: timer.wrap("tg sendMessage", telegram.sendMessage),
+          editMessageText: timer.wrap("tg editMessageText", telegram.editMessageText),
+          answerCallbackQuery: timer.wrap("tg answerCallbackQuery", telegram.answerCallbackQuery),
+        },
+        plan: {
+          applyEdit: timer.wrap("applyEdit", applyDailyPlanEdit),
+          readView: timer.wrap("readView", readDailyPlanView),
+        },
         ai: {
           allow: (userId) => checkAiRateLimit(userId).allowed,
-          parseCapture: parseTelegramCapture,
+          parseCapture: timer.wrap("ai parseCapture", parseTelegramCapture),
         },
         now: () => Date.now(),
         newId: () => crypto.randomUUID(),
@@ -73,5 +87,6 @@ export async function POST(request: Request) {
       `[telegram] webhook failed: ${err instanceof Error ? err.message : String(err)}`
     );
   }
+  timer.mark("responding 200");
   return emptyOk();
 }
